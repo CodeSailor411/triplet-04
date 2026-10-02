@@ -1,8 +1,0 @@
-# Shared files reviewed by the triplet leader.
-* @CodeSailor411
-# Team ownership: Trinity -> Twin; Civis -> Brain; 9antra -> Guardian.
-# Replace these commented examples when team GitHub usernames are confirmed.
-# /twin/ @trinity-member-one @trinity-member-two
-# /brain/ @civis-member-one @civis-member-two
-# /guardian/ @9antra-member-one @9antra-member-two
-# Enable required code-owner reviews on main; this file alone does not enforce ownership.
