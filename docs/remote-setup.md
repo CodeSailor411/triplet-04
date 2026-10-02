@@ -1,5 +1,9 @@
 # GitHub setup
 
+Created private remote: https://github.com/CodeSailor411/city-brain-convergence
+
+Owner: CodeSailor411. Rename to `triplet-XX` once the number is confirmed. Collaborator invitations, per-team CODEOWNERS, and branch rules remain pending.
+
 The local repository is independent from the parent workspace. Run commands from this folder.
 
 1. Sign in: `gh auth login -h github.com`.

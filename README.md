@@ -27,4 +27,8 @@ Submission: 7 November 2026. Jury review: 9â€“13 November. CSTAM: 14 Novemb
 
 ## Remote setup
 
-See `docs/remote-setup.md`. Use private visibility initially. Invite all teammates with write access, complete CODEOWNERS, and configure required reviews before treating ownership as enforced.
+Private remote: https://github.com/CodeSailor411/city-brain-convergence
+
+Clone: `git clone https://github.com/CodeSailor411/city-brain-convergence.git`
+
+See `docs/remote-setup.md`. Invite all teammates with write access, complete CODEOWNERS, and configure required reviews before treating ownership as enforced.
