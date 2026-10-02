@@ -1,6 +1,6 @@
-# Brain Interface Card — draft
+# Brain Interface Card â€” draft
 
-Owner/team: awaiting confirmation.
+Owner/team: Civis.
 Role: incident detection and response decisions.
 
 ## Sends and receives

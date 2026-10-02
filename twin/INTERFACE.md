@@ -1,6 +1,6 @@
-# Twin Interface Card — draft
+# Twin Interface Card â€” draft
 
-Owner/team: awaiting confirmation.
+Owner/team: Trinity.
 Role: city simulation, sensor readings and actuators.
 
 ## Sends and receives

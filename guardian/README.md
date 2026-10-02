@@ -1,6 +1,6 @@
 # Guardian layer
 
-Team assignment pending. This folder belongs to one team once the roster is confirmed.
+Owner: **9antra**. Team members make changes inside this layer folder.
 
 Run independently: `python guardian/src/main.py` from the repo root, or `python src/main.py` from this folder. This checks local synthetic partner fixtures, not a working layer service. Python 3.11+; no third-party packages.
 

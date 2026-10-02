@@ -1,6 +1,6 @@
-# Guardian Interface Card — draft
+# Guardian Interface Card â€” draft
 
-Owner/team: awaiting confirmation.
+Owner/team: 9antra.
 Role: data trust, fault detection and containment.
 
 ## Sends and receives

@@ -1,11 +1,11 @@
-# City Brain Convergence — Civis, 9antra & Trinity
+# City Brain Convergence â€” Civis, 9antra & Trinity
 
-Shared Phase 1 repository for the triplet. Triplet number and team-to-layer assignments are awaiting confirmation; rename the remote to `triplet-XX` before submission.
+Shared Phase 1 repository for the triplet. Trinity owns Twin, Civis owns City Brain, and 9antra owns Guardian. Triplet number is awaiting confirmation; rename the remote to `triplet-XX` before submission.
 
 ## Start here
 
 1. Read `CONTRIBUTING.md` and `docs/team-roster.md`.
-2. Confirm your assigned layer before editing `twin/`, `brain/`, or `guardian/`.
+2. Work in your assigned folder: Trinity → `twin/`, Civis → `brain/`, 9antra → `guardian/`.
 3. Install Python 3.11+ and run `python scripts/check_setup.py` to check the repository setup.
 4. Run `python scenarios/run.py scaffold-smoke` for a clearly labelled fixture demonstration and saved timeline log.
 5. Run a layer's mock smoke check with `python twin/src/main.py` (or `brain` / `guardian`).
@@ -23,7 +23,7 @@ These commands test the scaffold and fixtures. Production services, a live timel
 
 ## Dates from the supplied brief
 
-Submission: 7 November 2026. Jury review: 9–13 November. CSTAM: 14 November, with a 2-minute pitch and 8-minute demo. Verify any organizer updates before submitting.
+Submission: 7 November 2026. Jury review: 9â€“13 November. CSTAM: 14 November, with a 2-minute pitch and 8-minute demo. Verify any organizer updates before submitting.
 
 ## Remote setup
 
