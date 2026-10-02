@@ -1,4 +1,4 @@
-# City Brain Convergence â€” Civis, 9antra & Trinity
+# City Brain Convergence with Civis, 9antra & Trinity
 
 Shared Phase 1 repository for the triplet. Trinity owns Twin, Civis owns City Brain, and 9antra owns Guardian. Triplet number is awaiting confirmation; rename the remote to `triplet-XX` before submission.
 
