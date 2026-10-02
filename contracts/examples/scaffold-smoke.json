@@ -1,0 +1,42 @@
+[
+  {
+    "type": "reading",
+    "layer": "twin",
+    "correlation_id": "fixture-001",
+    "synthetic": true,
+    "payload": {
+      "sensor_id": "demo-traffic-01",
+      "value": 80,
+      "unit": "percent"
+    }
+  },
+  {
+    "type": "trust_verdict",
+    "layer": "guardian",
+    "correlation_id": "fixture-001",
+    "synthetic": true,
+    "payload": {
+      "sensor_id": "demo-traffic-01",
+      "trusted": true
+    }
+  },
+  {
+    "type": "decision",
+    "layer": "brain",
+    "correlation_id": "fixture-001",
+    "synthetic": true,
+    "payload": {
+      "action": "adjust_signal",
+      "reason": "synthetic congestion example"
+    }
+  },
+  {
+    "type": "action_result",
+    "layer": "twin",
+    "correlation_id": "fixture-001",
+    "synthetic": true,
+    "payload": {
+      "status": "simulated"
+    }
+  }
+]

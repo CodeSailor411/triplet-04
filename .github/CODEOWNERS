@@ -1,0 +1,8 @@
+# Pending confirmed team-to-layer mapping and real GitHub handles.
+# Comments are NOT active ownership rules.
+# Put shared owners first; later matching layer rules override them.
+# * @leader-handle
+# /twin/ @twin-member-one @twin-member-two
+# /brain/ @brain-member-one @brain-member-two
+# /guardian/ @guardian-member-one @guardian-member-two
+# Enable required code-owner reviews on main; this file alone does not enforce ownership.
