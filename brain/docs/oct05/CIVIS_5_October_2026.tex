@@ -5,7 +5,7 @@
 % Original layout settings are consolidated here for standalone compilation.
 % Changes: English; text-only cover; compact header; no external assets/biber;
 % tables and JSON listings added. Template notices are in TEMPLATE_PROVENANCE.md.
-\documentclass[a4paper,11pt,english]{article}
+\documentclass[a4paper,10pt,english]{article}
 \usepackage[english]{babel}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -42,16 +42,16 @@
 \usepackage{amsmath}
 \usepackage{enumitem,listings}
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{5pt}
+\setlength{\parskip}{4pt}
 \setlist{nosep,leftmargin=1.5em}
-\renewcommand{\arraystretch}{1.16}
+\renewcommand{\arraystretch}{1.12}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,columns=fullflexible,
   keepspaces=true,showstringspaces=false,frame=single,rulecolor=\color{blue},
   backgroundcolor=\color{gray},aboveskip=8pt,belowskip=8pt}
-\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\code}[1]{{\urlstyle{tt}\nolinkurl{#1}}}
 \newcommand{\field}[2]{\textbf{#1} #2\par}
-\newcommand{\incident}[3]{\subsection*{#1 --- #2}\textbf{Domains:} #3\par}
+\newcommand{\incident}[3]{\subsection*{#1: #2}\textbf{Domains:} #3\par}
 \newcommand{\docstatus}{\textbf{Status:} CIVIS submission for partner review. The task and deadline are agreed; this catalogue has not yet been verified by all three teams.}
 \begin{document}
 \color{grayblack}
@@ -201,6 +201,7 @@ An incident has one \code{incident_id} and a list of affected domains. Separate 
 \clearpage
 \subsection{Negative cases that verify the responses}
 These are verification variants applied to the catalogue, not additional real-world incident types. Detection of spoofing, replay, or a stuck sensor remains Guardian's responsibility.
+
 \begin{tabularx}{\textwidth}{@{}p{.27\textwidth}YY@{}}
 \toprule Variant & Expected CIVIS behavior & Important boundary\\\midrule
 Healthy baseline & No physical action without an incident or explicit operational reason & ``No action'' is observable\\
@@ -294,7 +295,7 @@ Run metadata must declare the seed, simulation start time, positive tick duratio
 
 \clearpage
 \subsection{Missing, corrected, and untrusted are different}
-\begin{tabularx}{\textwidth}{@{}p{.24\textwidth}Y@{}}
+\begin{tabularx}{\textwidth}{@{}p{.28\textwidth}Y@{}}
 \toprule Representation & Meaning and handling\\\midrule
 \code{value: null}, \code{quality: "missing"} & Sensor emitted a no-value observation. Quantity, unit, IDs, tick, and observation time remain present. It is not zero, normal, or evidence that a hazard ended.\\
 \code{quality: "reported"} & Ordinary reported measurement; it says nothing about trust. Guardian may still reject it.\\

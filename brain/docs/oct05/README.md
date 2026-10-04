@@ -1,6 +1,6 @@
-# CIVIS — 5 October 2026 deliverables
+# CIVIS: 5 October 2026 deliverables
 
-The three agreed CIVIS writing tasks are in [CIVIS_5_October_2026.tex](CIVIS_5_October_2026.tex):
+The three agreed CIVIS writing tasks are in [CIVIS_5_October_2026.pdf](CIVIS_5_October_2026.pdf), with editable source in [CIVIS_5_October_2026.tex](CIVIS_5_October_2026.tex):
 
 1. Incident and response catalogue for Traffic, Water, Power, Air Quality, and Emergency, including incidents that span domains.
 2. Selection of three risk-rated actuator types: dispatch (R2), water-valve control (R3), and power-grid switching (R3).
@@ -14,4 +14,4 @@ The LaTeX is standalone and adapts an actual [Overleaf Simple report template](h
 
 No application code, root placeholders, shared log format, Test Book, or other teams' folders are changed by this package.
 
-Compilation status: the built-in compiler returned `Unable to find standard directories for platform` before processing the source. PDF compilation and visual layout are unverified. The editable source is preserved; this is not a completed PDF report.
+Compilation status: successfully generated on 5 October 2026 using the app's bundled Tectonic compiler. The PDF has 18 pages. All rendered pages were checked; no clipping, table overlap, overfull boxes, or em dashes remain. The document's partner-verification status is unchanged.
