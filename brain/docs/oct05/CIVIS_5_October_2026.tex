@@ -1,0 +1,507 @@
+% Adapted from Simple report by Mihdi Caballero (2022), published on Overleaf.
+% https://www.overleaf.com/latex/templates/simple-report/xttmdbmftwqc
+% Source: https://github.com/mihdicaballero/LaTeX-Projects/tree/main/Simple_report
+% Gallery license: CC BY 4.0. Original source notice: MIT License.
+% Original layout settings are consolidated here for standalone compilation.
+% Changes: English; text-only cover; compact header; no external assets/biber;
+% tables and JSON listings added. Template notices are in TEMPLATE_PROVENANCE.md.
+\documentclass[a4paper,11pt,english]{article}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand*\familydefault{\sfdefault}
+\usepackage{geometry}
+\geometry{left=25mm,right=25mm,top=30mm,bottom=25mm,headheight=18pt}
+\usepackage{lastpage}
+\usepackage[table]{xcolor}
+\definecolor{blue}{RGB}{0,89,140}
+\definecolor{gray}{RGB}{242,242,242}
+\definecolor{grayblack}{RGB}{50,50,50}
+\usepackage{fancyhdr}
+\renewcommand{\headrulewidth}{0.5pt}
+\let\oldheadrule\headrule
+\renewcommand{\headrule}{\color{blue}\oldheadrule}
+\renewcommand{\footrulewidth}{0.5pt}
+\let\oldfootrule\footrule
+\renewcommand{\footrule}{\color{blue}\oldfootrule}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\textcolor{grayblack}{TRIPLET 04 / CIVIS}}
+\rhead{\small\textcolor{grayblack}{5 October deliverables}}
+\lfoot{\small\textcolor{grayblack}{CIVIS-OCT05 / v0.1 / 4 October 2026}}
+\rfoot{\small\textcolor{grayblack}{\thepage\ / \pageref*{LastPage}}}
+\usepackage{titlesec}
+\titleformat{\section}{\color{blue}\normalfont\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\color{blue}\normalfont\large\bfseries}{\thesubsection}{1em}{}
+\usepackage{setspace}
+\usepackage{booktabs,array,tabularx,longtable}
+\usepackage{xurl}
+\urlstyle{sf}
+\usepackage[colorlinks,citecolor=blue,urlcolor=blue,linkcolor=blue,linktocpage]{hyperref}
+\usepackage{amsmath}
+\usepackage{enumitem,listings}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{5pt}
+\setlist{nosep,leftmargin=1.5em}
+\renewcommand{\arraystretch}{1.16}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,columns=fullflexible,
+  keepspaces=true,showstringspaces=false,frame=single,rulecolor=\color{blue},
+  backgroundcolor=\color{gray},aboveskip=8pt,belowskip=8pt}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\field}[2]{\textbf{#1} #2\par}
+\newcommand{\incident}[3]{\subsection*{#1 --- #2}\textbf{Domains:} #3\par}
+\newcommand{\docstatus}{\textbf{Status:} CIVIS submission for partner review. The task and deadline are agreed; this catalogue has not yet been verified by all three teams.}
+\begin{document}
+\color{grayblack}
+
+\begin{center}
+{\small\textcolor{blue}{CITY BRAIN CONVERGENCE / PHASE 1}}\\[6pt]
+{\LARGE\bfseries CIVIS: 5 October deliverables}\\[5pt]
+{\large Incident responses, selected actuator risks, and data conventions}\\[8pt]
+Triplet 04: CIVIS (Brain), Trinity (Twin), 9antra (Guardian)\\
+Prepared 4 October 2026 \quad Due 5 October 2026
+\end{center}
+\docstatus
+
+\section{Scope and authority}
+This document completes the written CIVIS work assigned in section 11 of the final decision report: (A) the incident/response catalogue for all-team verification; (B) selection of three actuator types for risk levels; and (C) CIVIS data conventions. It documents behavior and formats; it does not claim implementation or successful integration.
+
+\begin{tabularx}{\textwidth}{@{}p{.24\textwidth}Yp{.20\textwidth}@{}}
+\toprule Deliverable & Content & Acceptance owner\\\midrule
+A: incidents & Eleven supported incident types, evidence, responses, and limits & CIVIS writes; all verify\\
+B: actuator risks & Dispatch, water-valve control, power-grid switching & CIVIS selection; partners implement\\
+C: data conventions & Time, units, locations, IDs, missing data, examples, validation & CIVIS issues; partners check compatibility\\\bottomrule
+\end{tabularx}
+
+\textbf{Domain scope.} Traffic, Water, Power, Air Quality, and Emergency. A shared node may belong to several domains. Land supplies map/topology context; it is not a sensor domain. Telecom and Waste are outside this deliverable. The final report still schedules them for v1.0 on 24 October; excluding them now does not silently change that later agreement.
+
+\textbf{Source precedence.} The user's current five-domain scope governs this package. The final decision report, updated 2 October, governs triplet choices. The official Phase 1 specifications govern challenge requirements. Phase 0 and the first-session summary supply rationale only where later choices do not supersede them. Conflicts are listed explicitly in section~\ref{sec:issues}.
+
+\textbf{Not due from CIVIS on 5 October.} Dali owns the SAC email. Trinity proposes the domain caps and 9antra confirms them. Retry semantics are open for 9 October; the failure table and Test Book have later dates; the Interface Card is proposed for 24 October. No numerical caps, score cut-offs, TTLs, retry waits, or timeouts are invented here.
+
+\clearpage
+\section{Rules inherited from the final decisions}
+The following constrain every incident response in this package (final report, sections 2--7).
+\begin{enumerate}
+\item The Brain detects incidents and requests responses. Only the Twin changes the simulated physical city. The Brain does not bypass the generic \code{actuate} tool.
+\item Every physical action, including an untiered traffic-signal change, needs Guardian approval for that exact action. The Twin enforces the token check. Cached or pushed trust scores are observations, not authorization.
+\item Guardian scores are numeric only. Trusted, Degraded, and Untrusted are derived using Guardian-published cut-offs; Isolated is a containment state, not a score band. A numeric score never turns an isolated device back into a usable one.
+\item Only Guardian requests \code{isolate_sensor}, \code{quarantine_device}, or \code{rollback_reading}. Brain may report suspicious evidence and withhold its own action, but cannot invoke containment.
+\item A repeated \code{idempotency_key} returns the original result rather than re-executing. Distinct actions in a plan use distinct keys; transport retransmission of one unchanged action reuses its key.
+\item The Twin applies domain caps regardless of trust score. The Power exception concerns isolation of all Power sensors; it does not authorize opening every grid switch.
+\item High-risk actions receive a dry-run. Two-step confirmation is a working default: a pending response is not completion. The unresolved pending/retry timing details remain open.
+\item A corrected reading uses the last trusted \emph{reported} value, not the Twin's hidden true state. The Brain never reads simulator ground truth to make an operational decision.
+\item Mock tokens may be unsigned if signing is not ready. Such a demonstration must be labelled non-tamper-proof. Ed25519 is agreed for v1.0 on 24 October.
+\end{enumerate}
+
+\subsection{Incident decision sequence}
+Validate and normalize evidence; exclude unavailable, isolated, or rejected evidence; detect and correlate the incident; select feasible responses; obtain action-specific approval; ask the Twin to execute; and record the result. For a high-risk response, obtain a satisfactory preview before requesting final approval. If the preview changes action parameters, the token must approve those revised parameters.
+
+Every catalogue entry assumes this sequence. A real incident can remain active while an unsafe or unsupported response is withheld. \textbf{No action is sometimes the correct response}; it must have an explicit reason, not disappear from the timeline.
+
+\subsection{Detection parameters}
+Use named, configurable per-device or per-node bounds and persistence windows. The following notation specifies dependencies without pretending the numbers were agreed:
+\begin{itemize}
+\item \code{traffic_high_pct}, \code{water_high_cm}, \code{water_low_cm};
+\item \code{power_high_kw}, \code{power_low_kw}, \code{pm25_high_ug_m3};
+\item \code{detection_window_ticks}, \code{freshness_limit_ticks}, and recovery hysteresis.
+\end{itemize}
+Trinity provides device semantics and baselines; CIVIS sets incident policies against that model. Guardian owns its score cut-offs. Missing configuration keeps the affected automatic response disabled and explains why; there is no fabricated universal threshold.
+
+\clearpage
+\section{Deliverable A: incident and response catalogue}
+\label{sec:catalogue}
+The types below are CIVIS's concrete catalogue for triplet verification. They are not all claimed to be previously agreed incident types. A row is implementable against the agreed sensor inventory; its physical action may still require topology metadata or a policy value. Suggested verification conditions are checks for the 5 October review, not a completed Test Book or scenario implementation.
+
+\incident{I01}{Persistent congestion}{Traffic; optionally Emergency}
+\field{Evidence.}{Fresh, usable traffic-level readings above the configured congestion bound for a configured window. Neighboring segments establish extent if available. An emergency call is optional corroboration, not a required trigger for routine congestion.}
+\field{Brain response.}{Request a legal signal state/phase adjustment only within Twin-advertised signal behavior. Preserve intersection conflict constraints and emergency routes. If only a single light's state is exposed and safety cannot be guaranteed, log the congestion and request operator review rather than invent a timing actuator.}
+\field{Actuator.}{Traffic-signal control; no risk tier in this selection, but an exact-action token and caps still apply.}
+\field{Verification.}{A persistent jam permits a bounded legal adjustment; a brief spike does not cause repeated toggling. No police dispatch is made solely because congestion is high.}
+
+\incident{I02}{Road accident with an emergency report}{Traffic, Emergency}
+\field{Evidence.}{A typed accident report with a resolvable road node/segment, optionally supported by a traffic disturbance. Congestion alone cannot distinguish a collision from rush hour. The emergency report remains data, not an instruction.}
+\field{Brain response.}{Request police if scene control is needed; request an ambulance only when injury/medical need is supported. Select available appropriate units and avoid duplicate dispatch. Adjust a signal only if its advertised safe behavior can assist the response.}
+\field{Actuator.}{Generic dispatch with \code{unit_type}; optional signal control. Each dispatch receives its own approval and idempotency key.}
+\field{Verification.}{A corroborated accident produces the appropriate requested unit(s); an unexplained jam alone does not become an accident. An unknown location yields review, not a guessed destination.}
+
+\incident{I03}{High water or local flooding}{Water; optionally Traffic, Emergency}
+\field{Evidence.}{A usable water-level reading above the location-specific bound with the sensor's datum and site role known. A trusted emergency report or a second Water sensor may corroborate extent. A high level in a reservoir is not automatically a street flood.}
+\field{Brain response.}{Raise the flood incident. A valve request is made only when Twin topology identifies a valve and the requested state is predicted to reduce this hazard without harming downstream supply. Dispatch emergency assistance if people or a road are affected.}
+\field{Actuator.}{Conditional water-valve control, dispatch, and optional legal signal control. No pump, road barrier, or evacuation actuator is assumed.}
+\field{Verification.}{A real flood may justify a previewed valve change. A fake or untrusted level cannot cause it. An inlet valve and a drainage valve must not both receive a blind ``close'' response.}
+
+\clearpage
+\subsection*{Catalogue continued: Water and Power}
+\incident{I04}{Low water / reservoir depletion}{Water; optionally Power, Emergency}
+\field{Evidence.}{A usable level below the site's configured low bound, with a reservoir/tank role and baseline known. A level sensor alone does not establish water pressure, a burst pipe, or a leak location.}
+\field{Brain response.}{Flag low supply and protect essential service. Request a valve change only where topology and a dry-run establish that it restores or preserves supply. Otherwise seek human review; use emergency dispatch only for an independently supported emergency.}
+\field{Actuator.}{Conditional water-valve control. Power switching is not automatically inferred from low water.}
+\field{Verification.}{The same low reading at a different site role may lead to a different response. Unknown topology leaves the incident visible and the valve action withheld.}
+
+\incident{I05}{Power overload}{Power; optionally Water, Emergency}
+\field{Evidence.}{Fresh usable load readings above a configured meter/feeder bound with capacity and topology known. Shared Power/Water nodes identify possible pump-supply consequences. Load alone does not prove overvoltage or a short circuit.}
+\field{Brain response.}{Choose only a topology-supported switch operation that the dry-run predicts will reduce the overload without violating protected-service constraints. If there is no safe candidate, withhold switching and escalate. Dispatch emergency units only if an actual hazard is also reported.}
+\field{Actuator.}{Power-grid switching; dispatch if separately justified. The Brain cannot invoke the Power sensor-isolation exception.}
+\field{Verification.}{A genuine overload can produce a bounded, approved switch request. An untrusted load spike cannot. A candidate that removes an essential pump or emergency service is rejected or needs an explicit agreed exception.}
+
+\incident{I06}{Possible loss of electrical service}{Power; optionally Water, Emergency}
+\field{Evidence.}{A sustained load drop compared with an expected baseline, corroborated by a usable service-loss report or modeled downstream effect. Zero load alone is not proof of an outage; it may mean zero demand, a failed meter, or a deliberately open switch.}
+\field{Brain response.}{Maintain an outage hypothesis until corroborated. Request restoration only when switch state, topology, and preview show a safe, available path. Withhold blind reclosing. If a critical service is affected, show a human-review escalation and use dispatch only for the resulting human emergency.}
+\field{Actuator.}{Conditional power-grid switching. Commanded/actual-state feedback is not assumed available in the early mock.}
+\field{Verification.}{A dead meter must not produce an automatic reclose. Where actual-state feedback is absent, record ``requested'' or ``unverified'', not ``power restored''.}
+
+\clearpage
+\subsection*{Catalogue continued: Air Quality and Emergency}
+\incident{I07}{Air-quality deterioration}{Air Quality; optionally Emergency, Traffic}
+\field{Evidence.}{Usable PM2.5 concentration above the configured bound, with persistence and optional neighboring monitors. PM2.5 is CIVIS's proposed initial observable; Twin must confirm its monitor measures this quantity. No AQI scale is silently inferred.}
+\field{Brain response.}{Raise an air-quality incident and human-review notice. Add dispatch only when an emergency report supports fire, injury, or another actionable emergency. Air pollution alone is not proof of fire. No direct pollution-control actuator exists in the agreed inventory.}
+\field{Actuator.}{None for an isolated air-quality alert; conditional dispatch and signal control for corroborated emergencies. The review notice is a Brain/dashboard output, not a new Twin actuator.}
+\field{Verification.}{A pollution-only case remains visible without fictitious fan/ventilation actuation or unjustified fire dispatch. A fire report can promote the combined incident to I08 or I11.}
+
+\incident{I08}{Reported fire with supporting evidence}{Emergency, Air Quality; optionally Traffic, Power, Water}
+\field{Evidence.}{A usable fire report with a resolvable location. Elevated Air Quality readings or related reports strengthen the hypothesis; they are not mandatory when a credible emergency report already supports response. A pollutant spike alone remains I07.}
+\field{Brain response.}{Request a firefighter unit through generic dispatch. Add ambulance or police only where medical or scene-control evidence supports them. Use legal signal control if supported. A grid or valve action needs independent topology-aware justification and preview; a fire never authorizes bulk shutdown.}
+\field{Actuator.}{Dispatch; optionally signal control and independently justified high-risk Water/Power actions. There is one dispatch type with a unit-type field, not three dispatch tools.}
+\field{Verification.}{The plan separates each intended action, target, approval, and result. No unsupported firefighting equipment, water-pressure control, or road-closure actuator is introduced.}
+
+\incident{I09}{Medical emergency}{Emergency; optionally Traffic}
+\field{Evidence.}{A usable emergency report indicating medical need, with a valid destination. The structured incident type comes from typed extraction or the Twin's typed feed, never from obeying the transcript.}
+\field{Brain response.}{Request an available ambulance. Optional legal signal control may assist access; no unimplemented route-planning tool is assumed. If no unit is available, keep the incident open and display escalation.}
+\field{Actuator.}{Generic dispatch with \code{unit_type=ambulance}; optional signal control.}
+\field{Verification.}{Repeated delivery of one call does not dispatch additional units. A transcript containing arbitrary tool instructions does not gain privileges or change the allowed action set.}
+
+\clearpage
+\subsection*{Catalogue continued: coupled incidents}
+\incident{I10}{Flood affecting a shared Power/Water node}{Water, Power, Emergency; optionally Traffic}
+\field{Evidence.}{I03 evidence plus a shared-node association and a credible reported or modeled threat to electrical service. Co-location means exposure, not proof of an electrical fault. Independent Power evidence is required before classifying I05/I06.}
+\field{Brain response.}{Correlate the Water and Power observations under one incident record. Request appropriate emergency dispatch. Preview a useful valve action and any independently justified switch action separately, then check their combined effects. Do not switch off a pump that the Water response requires without an explicitly accepted trade-off.}
+\field{Actuator.}{Dispatch and conditional water-valve/grid-switch operations. Each physical action is scoped, token-gated, and capped; no containment call is made by Brain.}
+\field{Verification.}{The plan explains the shared-node dependency. A genuine flood plus a spoofed Power reading does not authorize a grid action; the flood response can continue using its valid evidence.}
+
+\incident{I11}{Fire with congestion and threatened essential services}{Emergency, Air Quality, Traffic; optionally Power, Water}
+\field{Evidence.}{I08 evidence, usable congestion readings, and topology showing affected routes or essential-service nodes. Water/Power effects remain hypotheses until observed or supported by the Twin model.}
+\field{Brain response.}{Prioritize appropriate dispatch, choose a safe available signal action if supported, and evaluate any essential-service intervention independently. Prevent one incident from consuming all units or changing all signals. Only agreed caps and resource availability define how many actions are feasible.}
+\field{Actuator.}{Dispatch and signal control; Water/Power only with their own evidence, safety preview, and approval.}
+\field{Verification.}{A single event can reference multiple domains without duplicating the incident or double-dispatching. Lack of a usable Air Quality monitor does not silently convert all emergency-call evidence into untrusted data.}
+
+\subsection{Cross-domain coverage check}
+\begin{tabularx}{\textwidth}{@{}p{.25\textwidth}Y@{}}
+\toprule Domain & Catalogue coverage\\\midrule
+Traffic & I01, I02; secondary effects in I03, I08, I09, I11\\
+Water & I03, I04; shared-node dependency in I10, optional I11\\
+Power & I05, I06; shared-node dependency in I10, optional I11\\
+Air Quality & I07, I08, I11\\
+Emergency & I02, I08, I09, I10, I11; conditional in I03--I07\\\bottomrule
+\end{tabularx}
+An incident has one \code{incident_id} and a list of affected domains. Separate calls about one event may be correlated, but deduplication must not merge distinct emergencies solely because they share a node. The correlation policy is an implementation choice, not a numerical deadline commitment.
+
+\clearpage
+\subsection{Negative cases that verify the responses}
+These are verification variants applied to the catalogue, not additional real-world incident types. Detection of spoofing, replay, or a stuck sensor remains Guardian's responsibility.
+\begin{tabularx}{\textwidth}{@{}p{.27\textwidth}YY@{}}
+\toprule Variant & Expected CIVIS behavior & Important boundary\\\midrule
+Healthy baseline & No physical action without an incident or explicit operational reason & ``No action'' is observable\\
+Untrusted high reading & Exclude it from action evidence; seek alternative usable evidence; escalate when exhausted & Do not isolate the device from Brain\\
+Stuck/replayed/old reading & Do not treat repeated packets as new corroboration & Guardian checks integrity; Brain checks format/freshness\\
+Real event plus bad sensor & Continue justified response using available usable evidence & A bad Power reading need not suppress a credible emergency call\\
+Fake all-clear during a real event & Do not close the incident on rejected or stale recovery evidence & Clear state requires usable recovery evidence\\
+Duplicate action request & Reuse the original key and recognize the original result & No extra unit or repeated physical actuation\\
+Unavailable Guardian & No new physical action without a currently valid action-specific token & No Phase 0 fail-open exception\\
+Unknown location/topology & Preserve incident and explain withheld response & Never guess a valve, grid feeder, or destination\\
+Instruction hidden in call text & Extract facts only; reject unauthorized action fields & Text cannot request isolation, override policy, or approve itself\\
+Actuator result unavailable & Track a request without claiming physical success & Feedback may be absent in early mocks\\\bottomrule
+\end{tabularx}
+
+\subsection{What to verify together by 5 October}
+\begin{itemize}
+\item Trinity confirms that every named sensor quantity, node relation, and actuator parameter is actually representable in the mock inventory.
+\item 9antra confirms that incident evidence can be associated with its score-only verdicts and action tokens, including multi-domain evidence.
+\item All teams confirm conditional responses, unsupported actions, and the absence of Telecom/Waste incidents from this package.
+\item CIVIS records accept/change/reject for each catalogue ID. No blank review field is counted as approval.
+\end{itemize}
+
+\clearpage
+\section{Deliverable B: the three risk-rated actuator types}
+\label{sec:risk}
+\textbf{CIVIS selection:} dispatch, water-valve control, and power-grid switching. This uses the delegated choice of two or three types (final report, sections 2, 4, 5 and 11). The labels retain useful Phase 0 distinctions, but do not import its old score thresholds or token exemptions.
+
+\begin{tabularx}{\textwidth}{@{}p{.25\textwidth}p{.09\textwidth}Y@{}}
+\toprule Actuator type & Class & Rationale and required behavior\\\midrule
+Dispatch & R2 & Allocates scarce police, ambulance, or firefighter capacity. One risk class applies to generic dispatch as a whole; unit type does not create a different class. Require exact-action approval, valid destination, availability, and applicable caps.\\
+Water-valve control & R3 & Can worsen flooding or deprive downstream users. Apply the class to both open and close; reversibility of a state command is not proof of low physical impact. Require role/topology-aware preview and exact-action approval.\\
+Power-grid switching & R3 & Can interrupt essential services or reconnect an unsafe segment. Apply the class to both open and close. Require topology-aware preview, protected-service checks, and exact-action approval.\\\bottomrule
+\end{tabularx}
+
+\subsection{What receives no risk tier}
+Traffic-signal control is not selected for a tier in this package. It still needs an action-specific token, safe permitted state transitions, and applicable caps. This selection does not grant an ungated signal-control path.
+
+Guardian containment receives no risk level, as agreed. Only Guardian can request it; the Twin enforces caller permissions and domain caps. The exception for isolating all Power sensors is not a dispatch, valve, or switch exception. Air Quality has no direct actuator; an alert therefore has no physical actuator tier.
+
+\subsection{High-risk preview and authorization}
+R3 is the high-risk category for mandatory preview in this CIVIS selection. R2 dispatch is still gated and resource-checked; a dispatch preview may be used if supported, but Phase 0's blanket R2 preview requirement is not asserted as a triplet agreement. Any additional mandatory preview rule needs an explicit decision.
+
+The Twin should expose authoritative risk metadata in its action listing. A caller cannot lower the tier by supplying a different label. Exact request contents must be bound by the token, including targets and parameters. \textbf{Unresolved:} score minimum per risk level, token lifetime/clock basis, cap accounting, and canonical token encoding. Their values belong to the pending shared decisions, not this selection.
+
+\subsection{Resource contention}
+Multiple incidents compete for actual available units. Priority is based on supported human/essential-service consequences, not on which sensor sent the largest raw number. Numeric comparisons across percent, centimeters, kW, and particulate concentration are meaningless. Tie-breaking, capacity, and minimum district coverage need explicit policy values before automation; do not promise dispatch-all behavior.
+
+\clearpage
+\section{Deliverable C: CIVIS data conventions}
+\label{sec:data}
+These are the conventions CIVIS is issuing under the final report's delegated data-format choice. New representations below are \textbf{CIVIS choices for partner compatibility review}, not statements that the earlier meetings already fixed each field. Concrete examples are synthetic and contain no real secrets.
+
+\subsection{Encoding and validation boundary}
+Use UTF-8 JSON with lower-case \code{snake_case} keys. Numeric measurements are JSON numbers, not quoted numbers. A Boolean is not accepted as an integer. Reject non-finite values such as NaN/Infinity, duplicate object keys, wrong required types, and missing required keys. Output only documented fields. Ignore unknown extra fields on input; ignoring never gives them meaning, authority, or a place in a signed action.
+
+Unknown values of \emph{required known enums} are errors; they are not the same as unknown extra fields. No silent conversion from \code{"80"} to \code{80}, no implicit centimeters-to-meters conversion, and no replacement of a missing measurement with zero. An adapter may perform an explicitly registered, lossless unit conversion while preserving the original reading; otherwise reject the incompatible quantity/unit pair.
+
+\subsection{Domain names and measurement conventions}
+\begin{tabularx}{\textwidth}{@{}p{.18\textwidth}p{.24\textwidth}p{.15\textwidth}Y@{}}
+\toprule Domain code & Quantity & Unit code & Definition\\\midrule
+\code{traffic} & \code{traffic_level} & \code{percent} & Proposed normalized congestion index on a segment: 0 is model-defined free flow, 100 is model-defined saturation. This is not vehicle count, speed, or measured occupancy. Trinity confirms the mapping.\\
+\code{water} & \code{water_level} & \code{cm} & Reported height relative to a declared local datum. Metadata identifies tank, river, reservoir, or street site role. Do not compare different datums blindly.\\
+\code{power} & \code{power_load} & \code{kW} & Active-power load at the meter's declared node/feeder. Capacity and expected baseline are metadata/configuration, not guessed from the unit.\\
+\code{air_quality} & \code{pm25} & \code{ug/m3} & PM2.5 mass concentration. A PM2.5 choice must be confirmed against Twin's monitor; never equate it with an unspecified AQI index.\\
+\code{emergency} & \code{emergency_call} & None & A typed event object; not a scalar measurement. Store reported location/type and untrusted transcript separately.\\\bottomrule
+\end{tabularx}
+
+Traffic percent has the representational bound $0\leq v\leq100$; this is not an incident threshold. PM2.5 concentration is non-negative. Water bounds follow site/datum metadata; Power sign convention follows the declared meter role. Negative readings are not globally clipped, since clipping can hide faults and valid reference levels.
+
+\clearpage
+\subsection{Clock and event identity}
+\begin{tabularx}{\textwidth}{@{}p{.22\textwidth}Y@{}}
+\toprule Field or concept & CIVIS rule\\\midrule
+\code{timestamp} & Simulated observation time as UTC RFC 3339, emitted as \code{YYYY-MM-DDTHH:MM:SS.sssZ}. Accept an explicit equivalent offset and normalize to UTC; reject timezone-free strings.\\
+\code{tick} & Non-negative integer logical simulation tick. Tick duration is declared in run metadata as positive \code{tick_duration_s}; one tick is not silently assumed to equal one second.\\
+\code{run_id} & Non-empty stable string per simulation execution; a seeded replay gets a new run ID, while the seed and model version identify replay conditions.\\
+\code{reading_id} & Unique reported observation identity within the run; duplicates with identical identity/content are duplicate delivery. A changed payload under one identity is an integrity conflict, never a fresh observation.\\
+\code{device_id}, \code{node_id} & Case-sensitive stable identifiers from Twin discovery. Device identity differs from location. An actuator ID must not be substituted for a sensor ID.\\
+\code{seq} & Non-negative per-device sequence number, increasing for new emissions in a run. A transport retransmission preserves its sequence/reading identity. Gaps are visible; no silent interpolation.\\
+\code{received_at} & Optional wall-clock UTC arrival time, separate from simulated observation time. Used for operational latency, never silently compared with simulated time.\\\bottomrule
+\end{tabularx}
+
+Freshness compares times within the same run and clock domain. Ordering relies on \code{tick}, then device sequence; timestamps do not provide a total order across producers. Token expiry must use an explicitly agreed clock basis, still open. Do not reuse Phase 0's five-second TTL as if it had been adopted.
+
+\subsection{Locations, shared nodes, and metadata}
+Use \code{node_id} as the authoritative routing/topology reference. Optional WGS84 location uses named \code{latitude_deg} and \code{longitude_deg} fields, latitude in $[-90,90]$ and longitude in $[-180,180]$. Avoid ambiguous coordinate arrays; local map coordinates, if used, need a declared coordinate system and units.
+
+\code{domains} is a non-empty list of unique domain codes, allowing shared nodes such as \code{["water","power"]}. The measured \code{quantity} identifies what this reading observes; a shared node does not make one sensor measure two quantities. Neighbor IDs, device role, water datum, feeder capacity, valve purpose/connectivity, and available dispatch unit types belong to discoverable Twin metadata. Without them, topology-dependent actions remain conditional.
+
+Run metadata must declare the seed, simulation start time, positive tick duration, and model/configuration version. A seed alone does not guarantee reproducibility across different model versions, event orderings, or configurations. Reading identity and device sequence are scoped to that declared run.
+
+\clearpage
+\subsection{Missing, corrected, and untrusted are different}
+\begin{tabularx}{\textwidth}{@{}p{.24\textwidth}Y@{}}
+\toprule Representation & Meaning and handling\\\midrule
+\code{value: null}, \code{quality: "missing"} & Sensor emitted a no-value observation. Quantity, unit, IDs, tick, and observation time remain present. It is not zero, normal, or evidence that a hazard ended.\\
+\code{quality: "reported"} & Ordinary reported measurement; it says nothing about trust. Guardian may still reject it.\\
+\code{quality: "corrected"} & New correction record referencing the affected reading and the last trusted reported source. Preserve the raw record and original source time; a fresh correction time does not make the replacement sample fresh.\\
+No packet at all & Absence after an expected interval; do not fabricate a sensor reading. Expected cadence and timeout policies are separate configuration.\\
+Untrusted or isolated & A trust/containment outcome, not missing-data encoding. Exclude from usable action evidence under Guardian policy; retain records for audit.\\\bottomrule
+\end{tabularx}
+Required fields cannot be replaced with null unless their convention explicitly allows it. An optional unknown location may be null, but a dispatch destination cannot be null at actuation time. NaN, empty strings, \code{-999}, and the text \code{"unknown"} are not missing-measurement encodings.
+
+\subsection{Numeric sensor reading: synthetic example}
+\begin{lstlisting}
+{
+  "run_id": "run-demo-001",
+  "reading_id": "reading-water-17",
+  "device_id": "sensor-water-01",
+  "node_id": "node-pump-01",
+  "domains": ["water", "power"],
+  "seq": 17,
+  "tick": 120,
+  "timestamp": "2026-10-05T08:00:00.000Z",
+  "quantity": "water_level",
+  "value": 180.0,
+  "unit": "cm",
+  "quality": "reported"
+}
+\end{lstlisting}
+This is a reported value, not the Twin's truth and not an approved flood. The number 180 is an example, not the triplet's flood threshold. A missing sample keeps the same shape but has \code{value:null} and \code{quality:"missing"}; it needs its own reading identity.
+
+\clearpage
+\subsection{Emergency event and safe text handling}
+\begin{lstlisting}
+{
+  "run_id": "run-demo-001",
+  "reading_id": "call-004",
+  "device_id": "feed-emergency-01",
+  "seq": 4,
+  "tick": 120,
+  "timestamp": "2026-10-05T08:00:00.000Z",
+  "domains": ["emergency"],
+  "event": {
+    "call_id": "call-004",
+    "reported_type": "fire",
+    "reported_node_id": "node-pump-01",
+    "transcript": "Smoke reported near the pump station."
+  }
+}
+\end{lstlisting}
+Allowed initial \code{reported_type} values: \code{fire}, \code{medical}, \code{accident}, \code{flood}, \code{other}, and \code{unknown}. These are reported hypotheses, not confirmed incident classes. Unresolved location is \code{reported_node_id:null}; it triggers clarification/review, never a guessed dispatch.
+
+If Twin only provides text, CIVIS's typed extraction produces this normalized event view and keeps the source text/reading link. The transcript is untrusted content. It cannot set risk levels, targets, authentication, tokens, isolation policy, or tool names. Action selection uses an allow-list and deterministic parameter checks; embedded instructions are not commands.
+
+\subsection{Trust score convention and provenance}
+The proposed canonical score is a finite JSON number in $[0,1]$, higher meaning more trusted. \textbf{9antra must confirm the scale and direction against its existing demo}. If it uses another declared scale, a jointly documented adapter normalizes it; an undeclared scale is rejected. Do not infer a percentage by multiplying or dividing arbitrary values.
+
+The verdict content is a score only. Correlation metadata is separate: it identifies the run, the exact reading(s) or action being assessed, and verdict observation time. Do not add a label, reasons array, or fabricated cut-offs to Guardian's agreed verdict payload. A scalar without an associated subject cannot safely be used for actuation.
+
+For example, the verdict content may be the JSON scalar \code{0.93}, associated with \code{reading-water-17} by the request/stream envelope. This does not mean ``Trusted'' until Guardian's published policy is applied, and it is not an action token.
+
+Brain's internal incident/intent records retain \code{incident_id}, source \code{reading_id} references, proposed action, targets, reasoning, and request/result IDs. This is minimum decision provenance, not a new shared log format: Trinity's log draft is due for joint review on 9 October. A reading-level score and an action-approval token have distinct purposes.
+
+\clearpage
+\subsection{Action parameters under the agreed four fields}
+The final report fixes \code{actuate(action, targets, token, idempotency_key)}, but not the shape of \code{action}. A string-only action name cannot also carry signal state, valve state, or dispatch destination without another agreed mechanism.
+
+\textbf{CIVIS proposed representation for Trinity confirmation:} make \code{action} an object with \code{name} and \code{parameters}, preserving the four outer fields. The action listing supplies the authoritative names, permitted parameters, targets, and risk metadata. Names below are examples for alignment, not claims of implemented MCP tools.
+
+\begin{lstlisting}
+{
+  "action": {
+    "name": "dispatch",
+    "parameters": {
+      "unit_type": "firefighter",
+      "destination_node_id": "node-pump-01"
+    }
+  },
+  "targets": ["dispatch-unit-fire-01"],
+  "token": "MOCK_ONLY_ACTION_APPROVAL_NOT_A_REAL_TOKEN",
+  "idempotency_key": "run-demo-001-action-008"
+}
+\end{lstlisting}
+
+\begin{tabularx}{\textwidth}{@{}p{.28\textwidth}Y@{}}
+\toprule Proposed action name & Required parameter semantics\\\midrule
+\code{dispatch} & \code{unit_type}: police/ambulance/firefighter; \code{destination_node_id}: existing node. Targets are available units of that type, not arbitrary locations. Confirm Twin's target granularity.\\
+\code{set_water_valve} & \code{state}: open/closed. Targets are discovered Water valves; purpose and connectivity are known before planning.\\
+\code{set_grid_switch} & \code{state}: open/closed. Targets are discovered grid switches; topology and protected-service constraints apply.\\
+\code{set_traffic_signal} & \code{state}: a Twin-advertised legal state. Do not assume timing/phase parameters exist; a signal state cannot authorize conflicting movements.\\\bottomrule
+\end{tabularx}
+
+Only the server's advertised action schema can settle these names and types. If Trinity prefers a string action plus a different parameter representation, all three teams must explicitly adopt that replacement before mocks diverge. No fifth outer \code{params} field is silently added here.
+
+\clearpage
+\subsection{Request identity and result semantics}
+\code{targets} is a non-empty list of unique discovered IDs appropriate to the action. Actions spanning incompatible parameter sets are separate intents. Target ordering must have a single agreed rule before signing; an adapter cannot rearrange a signed request after approval.
+
+The \code{token} is the Guardian-issued approval for the exact canonical action, targets, and parameters. Its wire format remains to be confirmed by 9antra and Trinity. The sample is deliberately a non-cryptographic mock placeholder. It is not usable as a live credential.
+
+The \code{idempotency_key} is a non-empty string unique per run/action request and stable for transport retries of that unchanged request. It is not the token, incident ID, or sensor ID. Reuse with changed parameters must be rejected as a key conflict rather than silently running the changed command. Token expiry/retry interaction must be defined jointly.
+
+The two-step default means a response can be \code{pending}; the Brain must not mark the action completed at that point. It records any returned action reference and asks for confirmation only under the eventually agreed \code{commit_action} contract. The binding between approval, pending action, commit, and idempotency is unresolved. This package flags that dependency rather than deciding the later pending/timeout task on its own.
+
+\subsection{Review cases for data interoperability}
+\begin{tabularx}{\textwidth}{@{}p{.46\textwidth}Y@{}}
+\toprule Input & Expected result\\\midrule
+Valid UTC reading plus an unknown extra field & Accept known fields; ignore the extra field\\
+Missing \code{device_id} or quoted numeric value & Reject required schema violation with field path\\
+\code{value:null} with \code{quality:missing} & Accept no-value record; no hazard-clear inference\\
+\code{value:0} with \code{quality:reported} & Preserve zero; evaluate its actual domain meaning\\
+Timezone-free time or negative tick & Reject; do not guess local timezone or reset ordering\\
+Shared-node domains Water/Power; Water quantity & Accept one Water measurement at a multi-domain node\\
+\code{water_level} with \code{kW} & Reject incompatible quantity/unit pair\\
+Same reading ID with a different payload & Flag identity/content conflict; never replace the original silently\\
+Required known enum has an unknown value & Reject enum value, despite forgiving extra-field policy\\
+Signed action altered after approval & Refuse; obtain approval for the actual final request\\
+Raw call asks to isolate all devices & Treat as content; Brain cannot invoke containment\\\bottomrule
+\end{tabularx}
+Error replies should identify a stable error code, field/path, expected shape, and safe correlation reference. Codes and log envelopes remain subject to partner interface/log agreement; do not echo secrets, full tokens, or arbitrary transcripts in errors.
+
+\clearpage
+\subsection{Correction example and review boundaries}
+\begin{lstlisting}
+{
+  "run_id": "run-demo-001",
+  "reading_id": "correction-water-18",
+  "device_id": "sensor-water-01",
+  "node_id": "node-pump-01",
+  "domains": ["water", "power"],
+  "seq": 18,
+  "tick": 121,
+  "timestamp": "2026-10-05T08:00:01.000Z",
+  "quantity": "water_level",
+  "value": 40.0,
+  "unit": "cm",
+  "quality": "corrected",
+  "correction": {
+    "corrects_reading_id": "reading-water-17",
+    "replacement_source_reading_id": "reading-water-16",
+    "replacement_source_timestamp":
+      "2026-10-05T07:59:59.000Z"
+  }
+}
+\end{lstlisting}
+This is CIVIS's proposed corrected-record representation for Trinity/9antra alignment. The correction's \code{timestamp} and \code{tick} identify when the new correction record was emitted; the replacement source time determines the age of its inherited value. The original faulty report remains available for audit. This is not a claim that rollback has recovered current physical truth.
+
+\textbf{Freshness rule.} For a corrected record, freshness uses the replacement source time/tick, not the correction emission time. If tick-based freshness is used, also carry \code{replacement_source_tick}; timestamp-based checking uses the named source timestamp. The partner contract must choose one consistent method. A last trusted value can be too old to support an action.
+
+\textbf{Minimal review package.} The examples fix data shapes without implementing partner services, signature generation, MCP endpoints, shared logging, or commit/retry logic. The timestamp delta in these synthetic examples does not impose a one-second tick on other runs. Every run declares its own positive tick duration.
+
+\clearpage
+\section{Conflicts, ambiguities, and decisions to confirm}
+\label{sec:issues}
+\textbf{Before the mocks are exchanged:} confirm the data/action representation and sensor semantics. The remaining dated items retain their agreed owners and deadlines. None of the concerns below is silently promoted to a completed triplet decision.
+
+\begin{longtable}{@{}p{.08\textwidth}p{.36\textwidth}p{.49\textwidth}@{}}
+\toprule ID & Finding & Resolution / owner\\\midrule\endhead
+Q01 & Incident verification is an agreed task, not an already agreed list. & All three teams verify I01--I11 by 5 Oct. Record explicit responses; CIVIS revises the catalogue.\\
+Q02 & Phase 0 allowed ungated/stale-token fallbacks; final decisions require exact-action approval. & Use final report: no valid approval means no new physical action. CIVIS must not reuse Phase 0 R1 exemptions or expired R2 approvals.\\
+Q03 & Telecom/Waste were optional in session 1, committed for 24 Oct in the final report, and excluded by the user now. & Exclude from this 5 Oct package. All teams must reconfirm any proposed removal from 24 Oct scope; do not silently rewrite the calendar.\\
+Q04 & A water-level reading does not establish valve purpose, pressure, or leak position. & Trinity supplies site role, datum, valve direction/connectivity and preview semantics. Until then valve responses remain conditional.\\
+Q05 & A Power load meter cannot prove high-voltage fluctuations. & Name I05 overload and I06 possible service loss. Trinity/9antra clarify what evidence triggers the Power isolation exception; do not invent a voltage sensor.\\
+Q06 & Air-quality monitor quantity and traffic-level semantics are unspecified. & Trinity confirms PM2.5/\code{ug/m3} and the 0--100 traffic index or supplies explicitly declared alternatives. No unnamed AQI or road-speed conversion.\\
+Q07 & Score-only verdict has no agreed scale/direction/correlation contract. & 9antra confirms the proposed 0--1 scale and published cut-offs. Associate the score with its exact subject; do not infer labels or add Phase 0 reason arrays.\\
+Q08 & Four \code{actuate} fields leave action parameters underspecified. & Trinity confirms the structured-action representation or an explicit replacement. All teams use one format before writing incompatible mocks.\\
+Q09 & ``Pending''/commit is only a working default in the connection table, although two-step safety is described as decided elsewhere. & Trinity and CIVIS reconcile status and define action reference, token recheck, commit idempotency, expiry, and result types before mocks. Numeric waits remain open.\\
+Q10 & Risk selection does not define numerical trust minima or caps. & CIVIS selects R2 dispatch and R3 Water/Power. 9antra/Trinity/all teams settle numerical gating separately. Domain cap table remains Trinity's proposal and 9antra's confirmation.\\
+Q11 & Three retries have no agreed meaning or duration. & Retain final policy of alternative usable evidence and eventual human review. CIVIS defines retry semantics by 9 Oct; do not count duplicate packets as retries/new evidence.\\
+Q12 & Raw source time, simulation time, arrival time, and token expiry can be confused. & CIVIS separates timestamp/tick from received-at. All teams agree token clock basis and lifetime; no guessed five-second TTL.\\
+Q13 & Linked cross-domain drift is a working default and off initially; Guardian cross-domain checks are optional. & Do not depend on automatic linked drift or Guardian cross-domain detection to make I10/I11 valid. Use explicit seeded event effects and available observations.\\
+Q14 & Actuator-failure detection is optional early, yet a request is not proof of effect. & Label unverified outcomes honestly. Trinity exposes actual/commanded feedback if implemented; Brain never reports success solely from a pending/accepted reply.\\
+Q15 & Hidden scenario tool may not replace required scenario scripts without organizer confirmation. & Dali's SAC question remains his task. Keep \code{scenarios/}; add thin trigger scripts later unless organizers explicitly permit omission.\\
+Q16 & Phase 0 described MCP as mandatory and supplied earlier dates/KPIs. & Phase 1 makes protocols free. MCP 2026-07-28 is a triplet choice, not an organizer mandate. Use the final calendar; do not promise old performance/false-alarm targets.\\
+Q17 & Phase 0 pinned tools; final report explicitly defers tool pinning. & Retain deterministic validation and content separation, but list pinning as a known limitation. Do not claim it is built.\\
+Q18 & One scalar can be trusted while a derived action remains unsafe. & Distinguish reading trust, operational justification, preview, cap checks, and action-token approval. No single score substitutes for all five.\\\bottomrule
+\end{longtable}
+
+\clearpage
+\section{Handoff and acceptance record}
+\subsection{CIVIS work completed in this package}
+\begin{itemize}
+\item A concrete five-domain incident catalogue with conditional physical responses, multi-domain cases, and negative verification variants.
+\item A choice of exactly three risk-rated actuator types with no risk tier assigned to containment or every other action.
+\item Written conventions for units, UTC/simulation time, identifiers, shared nodes, coordinates, missing/corrected data, score scale proposal, and typed examples.
+\item A review register that identifies superseded Phase 0 rules and unresolved partner-owned interfaces.
+\end{itemize}
+
+\subsection{Partner sign-off (not yet received)}
+\begin{tabularx}{\textwidth}{@{}p{.20\textwidth}Yp{.21\textwidth}@{}}
+\toprule Reviewer & Review focus & Current status\\\midrule
+CIVIS & Catalogue, policy distinctions, risk selection, formatting & Written for review\\
+Trinity & Inventory, units/metadata, action schema, preview feasibility & Pending verification\\
+9antra & Score semantics, trust association, exact-action approval & Pending verification\\
+All teams & Final incident list and changes to common interfaces & Pending verification\\\bottomrule
+\end{tabularx}
+
+Record review date, reviewer, accepted IDs/conventions, requested changes, and the resulting document revision. Publishing this package does not turn pending partner reviews into a unanimous agreement.
+
+\subsection{Source traceability}
+\begin{tabularx}{\textwidth}{@{}p{.25\textwidth}Y@{}}
+\toprule Source & Used for\\\midrule
+Final decision report & Sections 2--7: architecture, gates, inventory, roles; sections 9 and 11: dates and assigned tasks. Updated 2 October 2026. Primary triplet authority.\\
+Phase 0 proposal & Pages 2--5: risk rationale and typed Brain planning; page 7: explicit units/UTC/ticks/IDs/null conventions; page 8: examples used only as historical reference. Superseded gates, tools, states, and numerical constants are not imported.\\
+Session 1 summary & Historical context only. Shared-secret auth, optional signing, optional Telecom/Waste, and absence of trust labels were superseded by the final report.\\
+Phase 1 specifications & Pages 1--3: R1--R4, required repository/log/timeline evidence, layer roles, and Test Book coverage. This package is a checkpoint artifact, not the final 20-page submission report.\\\bottomrule
+\end{tabularx}
+
+\subsection{Template and standards}
+Layout adapted from Mihd\'i Caballero's \href{https://www.overleaf.com/latex/templates/simple-report/xttmdbmftwqc}{Simple report}, using its article layout, sans-serif font, blue headings/rules, and header/footer approach. Consolidated for standalone compilation; original template attribution and license notices are retained in \code{TEMPLATE_PROVENANCE.md}. Language, title/header content, spacing, and technical tables/listings were adapted.
+
+JSON syntax follows \href{https://www.rfc-editor.org/rfc/rfc8259}{RFC 8259}; timestamp representation follows the UTC profile of \href{https://www.rfc-editor.org/rfc/rfc3339}{RFC 3339}. Project-specific fields and physical units are CIVIS conventions, not claims that those RFCs define the city model.
+\end{document}
