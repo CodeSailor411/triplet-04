@@ -10,7 +10,7 @@ This package adapts **Simple report**, authored by **Mihdí Caballero**, publish
 
 The actual `Simple_report.tex`, `settings/packages.tex`, `settings/initial.tex`, and `sections/00_cover_page.tex` sources were inspected. The report retains the template's article layout, Latin Modern sans-serif font, blue heading/rule definitions, colored header/footer rules, and table package approach. The preamble is consolidated into the standalone deliverable.
 
-Changes: English language; text-only title instead of the author's external cover/logo images; compact header height; 10-point text and adjusted margins; technical tables and JSON listings; inline source references instead of external bibliography files. The content is CIVIS's checkpoint document, not the template's sample text. This attribution does not imply endorsement by the template author.
+Changes: English language; text-only title instead of the author's external cover/logo images; compact header height; 10-point text and compact margins; concise technical tables and bullets; no external bibliography files. The content is CIVIS's checkpoint document, not the template's sample text. This attribution does not imply endorsement by the template author.
 
 Original source notice, preserved:
 
