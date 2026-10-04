@@ -1,1 +1,7 @@
-* @CodeSailor411 @The1Dali @houssembensaid5
+# Default owner for shared root files and folders.
+* @CodeSailor411
+
+# Layer ownership overrides the default for each team folder.
+/brain/ @CodeSailor411
+/twin/ @The1Dali
+/guardian/ @houssembensaid5
