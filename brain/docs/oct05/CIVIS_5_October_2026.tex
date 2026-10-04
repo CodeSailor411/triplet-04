@@ -15,7 +15,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{\small TRIPLET 04 / CIVIS}
-\rhead{\small 5 October 2026}
+\rhead{\small 4 October 2026}
 \rfoot{\small\thepage}
 \renewcommand{\headrulewidth}{0.5pt}
 \let\oldheadrule\headrule
@@ -34,7 +34,7 @@
 \begin{document}
 \color{grayblack}
 \begin{center}
-{\Large\bfseries CIVIS: three deliverables for 5 October}\\[3pt]
+{\Large\bfseries CIVIS: incidents, risk levels and data conventions}\\[3pt]
 {\small Traffic, Water, Power, Air Quality, Emergency; Telecom excluded.}
 \end{center}
 \textbf{Basis:} final triplet decisions, with Phase 0 as reference. Checked against the agreed inventory; Trinity and 9antra verification is pending.
@@ -45,31 +45,32 @@
 Persistent congestion & Traffic & Request a permitted safe signal adjustment.\\[3pt]
 Reported road accident & Traffic, Emergency & Dispatch police for scene control; ambulance if injury is reported. Safe signal assistance if supported.\\[3pt]
 Flood / high water & Water, Traffic, Emergency; Power if affected & Request a topology-supported valve change; dispatch assistance if people are affected. Grid switching only for a confirmed Power hazard.\\[3pt]
-Low water supply & Water & Request a valve change only if its preview preserves/restores supply; otherwise alert for review.\\[3pt]
-Power overload / confirmed service loss & Power; Water and Emergency if affected & Preview a suitable grid-switch operation, protecting pumps and essential services; otherwise request human review.\\[3pt]
-Sustained air pollution & Air Quality; Emergency if corroborated & Alert for review. No direct Air Quality actuator; dispatch only for a separately supported emergency.\\[3pt]
+Low water supply & Water & Preview a valve change that preserves supply; otherwise retain state and log the incident.\\[3pt]
+Power overload / confirmed service loss & Power; Water and Emergency if affected & Preview safe grid switching, protecting pumps and essential services; otherwise block changes and log.\\[3pt]
+Sustained air pollution & Air Quality; Emergency if corroborated & Raise an alert. No direct Air Quality actuator; dispatch only for a separately supported emergency.\\[3pt]
 Reported fire & Emergency, Air Quality, Traffic & Dispatch firefighters; add ambulance/police only when justified. Safe signal assistance if supported.\\[3pt]
 Medical emergency & Emergency, Traffic & Dispatch an available ambulance to the reported location; safe signal assistance if supported.\\\bottomrule
 \end{tabularx}
 
-\textbf{Common rule:} usable evidence and a valid exact-action Guardian token are required for physical responses; Twin executes and enforces caps. High-risk actions need a preview. Guardian alone requests containment. Untrusted evidence cannot justify an action; seek usable alternatives or human review.
+\textbf{Common rule:} physical actions require usable evidence and an exact-action Guardian token. Twin executes and enforces caps; high-risk actions need a preview. Guardian alone requests containment. If usable alternatives are unavailable, withhold actuation and log the incident.
 
 \section*{2. Three actuator types selected for risk levels}
+\textbf{CIVIS Phase 0 scale:} R0 read-only; R1 reversible/low impact; R2 scarce-resource allocation; R3 safety-critical.
 \begin{tabularx}{\textwidth}{@{}p{.28\textwidth}p{.08\textwidth}Y@{}}
 \toprule\textbf{Actuator} & \textbf{Risk} & \textbf{Brief justification}\\\midrule
 Generic dispatch & R2 & Allocates scarce police, ambulance, or firefighter units.\\
 Water-valve control & R3 & Can worsen flooding or interrupt downstream supply.\\
 Power-grid switching & R3 & Can cut essential services or reconnect an unsafe segment.\\\bottomrule
 \end{tabularx}
-R3 requires a preview. Signal control has no tier here but remains token-gated. Containment has no risk tier, as agreed; its caps still apply.
+\textbf{Source distinction:} Phase 0: signals R1; containment R2--R3 (isolation R3). Final report: tiers on 2--3 selected actuator types; isolation uses caps instead. All physical actions remain token-gated.
 
 \section*{3. CIVIS data conventions}
 \begin{itemize}
 \item \textbf{Format/identity:} UTF-8 JSON, \code{snake_case}; stable \code{run_id}, \code{reading_id}, \code{device_id}, \code{node_id}. \code{domains} allows multiple domains. Ignore extra fields; reject missing/wrong required fields.
-\item \textbf{Time/location:} simulated UTC RFC 3339 timestamps, e.g. \code{2026-10-05T08:00:00.000Z}, plus integer \code{tick}; declare tick duration per run. Use \code{node_id}; optional WGS84 \code{latitude_deg}/\code{longitude_deg}.
+\item \textbf{Time/location:} simulated UTC RFC 3339 timestamps, e.g. \code{2026-10-04T08:00:00.000Z}, plus integer \code{tick}; declare tick duration per run. Use \code{node_id}; optional WGS84 \code{latitude_deg}/\code{longitude_deg}.
 \item \textbf{Values/units:} finite numbers with explicit quantity/unit: Traffic congestion index 0--100 \code{percent}; Water \code{cm} with local datum; Power load \code{kW}; Air PM2.5 \code{ug/m3}. Emergency events carry reported type, location, and transcript treated as data, never instructions.
 \item \textbf{Missing/trust:} missing value is JSON \code{null}, never zero. Keep original readings and references for corrections. Guardian score stays numeric, with Guardian-declared scale/cut-offs; a score is not an action token.
 \item \textbf{Actions:} \code{action}, \code{targets}, \code{token}, \code{idempotency_key}. Proposed \code{action} contains name/parameters; retain source reading references. Reuse the key only for retries of the same unchanged request.
 \end{itemize}
-\textbf{Confirm before mocks:} Trinity's traffic-index/PM2.5 mapping, valve/switch topology, and action-parameter shape; 9antra's score scale. Water level alone does not prove a leak; low load alone does not prove an outage. Thresholds, token lifetimes, and numeric caps remain to be agreed.
+\textbf{Confirm:} traffic/PM2.5 mapping, topology, action parameters, and score scale. Water level alone does not prove a leak; low load alone does not prove an outage. Thresholds, token lifetimes, and numeric caps remain unset.
 \end{document}
