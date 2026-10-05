@@ -54,15 +54,15 @@ Medical emergency & Emergency, Traffic & Dispatch an available ambulance to the 
 
 \textbf{Common rule:} physical actions require usable evidence and an exact-action Guardian token. Twin executes and enforces caps; high-risk actions need a preview. Guardian alone requests containment. If usable alternatives are unavailable, withhold actuation and log the incident.
 
-\section*{2. Three actuator types selected for risk levels}
+\section*{2. Three actuator types with distinct risk levels}
 \textbf{CIVIS Phase 0 scale:} R0 read-only; R1 reversible/low impact; R2 scarce-resource allocation; R3 safety-critical.
 \begin{tabularx}{\textwidth}{@{}p{.28\textwidth}p{.08\textwidth}Y@{}}
 \toprule\textbf{Actuator} & \textbf{Risk} & \textbf{Brief justification}\\\midrule
+Traffic-signal control & R1 & Bounded, reversible changes within Twin's safe signal states.\\
 Generic dispatch & R2 & Allocates scarce police, ambulance, or firefighter units.\\
-Water-valve control & R3 & Can worsen flooding or interrupt downstream supply.\\
-Power-grid switching & R3 & Can cut essential services or reconnect an unsafe segment.\\\bottomrule
+Water-valve control & R3 & Can worsen flooding or interrupt downstream supply.\\\bottomrule
 \end{tabularx}
-\textbf{Source distinction:} Phase 0: signals R1; containment R2--R3 (isolation R3). Final report: tiers on 2--3 selected actuator types; isolation uses caps instead. All physical actions remain token-gated.
+\textbf{Scope:} grid switching is outside this three-type list but still needs preview, token, and caps. Phase 0 rates containment R2--R3 (isolation R3); the final report exempts isolation from tiers and applies caps instead.
 
 \section*{3. CIVIS data conventions}
 \begin{itemize}
