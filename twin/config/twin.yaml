@@ -1,0 +1,147 @@
+# Twin configuration. Non-secret settings only. Secrets live in .env (see .env.example).
+# Everything a partner or a teammate might want to change is here, never hard-coded.
+
+server:
+  host: 127.0.0.1
+  port: 8000
+
+# Seed for the whole simulation. Same seed = same city, same run.
+# Treat the demo seed as a real setting: commit the one you show the jury.
+# Override without editing this file: TWIN_SEED=7
+seed: 42
+
+sse:
+  heartbeat_seconds: 15       # how often /events sends a heartbeat when nothing else happens
+
+# Where the other layers live. The Twin itself does not call them yet.
+# Used later by the Twin's mocks and dashboard (R1: point at another partner by config).
+partners:
+  city_brain:
+    url: http://127.0.0.1:8001/mcp
+  guardian:
+    url: http://127.0.0.1:8002/mcp
+
+# ---------------------------------------------------------------------------
+# What exists in the city. Units are published to partners. Normal ranges are NOT here:
+# the Twin publishes no datasheet, the sensor model (6 Oct) keeps them private.
+# ---------------------------------------------------------------------------
+sensors:
+  vehicle_count:    { unit: "cars/min" }
+  avg_speed:        { unit: "km/h" }
+  water_level:      { unit: "cm" }
+  flow_rate:        { unit: "L/s" }
+  load_kw:          { unit: "kW" }
+  voltage_v:        { unit: "V" }
+  pm25:             { unit: "ug/m3" }
+  co_ppm:           { unit: "ppm" }
+  temperature_c:    { unit: "C" }
+  emergency_calls:  { unit: "calls/min" }   # split by type: accident / fire / flood / medical
+  units_free:       { unit: "units" }       # per unit type: police / ambulance / fire
+
+# Actuator actions. They are called through the single `actuate` tool (from 7 Oct).
+# `risk` stays null until CIVIS picks the 2-3 high-risk actions.
+actuators:
+  set_signal_plan:     { domain: traffic,   values: [normal, favor_main_road, all_red], risk: null }
+  set_valve_position:  { domain: water,     values: "0-100 %",                          risk: null }
+  set_grid_switch:     { domain: power,     values: [closed, open],                     risk: null }
+  dispatch:            { domain: emergency, values: "unit_type + target + units",       risk: null }
+
+# ---------------------------------------------------------------------------
+# Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced from 7 Oct, only computed here for now.
+# Counts are per domain. A shared node counts in EACH domain it belongs to, and a request fails if it breaks
+# the cap of any one of them. Formula: floor(nodes x pct), minimum 2, maximum = domain size.
+# ---------------------------------------------------------------------------
+caps:
+  action_pct: 30                 # max share of a domain's nodes one request may change
+  isolation_pct: 50              # max share of a domain's nodes isolated or quarantined at once
+  min_nodes: 2                   # never below this, rounded down otherwise
+  isolation_pct_overrides:
+    power: 100                   # THE NAMED EXCEPTION from meeting 2 ("no cap" for Power): after a big threat or
+                                 # a high-voltage fluctuation Guardian may isolate every power sensor.
+                                 # It cuts data only and never opens a grid switch. 100% = all nodes.
+  # Isolate + quarantine share one pool. Rollback has its own pool with the same sizes
+  # (decided 4 Oct, 9antra has NOT confirmed yet). `release_device` (from 8 Oct) frees a slot in the pool.
+  # CAP_EXCEEDED rejects the whole request and reports: domain, cap, in_use, requested, remaining.
+
+# ---------------------------------------------------------------------------
+# Topology generator
+# ---------------------------------------------------------------------------
+generator:
+  canvas: { width: 1920, height: 1080 }   # same size as the Grok base-map job
+  node_size_px: 24                        # smallest recommended node size (node-style-spec)
+  min_spacing_factor: 1.5                 # node centres at least 1.5 x node width apart
+  canvas_margin_px: 80
+  road_gap_px: 60
+
+  zone_grid: { cols: 3, rows: 2 }
+  zones:                                  # filled left to right, top to bottom
+    - port                                # top row:    port, centre, north_hills
+    - centre
+    - north_hills
+    - industrial                          # bottom row: industrial, old_town, university
+    - old_town
+    - university
+
+  # Order used when a shared node hands out its sides (node-style-spec section 4).
+  domain_order: [traffic, water, power, emergency, air_quality]
+
+  # count = total nodes in the domain INCLUDING shared ones.
+  # 11 + 9 + 9 + 8 + 7 = 44 memberships, minus 6 shared nodes counted twice = 38 nodes.
+  domains:
+    traffic:
+      prefix: TRF
+      count: 11
+      sensors: [vehicle_count, avg_speed]
+      actuator: set_signal_plan
+      actuator_nodes: 6            # my starting guess, change freely
+    water:
+      prefix: WAT
+      count: 9
+      sensors: [water_level, flow_rate]
+      actuator: set_valve_position
+      actuator_nodes: 4            # my starting guess
+    power:
+      prefix: PWR
+      count: 9
+      sensors: [load_kw, voltage_v]
+      actuator: set_grid_switch
+      actuator_nodes: 4            # my starting guess
+    air_quality:
+      prefix: AIR
+      count: 8
+      sensors: [pm25, co_ppm, temperature_c]
+      actuator: null
+      actuator_nodes: 0
+    emergency:
+      prefix: EMG
+      count: 7                     # 6 call places + 1 dispatch center
+      sensors: []                  # set per role below
+      actuator: dispatch
+      actuator_role: dispatch_center
+
+  emergency_roles:
+    call_place:      { sensors: [emergency_calls] }
+    dispatch_center: { sensors: [units_free], zone: centre }
+
+  # One node per call place, in the zone of the same name. `also_in` makes it a shared node.
+  call_places:
+    - { label: port,        zone: port,        also_in: [water] }     # flood-prone port
+    - { label: old_town,    zone: old_town }
+    - { label: hospital,    zone: centre,      also_in: [power] }     # hospital needs power
+    - { label: industrial,  zone: industrial }
+    - { label: university,  zone: university }
+    - { label: north_hills, zone: north_hills }
+
+  # Other shared nodes (not involving Emergency). Each belongs to exactly two domains.
+  shared:
+    - { label: pumping_station_a, domains: [water, power],        zone: industrial }
+    - { label: pumping_station_b, domains: [water, power],        zone: north_hills }
+    - { label: junction_air_a,    domains: [traffic, air_quality], zone: centre }
+    - { label: junction_air_b,    domains: [traffic, air_quality], zone: old_town }
+
+  # Neighbour lists: used by the Brain to retry with other sensors, and to cross-check calls.
+  neighbours:
+    same_domain: 2
+    cross:
+      - { from_domain: emergency, from_role: call_place, to_domain: air_quality, count: 1 }
+      - { from_domain: emergency, from_role: call_place, to_domain: traffic,     count: 1 }

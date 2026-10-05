@@ -1,0 +1,20 @@
+[project]
+name = "twin-layer"
+version = "0.1.0"
+description = "Twin layer (simulated city) for TSYP14 City Brain Convergence, Triplet 04"
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

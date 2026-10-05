@@ -1,0 +1,10 @@
+# Runtime dependencies, exact versions (see PROJECT_STATE.md section 3b).
+# Change a version here and in that table, or in neither.
+mcp==2.3.0
+fastapi==0.142.2
+uvicorn==0.54.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+sse-starlette==3.5.0
+PyYAML==6.0.3
+cryptography==50.0.2   # Ed25519 token check, used from 18 Oct
