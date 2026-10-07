@@ -1,0 +1,9 @@
+{
+  "integration_branch": "codex/civis-elyes",
+  "branches": {
+    "codex/civis-yassine": ["brain/src/civis_brain/inputs/", "brain/tests/inputs/", "brain/config/detection-mock.json", "brain/docs/mock-team/progress/yassine.md"],
+    "codex/civis-meriem": ["brain/src/civis_brain/planning/", "brain/tests/planning/", "brain/docs/mock-team/progress/meriem.md"],
+    "codex/civis-maram": ["brain/mocks/", "brain/tests/workflows/", "brain/docs/mock-team/progress/maram.md"],
+    "codex/civis-elyes": ["brain/", ".github/workflows/civis-mock.yml", "README.md"]
+  }
+}

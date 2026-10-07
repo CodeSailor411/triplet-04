@@ -1,0 +1,10 @@
+{
+  "status": "illustrative fixture thresholds, not triplet-approved safety thresholds",
+  "persistence_ticks": 2,
+  "congestion_index_min": 80.0,
+  "water_high_cm": 100.0,
+  "water_low_cm": 10.0,
+  "pm25_high_ug_m3": 80.0,
+  "emergency_calls_min": 1.0,
+  "power_load_high_kw": null
+}

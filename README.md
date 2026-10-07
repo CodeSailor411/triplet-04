@@ -13,7 +13,7 @@ Shared Phase 1 repository for **Civis**, **9antra**, and **Trinity**.
 ## Repository structure
 
 ```text
-city-brain-convergence/
+triplet-04/
 ├── README.md
 ├── INTEGRATION.md
 ├── TESTBOOK.md
@@ -53,14 +53,14 @@ Each layer's `mocks/` folder is for stand-ins of the other two layers. Root file
 ## Get the repository
 
 ```sh
-git clone https://github.com/CodeSailor411/city-brain-convergence.git
-cd city-brain-convergence
+git clone https://github.com/CodeSailor411/triplet-04.git
+cd triplet-04
 ```
 
-Each team works inside its assigned layer folder and coordinates shared changes with the triplet. Team member usernames and CODEOWNERS assignments will be added when confirmed.
+Each team works inside its assigned layer folder and coordinates shared changes with the triplet. CODEOWNERS assigns Brain/shared files to CodeSailor411, Twin to The1Dali and Guardian to houssembensaid5.
 
 ## Current status
 
-This repository contains the initial folder structure. Apart from this README, files are empty placeholders, including the report, pitch, interface cards, and Compose file. Empty folders contain `.gitkeep` so Git tracks them.
+The shared layout is scaffolded. CIVIS's primary mock environment, fixed interfaces and four-person work plan are in [brain/](brain/README.md). Its business functions remain assigned to the team. Twin development currently exists on Trinity's separate development branches; do not assume unmerged branch features are already on the layer branch.
 
-Application startup instructions will be added once the layers are implemented. The repository will be named `triplet-XX` once the triplet number is confirmed.
+Reports, pitch, shared integration/Test Book and Compose placeholders remain for the triplet's later work. The repository is named `triplet-04`.

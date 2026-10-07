@@ -1,0 +1,59 @@
+name: CIVIS mock checks
+
+on:
+  pull_request:
+    branches: [codex/civis-elyes, brain]
+  push:
+    branches: [codex/civis-elyes, codex/civis-yassine, codex/civis-meriem, codex/civis-maram]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: civis-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ownership:
+    name: CIVIS file ownership
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Check member file boundaries
+        if: github.event_name == 'pull_request' && github.base_ref == 'codex/civis-elyes'
+        env:
+          WORK_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git show "$BASE_SHA:brain/scripts/check_ownership.py" > /tmp/civis-ownership.py
+          python /tmp/civis-ownership.py --branch "$WORK_BRANCH" --base-branch "$BASE_BRANCH" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+      - name: Release branch check
+        if: github.event_name == 'pull_request' && github.base_ref == 'brain'
+        env:
+          WORK_BRANCH: ${{ github.head_ref }}
+        run: |
+          test "$WORK_BRANCH" = codex/civis-elyes || { echo 'Use the CIVIS integration branch for the release PR'; exit 1; }
+  bootstrap:
+    name: CIVIS bootstrap
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: brain
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: brain/requirements-lock.txt
+      - run: python -m pip install -r requirements-lock.txt
+      - run: python -m pip install --no-deps -e .
+      - run: python -m ruff check src mocks tests scripts
+      - run: python -m pytest -q
