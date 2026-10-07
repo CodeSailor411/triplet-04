@@ -17,6 +17,7 @@ from .generator import fingerprint, generate
 from .mcp_server import build_mcp
 from .actions import ActionBook
 from .containment import ContainmentBook
+from .scenarios import ScenarioBook
 from .settings import Settings, load_settings
 from .sim import Simulation
 from .util import now_iso
@@ -42,7 +43,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     book = ActionBook(topology, cfg, sim)
     containment = ContainmentBook(topology, cfg, sim)
     sim.overlay, book.containment = containment, containment
-    mcp = build_mcp(topology, keyring, sim, book, containment)
+    scenarios = ScenarioBook(sim)
+    sim.faults = scenarios
+    mcp = build_mcp(topology, keyring, sim, book, containment, scenarios)
     if cfg.tokens.mode == "unsigned":
         log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
     mcp_app = mcp.streamable_http_app()                # the MCP endpoint lives at /mcp inside this app
@@ -62,6 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Twin", version=__version__, lifespan=lifespan)
     app.state.settings, app.state.topology, app.state.layout, app.state.keyring = settings, topology, layout, keyring
     app.state.sim, app.state.book, app.state.containment = sim, book, containment
+    app.state.scenarios = scenarios
 
     @app.get("/health")
     async def health():

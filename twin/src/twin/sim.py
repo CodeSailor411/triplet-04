@@ -40,6 +40,7 @@ class Simulation:
         self.running = False
         self._changed = asyncio.Condition()
         self.overlay = None          # containment (set by the app): says which devices are cut off from the feed
+        self.faults = None           # scenario book (set by the app): says which readings are faked, stuck or replayed
 
     # ------------------------------------------------------------ identity of this run
     @property
@@ -57,14 +58,28 @@ class Simulation:
             if self.overlay is not None and self.overlay.is_hidden(d.device_id, tick):
                 continue                 # isolated or quarantined: its data is not on the main feed
             for ch in (d.channels or (None,)):
-                wobble = self.model.timing_wobble_ms(d, ch, tick)
-                ts = _shift(self.clock, tick, wobble)
-                rid = f"rd{tick:07d}-{d.device_id}" + (f"-{ch}" if ch else "")
-                out.append(Reading(run_id=run_id, reading_id=rid, tick=tick, timestamp=ts, node_id=d.node_id,
-                                   device_id=d.device_id, sensor=d.sensor, channel=ch,
-                                   value=self.model.observed_value(d, ch, tick), unit=d.unit))
+                out.append(self.reported(d, ch, tick))
         return ReadingsBatch(run_id=run_id, tick=tick, time=self.clock.iso_of(tick),
                              tick_seconds=self.clock.tick_seconds, count=len(out), readings=out)
+
+    def _clean(self, d: Device, ch: str | None, tick: int) -> Reading:
+        """The reading a healthy sensor reports at this tick."""
+        wobble = self.model.timing_wobble_ms(d, ch, tick)
+        rid = f"rd{tick:07d}-{d.device_id}" + (f"-{ch}" if ch else "")
+        return Reading(run_id=self.run_id, reading_id=rid, tick=tick, timestamp=_shift(self.clock, tick, wobble),
+                       node_id=d.node_id, device_id=d.device_id, sensor=d.sensor, channel=ch,
+                       value=self.model.observed_value(d, ch, tick), unit=d.unit)
+
+    def reported(self, d: Device, ch: str | None, tick: int) -> Reading:
+        """What the sensor really reports: the healthy reading, unless a scenario fault applies. Never the true value."""
+        fault = self.faults.fault_at(d.device_id, ch, tick) if self.faults is not None else None
+        if fault is None:
+            return self._clean(d, ch, tick)
+        if fault.kind == "fake_reading":
+            return self._clean(d, ch, tick).model_copy(update={"value": fault.value})
+        if fault.kind == "stuck_sensor":              # the last value reported before the fault started
+            return self._clean(d, ch, tick).model_copy(update={"value": self.model.observed_value(d, ch, fault.start_tick - 1)})
+        return self._clean(d, ch, tick - fault.lag_ticks)       # replay_exact: the old reading, untouched
 
     def current(self, **filters) -> ReadingsBatch:
         return self.readings_at(self.tick, **filters)

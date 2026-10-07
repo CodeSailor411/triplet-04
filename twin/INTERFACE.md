@@ -27,7 +27,7 @@ The Twin learns who you are from the key. Keys come from the `.env` of whoever r
 | `release_device` | `guardian` | `device_ids` | `released`, `not_contained` |
 | `get_containment_state` | `city_brain`, `guardian` | none | devices cut off (`isolated` or `quarantined`), corrections, cap use per domain |
 | `get_quarantine_lane` | `guardian` | none | readings held off the feed, commands held because of quarantine |
-| `run_scenario` | `scenario` key only, hidden from others | `name` | not implemented yet |
+| `run_scenario` | `scenario` key only, hidden from others | `name`, optional `params` | what was started: `scenario_id`, `faults`. Names: `fake_reading`, `stuck_sensor`, `replay_exact`, `list`, `stop`, `reset` |
 
 ## actuate: the rules
 * `targets` are nodes that carry that actuator (`list_actions` lists them). `params` are the action's inputs, unknown names are refused.
@@ -83,7 +83,7 @@ UTF-8 JSON, snake_case. Stable ids `run_id`, `reading_id`, `device_id` (`<node_i
 Units: congestion 0-100 %, water cm above the sensor's own zero, power kW, PM2.5 ug/m3.
 
 ## Planned
-* 8 Oct: `congestion_index`, scenario engine, optional
+* 8 Oct: `congestion_index`, optional
   two-step commit (`status: "pending"`, then `commit_action`, off by default).
 * 15-17 Oct: dry-run preview (then `preview_required` is enforced), undo, `get_flagged_readings`, emergency events with transcript.
 * Not final: dispatch uses `destination` for the place (CIVIS's table says `target`); `params` as a separate field; token field names.

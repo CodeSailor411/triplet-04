@@ -84,7 +84,7 @@ async def test_scenario_tool_visible_and_reachable_with_the_scenario_key(mcp_cli
         names = [t.name for t in (await c.list_tools()).tools]
         r = await c.call_tool("run_scenario", {"name": "t5"})
     assert "run_scenario" in names
-    assert r.is_error and "NOT_IMPLEMENTED" in r.content[0].text      # reached the tool itself
+    assert r.is_error and "UNKNOWN_SCENARIO" in r.content[0].text      # reached the tool itself
 
 
 async def test_hidden_tool_error_looks_like_a_missing_tool(mcp_client):

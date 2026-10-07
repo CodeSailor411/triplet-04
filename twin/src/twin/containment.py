@@ -282,6 +282,8 @@ class ContainmentBook:
         for t in range(tick - 1, max(-1, tick - 1 - self.cfg.containment.rollback_lookback_ticks), -1):
             if t in bad or self._hidden_at(d.device_id, t):
                 continue
+            if self.sim.faults is not None and self.sim.faults.is_faulty(d.device_id, ch, t):
+                continue                                   # a faked, stuck or replayed tick is never "trusted"
             v = self.sim.model.observed_value(d, ch, t)
             if v is not None:
                 return t, v
@@ -313,7 +315,7 @@ class ContainmentBook:
                 for ch in (d.channels or (None,)):
                     readings.append(LaneReading(reading_id=_reading_id(tick, d, ch), device_id=d.device_id,
                                                 node_id=d.node_id, sensor=d.sensor, channel=ch,
-                                                value=self.sim.model.observed_value(d, ch, tick), unit=d.unit))
+                                                value=self.sim.reported(d, ch, tick).value, unit=d.unit))
             return QuarantineLane(run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick),
                                   held_readings=readings, held_commands=list(self.held))
 

@@ -2,8 +2,8 @@
 
 Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, actuate, the containment tools
 (isolate_sensor, quarantine_device, rollback_reading, release_device, get_containment_state, get_quarantine_lane)
-and run_scenario (stub, hidden).
-Next (see the plan): two-step commit, real scenario engine.
+and run_scenario (hidden: fake_reading, stuck_sensor, replay_exact, list, stop, reset).
+Next (see the plan): two-step commit, congestion_index, actuator controls.
 """
 from importlib.metadata import version as pkg_version
 from typing import Any, Literal
@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .actions import ActionBook, ActionList, ActuateResult, BadRequest
+from .scenarios import ScenarioBook, ScenarioResult
 from .containment import (ContainmentBook, ContainmentState, ContainResult, QuarantineLane, ReleaseResult,
                           RollbackResult)
 from .auth import HIDDEN_TOOLS, TOOL_ACCESS, Identity, KeyRing, token_from_headers
@@ -46,7 +47,7 @@ def _identity(ctx: ServerRequestContext, keyring: KeyRing) -> Identity | None:
 
 
 def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: ActionBook,
-              containment: ContainmentBook) -> MCPServer:
+              containment: ContainmentBook, scenarios: ScenarioBook) -> MCPServer:
     mcp = MCPServer(
         "twin",
         title="Twin: simulated city",
@@ -181,10 +182,16 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
         return containment.lane()
 
     @mcp.tool()
-    def run_scenario(ctx: Context, name: str) -> dict:
-        """Start a scenario by name. Hidden: only visible to a caller with the scenario key."""
+    async def run_scenario(ctx: Context, name: str, params: dict[str, Any] | None = None) -> ScenarioResult:
+        """Start an attack on purpose. Hidden: only visible to a caller with the scenario key.
+        name: fake_reading, stuck_sensor or replay_exact (each works with no params), or list, stop, reset.
+        params: device_id, channel, delay_ticks, duration_ticks, plus value (fake_reading) or lag_ticks (replay_exact);
+        stop takes scenario_id. Faults change what a sensor REPORTS, never the true value."""
         require(ctx, "run_scenario")
-        raise ToolError(f"NOT_IMPLEMENTED: the scenario engine arrives on 8 Oct (asked for '{name}').")
+        try:
+            return await scenarios.run(name, params)
+        except BadRequest as e:
+            raise ToolError(f"{e.code}: {e.message}") from None
 
     async def access_filter(ctx: ServerRequestContext, call_next):
         """Hides tools from callers who may not use them (tool list and tool calls)."""
