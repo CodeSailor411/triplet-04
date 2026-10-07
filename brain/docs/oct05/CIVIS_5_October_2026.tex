@@ -10,7 +10,6 @@
 \usepackage[left=22mm,right=22mm,top=23mm,bottom=20mm,headheight=14pt]{geometry}
 \usepackage[table]{xcolor}
 \definecolor{blue}{RGB}{0,89,140}
-\definecolor{grayblack}{RGB}{50,50,50}
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \fancyhf{}
@@ -32,12 +31,12 @@
 \renewcommand{\arraystretch}{1.08}
 \setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=3pt,parsep=0pt}
 \begin{document}
-\color{grayblack}
+\color{black}
 \begin{center}
 {\Large\bfseries CIVIS: incidents, risk levels and data conventions}\\[3pt]
 {\small Traffic, Water, Power, Air Quality, Emergency; Telecom excluded.}
 \end{center}
-\textbf{Basis:} final triplet decisions, with Phase 0 as reference. Checked against the agreed inventory; Trinity and 9antra verification is pending.
+\textbf{Status:} reviewed by Trinity. Blast-radius limits below are Trinity's proposal, pending 9antra confirmation.
 
 \section*{1. Incident and response list}
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{.20\textwidth}>{\raggedright\arraybackslash}p{.23\textwidth}Y@{}}
@@ -62,7 +61,22 @@ Traffic-signal control & R1 & Bounded, reversible changes within Twin's safe sig
 Generic dispatch & R2 & Allocates scarce police, ambulance, or firefighter units.\\
 Water-valve control & R3 & Can worsen flooding or interrupt downstream supply.\\\bottomrule
 \end{tabularx}
-\textbf{Scope:} grid switching is outside this three-type list but still needs preview, token, and caps. Phase 0 rates containment R2--R3 (isolation R3); the final report exempts isolation from tiers and applies caps instead.
+Grid switching still requires preview, token, and caps. Isolation has no risk tier under the final triplet decision; blast-radius caps apply.
+
+\textbf{Proposed mock blast-radius limits}
+
+\begin{tabularx}{\textwidth}{@{}Yrrr@{}}
+\toprule\textbf{Domain} & \textbf{Nodes} & \textbf{Action cap} & \textbf{Isolation cap}\\\midrule
+Traffic & 11 & 3 & 5\\
+Water & 9 & 2 & 4\\
+Power & 9 & 2 & 9\\
+Air Quality & 8 & No actuator & 4\\
+Emergency & 7 & 2 & 3\\\bottomrule
+\end{tabularx}
+
+For domain size $N$, the limit is $\min(N,\max(2,\lfloor Np\rfloor))$: action $p=0.30$; isolation $p=0.50$, except Power $p=1.00$. Counts may change; percentages remain fixed. The 38 unique nodes have 44 domain memberships, including six shared nodes; Map has no nodes.
+
+\newpage
 
 \section*{3. CIVIS data conventions}
 \begin{itemize}
@@ -71,6 +85,9 @@ Water-valve control & R3 & Can worsen flooding or interrupt downstream supply.\\
 \item \textbf{Values/units:} finite numbers with explicit quantity/unit: Traffic congestion index 0--100 \code{percent}; Water \code{cm} with local datum; Power load \code{kW}; Air PM2.5 \code{ug/m3}. Emergency events carry reported type, location, and transcript treated as data, never instructions.
 \item \textbf{Missing/trust:} missing value is JSON \code{null}, never zero. Keep original readings and references for corrections. Guardian score stays numeric, with Guardian-declared scale/cut-offs; a score is not an action token.
 \item \textbf{Actions:} \code{action}, \code{targets}, \code{token}, \code{idempotency_key}. Proposed \code{action} contains name/parameters; retain source reading references. Reuse the key only for retries of the same unchanged request.
+\item \textbf{Cap discovery/counting:} read current limits from Twin capabilities; never hardcode table values. Action caps count distinct affected nodes per request in each applicable domain. Shared nodes count in each domain they belong to. Dispatch caps count nodes, not dispatched units.
+\item \textbf{Containment:} isolation caps count the concurrent union of isolated and quarantined nodes per domain; a node in both counts once. \code{rollback_reading} is uncapped and affects one reading of one node. Power's all-node isolation cuts sensor data, not grid power.
+\item \textbf{Cap failure/reset:} Twin rejects the entire over-cap request with \code{CAP_EXCEEDED}; no partial effects. Record \code{domain}, \code{cap}, \code{limit}, \code{already}, and \code{requested}. Do not retry an unchanged rejection. Isolation persists until run/scenario reset in the mock; no release call is specified.
 \end{itemize}
-\textbf{Confirm:} traffic/PM2.5 mapping, topology, action parameters, and score scale. Water level alone does not prove a leak; low load alone does not prove an outage. Thresholds, token lifetimes, and numeric caps remain unset.
+\textbf{Pending interface agreements:} traffic/PM2.5 mapping, topology, action parameters, score scale, thresholds, and token lifetimes. Water level alone does not prove a leak; low load alone does not prove an outage. 9antra must confirm the proposed limits, shared containment pool, and reset-only lifecycle. Quarantine release behavior and counting fields for overlapping targets require explicit definition.
 \end{document}
