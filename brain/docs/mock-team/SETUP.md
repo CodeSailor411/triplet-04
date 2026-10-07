@@ -57,6 +57,15 @@ cd brain
 Branches: `codex/civis-elyes`, `codex/civis-yassine`, `codex/civis-meriem`, `codex/civis-maram`.
 On the clone's first checkout of Elyes's branch, use the same `--track origin/...` form. On later switches, use `git switch codex/civis-elyes`.
 
+Before your first commit, return to the repository root (`cd ..` if you are in `brain/`) and configure your own author identity locally. Replace both placeholders with your actual GitHub identity; do not copy Elyes's identity:
+
+```powershell
+git config user.name "YOUR_GITHUB_USERNAME"
+git config user.email "YOUR_VERIFIED_EMAIL_OR_GITHUB_NOREPLY_ADDRESS"
+```
+
+GitHub shows the exact private noreply address in account Settings > Emails. Enter that exact address if you want to keep your personal email private. These commands configure only this clone. Repository access still requires accepting Elyes's invitation; a correct commit author does not grant access.
+
 The scaffold serves health at `http://127.0.0.1:8001/health` and MCP at `http://127.0.0.1:8001/mcp`. Health says `ready: false` until the business implementation is delivered. Stop the process with Ctrl+C.
 
 In VS Code, open the repository, run **Python: Select Interpreter**, and choose `brain/.venv/Scripts/python.exe`. All Python commands must use that environment. Do not regenerate packages just because an AI assistant suggests newer versions.

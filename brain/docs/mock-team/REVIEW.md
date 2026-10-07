@@ -11,6 +11,16 @@
 
 ## Updating after another merge
 
+Run Git commands from the repository root. If the terminal is currently in `brain/`, run `cd ..` first. After tests pass, stage your files with the exact member command:
+
+| Member | Stage command |
+| --- | --- |
+| Yassine | `git add brain/src/civis_brain/inputs brain/config/detection-mock.json brain/tests/inputs brain/docs/mock-team/progress/yassine.md` |
+| Meriem | `git add brain/src/civis_brain/planning brain/tests/planning brain/docs/mock-team/progress/meriem.md` |
+| Maram | `git add brain/mocks brain/tests/workflows brain/docs/mock-team/progress/maram.md` |
+
+Then `git diff --cached`, `git commit -m "Add completed module and its tests"`, and `git push`. Use a more specific technical message where possible. Your upstream branch is already configured by the first checkout, so `git push` targets your member branch. In GitHub the PR base dropdown must still be `codex/civis-elyes`.
+
 Commit your work first. With a clean working tree:
 
 ```powershell
