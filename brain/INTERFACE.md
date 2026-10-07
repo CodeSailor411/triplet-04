@@ -11,6 +11,7 @@ Status: transport scaffold only; workflows are assigned and not implemented. The
 - Brain generates validated proposals and asks Guardian for exact-action approval before requesting Twin execution. It never isolates, quarantines, releases or rolls back devices itself.
 - Current Twin wire action is a string with separate `params`; dispatch carriers are `targets` and the location is `params.destination`. Endpoint/schema adapters remain configurable.
 - Missing token, unsupported required preview, unusable evidence, malformed AI output and cap refusal never permit an action. Scores alone are not tokens.
+- Reduced scope: S01 congestion, S02 high water, S03 power alert/blocked, S04 air pollution, S05 medical emergency. Five modules share one runtime; secondary responses are deferred.
 - Mock fixtures provide repeatable no-network tests; real Gemini and partner connectivity are separate smoke checks. Logs redact tokens and keys.
 
 Known gaps and questions for partners: [PARTNER_GAPS.md](docs/mock-team/PARTNER_GAPS.md). Handover target: 9 October 2026, before 10 October.

@@ -1,1 +1,1 @@
-"""Meriem's constrained AI planning module."""
+"""Elyes-owned shared provider and authoritative plan validation."""

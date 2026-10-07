@@ -16,7 +16,10 @@ concurrency:
 jobs:
   ownership:
     name: CIVIS file ownership
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@v7
         with:
@@ -32,20 +35,26 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git show "$BASE_SHA:brain/scripts/check_ownership.py" > /tmp/civis-ownership.py
-          python /tmp/civis-ownership.py --branch "$WORK_BRANCH" --base-branch "$BASE_BRANCH" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+          $taskChecker = Join-Path $env:RUNNER_TEMP 'civis-ownership.py'
+          git show "${env:BASE_SHA}:brain/scripts/check_ownership.py" | Set-Content -LiteralPath $taskChecker -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot load the base ownership checker.' }
+          python $taskChecker --branch $env:WORK_BRANCH --base-branch $env:BASE_BRANCH --base-sha $env:BASE_SHA --head-sha $env:HEAD_SHA
+          if ($LASTEXITCODE -ne 0) { throw 'CIVIS file ownership failed.' }
       - name: Release branch check
         if: github.event_name == 'pull_request' && github.base_ref == 'brain'
         env:
           WORK_BRANCH: ${{ github.head_ref }}
         run: |
-          test "$WORK_BRANCH" = codex/civis-elyes || { echo 'Use the CIVIS integration branch for the release PR'; exit 1; }
+          if ($env:WORK_BRANCH -ne 'codex/civis-elyes') {
+            throw 'Use the CIVIS integration branch for the release PR.'
+          }
   bootstrap:
     name: CIVIS bootstrap
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     defaults:
       run:
         working-directory: brain
+        shell: pwsh
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

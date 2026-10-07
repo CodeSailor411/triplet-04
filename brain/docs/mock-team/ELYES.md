@@ -1,47 +1,181 @@
-# Elyes: integration, trust boundary and release leadership
+# Elyes: S03 Power, S04 Air Quality and the shared Brain core
 
-Branch: `codex/civis-elyes`, also the team's integration branch. You retain root/layer ownership as CodeSailor411. Three members send PRs into this branch; you review before merging. Do your leader changes directly on this admin-owned branch only after local checks, or coordinate a reviewed leader PR later.
+Branch: `codex/civis-elyes`, the protected integration branch. You review the three member PRs. Your two alert-focused scenarios leave time for the shared integration work.
 
-## Your files and important work
+The release contains five selected scenarios. The October checkpoint's eight incident rows remain the broader catalog; the chosen five names are a planning subset, not a claim of recorded triplet approval. Accident, low water and fire are deferred.
 
-Own shared `contracts.py`, `ports.py`, `settings.py`, `app.py`, `integration/`, `tests/integration/`, dependency pins/lock, setup scripts, ownership policy, interface card, launch/readme, CI and release evidence. Do not edit other members' active module files behind their branches; route fixes through their PRs. Avoid all `twin/` and `guardian/` implementations.
+## Your exact scope
 
-## 7 October: freeze the ground before parallel coding
+Your own scenarios:
 
-1. Verify GitHub usernames and grant write access. Everyone clones using their own account, checks out the assigned branch and runs setup/tests. Confirm the selected Python interpreter.
-2. Walk through one typed reading, one candidate incident, one Plan and one Decision. Keep function signatures and error contracts fixed until all three member PRs land.
-3. Resolve the specific questions in PARTNER_GAPS.md. Obtain Guardian's actual schemas and one token example; do not build on guessed tool names, score range or cut-offs.
-4. Confirm current Twin `params`, `destination`, unit type `fire`, and action carrier IDs. Record partner commit/protocol versions in the handover.
-5. Decide the preview gap explicitly with Trinity: missing required preview blocks live R3/grid requests until a minimal preview or an agreed mock exception exists. Fixture-only preview is not evidence of live support.
+- `src/civis_brain/scenarios/power/service.py`: `PowerScenario`, `scenario_id="S03"`.
+- `src/civis_brain/scenarios/air_quality/service.py`: `AirQualityScenario`, `scenario_id="S04"`.
+- `tests/scenarios/power/`, `tests/scenarios/air_quality/`.
+- `mocks/cases/power/`, `mocks/cases/air_quality/`.
+- `config/scenarios/power.json`, `config/scenarios/air_quality.json`.
+- `docs/mock-team/progress/elyes.md`.
 
-## Implement your own runtime in this order
+Shared core: normalization, per-scenario/run state, static registry, models/ports/settings, one Gemini adapter, reusable fake peers, MCP/auth, trust/preview/action validation, execution, logs, CI and release evidence. Paths are relative to `brain/`. Leave traffic/water/emergency implementations, tests, fixtures and policies to their owners. Do not implement `twin/` or `guardian/`.
 
-1. **Live MCP adapter:** implement a `ToolPeer` adapter under integration using the pinned SDK and `httpx2`. Read URLs/keys from settings, attach each partner's Brain Bearer key, enforce timeouts and validate protocol `2026-07-28`. Discover available tools at startup; refuse missing Guardian map values.
-2. **Bootstrap context:** fetch Twin clock, nodes and action manifest. Cache only within the current run; invalidate on run/reset or changed capabilities. Do not assume capabilities already publishes all numeric caps: current action limits are in `list_actions`, complete shared-domain limits are a partner gap.
-3. **Input/evidence handling:** call Yassine's function with per-run state. Ask Guardian to assess relevant readings through the adapter. Use its numeric scale/cut-offs only when supplied. Keep original evidence IDs. No usable trusted alternatives means blocked/no actuation.
-4. **Mock retry policy:** at most three distinct attempts using later ticks or alternate relevant sensors, with a bounded window specified in your mock config. Do not count three identical cached calls as three new readings. Label this definition as the primary mock's working choice and confirm it with partners before the joint run. No human-review UI or workflow here.
-5. **AI planning:** call Meriem through an injected provider after evidence selection. Fixture provider for CI; configured free Gemini for the smoke test. Enforce per-run call budget and timeout. Treat provider failures as blocked outcomes, never implicit approval.
-6. **Deterministic plan validation:** check known action, carrier IDs, allowed parameter names/types/enums/bounds, evidence references and current manifest risk/preview flags. Never trust the AI's risk value or claimed preview result. Reject containment proposals and instructions embedded in data/tool metadata. Do not invent unavailable dispatch units or hydraulically safe changes.
-7. **Approval/execution:** obtain Guardian's token for exactly the normalized action, target set and params using Twin's run/clock. Brain does not mint a token or convert a score to permission. Obtain required preview if supported and safe; otherwise block. Request Twin `actuate` with a stable idempotency key. Keep Twin's refusal code/details intact.
-8. **Optional pending:** if response is pending, discover the confirmation tool and confirm once under its actual contract. If unavailable, leave pending and explain it. Do not label a pending action committed or repeat a fresh actuation to force completion.
-9. **Idempotency:** cache handled run/tick inputs and command identities. Same unchanged intent keeps the key; modified intent requires a new key and new approval. On timeout after sending, reconcile or retry that same logical request; never make a new key and accidentally double-execute. Do not split a cap-refused intent into smaller requests to bypass the limit.
-10. **State/log tools:** wire evaluate_tick, active incidents, explanation lookup and Guardian-only notify_containment. A containment notice invalidates affected pending evidence and prevents stale queued plans; Brain never calls isolate/quarantine/rollback/release. Return honest unsupported status for unimplemented optional features.
-11. **Logs/readiness:** append mock JSONL observation/trust/proposal/decision/action events with run/tick/evidence/code; redact keys/tokens. Map to Trinity's shared log when supplied. Set `ready=true` and implemented tool list only after the acceptance matrix passes. Update the bootstrap health test appropriately when readiness becomes conditional.
+Fixed scenario signatures:
 
-## Your review and integration order
+```text
+scenario_id: str
+detect(batch: ReadingsBatch, nodes: list[Node], policy: dict, state: dict) -> DetectionResult
+async draft_plan(context: PlanningContext, provider: PlanProvider) -> Plan
+```
 
-- Review Yassine's module first, then Meriem's. Check contracts and test evidence; merge one PR at a time.
-- Ask Maram to merge the refreshed integration branch into her own branch before final workflow testing.
-- Run all tests after every merge. Shared contract changes require your commit, an explicit note to all three members, and re-running affected tests.
-- Members request your review, not approval from a random teammate. Resolve conversations, re-run checks, approve, then merge. Do not approve a PR just because its AI assistant says it works.
-- Final release: after candidate checks, have Maram open the PR from `codex/civis-elyes` into `brain`, so you can review it. GitHub does not let a PR author approve their own PR. Keep root permissions and Brain CODEOWNERS assigned to you.
+## Step 1: Windows setup and contract freeze
 
-## Your tests and deadline
+From the repository root:
 
-In `tests/integration/`, cover inbound auth, wrong caller, missing/mismatched token, discovery mismatch, required-preview absence, cap refusal, idempotent retries, pending/commit, and containment invalidation. Maram's workflow tests prove the complete composition.
+```powershell
+git branch --show-current
+powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
+cd brain
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
+```
 
-By 9 Oct 12:00 integrate unit PRs. By 18:00 complete the full matrix and one synthetic live Gemini call. By 20:00 prepare partner handover and the release PR. Deliver the URL/key exchange privately yourself; no real key belongs in Git or a shared document.
+Confirm `codex/civis-elyes` and select `brain/.venv/Scripts/python.exe` in VS Code. Collect member GitHub usernames and grant individual access. Confirm actual Guardian schemas/tools/keys, Twin `action` plus `params`, dispatch carrier/destination and required preview support. Record unresolved items in PARTNER_GAPS; do not guess the answers.
 
-## Prompt to give your AI coding assistant
+Only you need a local Gemini key for the shared live smoke test. Keep it in ignored `brain/.env`. Members develop with recorded provider responses; their own keys are optional if they help with the later live check.
 
-> I am Elyes, CIVIS leader. Read the frozen CONTRACT, ELYES card, PARTNER_GAPS and ACCEPTANCE. Implement only integration/shared environment/server/tests files assigned to me. Leave Yassine's detectors, Meriem's AI planner and Maram's fixtures to them. Compose their fixed interfaces, enforce discovered schemas/caps/preview and exact-action Guardian token requirements, handle pending/idempotency/timeouts, and preserve evidence in redacted logs. Never invent partner tool names or safety thresholds. Work in small tested changes and keep readiness false until the primary mock acceptance tests pass. Explain unresolved partner assumptions before coding around them.
+Copy this prompt:
+
+```text
+I am Elyes on codex/civis-elyes. Read brain/AGENTS.md, mock-team CONTRACT, SCENARIOS, ELYES, ACCEPTANCE and PARTNER_GAPS. Inspect the Windows setup and run bootstrap checks without implementing business logic yet. Confirm the five scenario IDs, public MCP models, internal signatures and exact partner gaps. Explain the shared core's input/output and why numeric trust is not permission. Do not edit member-owned traffic/water/emergency files, invent Guardian contracts or expose keys.
+```
+
+## Step 2: fixture format, reusable peers and small shared foundation
+
+1. Keep the registry explicit: S01 traffic, S02 water, S03 power, S04 air_quality, S05 emergency. No arbitrary file scanning/import plugins.
+2. Normalize batch semantics once: run/tick/count/time consistency, known nodes, finite values, preserved nulls and domains joined from nodes. Unknown/null/unusable readings cannot become action evidence.
+3. Give each scenario its own mutable state per run. No shared persistence counters. Repeat ticks do not advance history; a changed run resets state.
+4. Implement reusable `FixtureTwin`, `FixtureGuardian` and `FixturePlanProvider` under `mocks/civis_mock_peers/`. They record calls/effects, return explicit configured responses and never use a network/key. Case JSON contains no keys or token strings; the fake Guardian generates test-only approvals in memory. Member-local helpers only load their own cases.
+5. Follow SCENARIOS's case fields: `scenario_id`, `fixture_only`, `assumptions`, `nodes`, `actions`, `batches`, `policy`, `guardian`, `preview`, `ai_plan`, `twin_outcome`, `expected`.
+6. Supply base/refusal cases for your Power and AQ modules. Power base is an explicitly configured mock overload candidate or independently confirmed service-loss evidence, followed by an alert. Refusal/uncertainty is low load alone or absent agreed threshold/evidence, with no grid command. AQ base is sustained mock PM2.5 elevation with an alert; refusal is null/invalid evidence or an attempted unsupported AQ action, with no actuation.
+7. Freeze `build_runtime(*, twin, guardian, provider, policies, features, artifact_dir=None)` and `await runtime.evaluate_tick(batch)` for the team. Do not change them while member PRs depend on them without explicit coordination.
+
+Copy this prompt:
+
+```text
+Implement only Elyes-owned shared normalization/state/registry and reusable fixture peers, plus S03/S04 fixture/config paths. Preserve all public MCP models and the frozen runtime factory. Use an explicit five-entry registry, separate scenario/run state, SCENARIOS case keys and call/effect recording. No real network, AI, approval or Twin effects in fixture code. Do not complete member scenario modules or edit their tests/config/cases. Add focused foundation tests and explain any unresolved field instead of inventing it.
+```
+
+## Step 3: implement your two alert-focused detectors
+
+**S03 Power:** use an explicit mock-only overload threshold if configured. A load/voltage reading may justify a candidate warning; low load alone does not prove service loss. Classify confirmed service loss only with a separately agreed corroborating source/condition. Do not add an invented fault flag to Twin's wire model. When relevant Power readings are present, missing policy/support produces an explicit unsupported/uncertain alert. An unrelated scenario batch must not gain a Power alert.
+
+**S04 Air Quality:** use the configured illustrative PM2.5 threshold/unit and persistence. Require distinct consecutive ticks, preserve evidence and label an air-pollution candidate. Do not infer fire, victims or a need for emergency dispatch from PM2.5 alone.
+
+Both return `DetectionResult` using their own state. Stable incident IDs, null/wrong-unit checks and run reset apply. Detector warnings must become recorded alert/blocked decisions through the core.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/scenarios/power/test_detection.py tests/scenarios/air_quality/test_detection.py -q
+```
+
+Copy this prompt:
+
+```text
+Implement only PowerScenario.detect, AirQualityScenario.detect and their own helper/test paths. Use explicit mock policies and the Step 3 evidence rules. Do not infer outage from low load or fire from PM2.5. Preserve actual evidence IDs, nulls, stable candidate identity and per-run persistence. Keep unsupported power classification visible as a warning for a recorded core decision. No network, AI or physical action. Run focused detector tests including baseline, applicable candidate, duplicate tick, changed run, null/wrong unit and insufficient evidence.
+```
+
+## Step 4: one free-AI adapter and guarded shared execution
+
+Your Power/AQ `draft_plan` methods return alert-only typed Plans by default. They propose no grid/AQ/dispatch action and require no provider call. Do not invent a grid risk tier or AQ actuator.
+
+Implement the shared core in this order:
+
+1. One `GeminiPlanProvider` using the pinned SDK, schema-constrained `Plan`, bounded context, timeout and call budget. No tools/search/paid fallback. A failed free API call becomes blocked, never random substitute success.
+2. Live `ToolPeer` adapters use configured endpoints/caller keys and discovered protocol/tool schemas. Missing Guardian mappings block the joint workflow.
+3. Select usable evidence through Guardian's actual checks. Use agreed numeric cut-offs only. A score/cached score is not exact-action permission.
+4. Invoke each applicable scenario's constrained `draft_plan` with a restricted action manifest. Physical proposals still receive shared checks for known action, carriers, params, evidence, risk and preview.
+5. Obtain required safe preview and Guardian token for the exact normalized action/targets/params under Twin's run/clock. Missing support/token blocks. Fixture preview is test-only. No human-review flow.
+6. Twin alone executes. Preserve rejection details/caps, use stable command idempotency, reconcile uncertain outcomes and never split cap-refused commands to bypass limits.
+7. Handle pending/commit only when advertised. Missing confirmation support leaves pending with explanation; never fabricate a commit.
+8. Wire active incidents, explanation and Guardian-only containment notification. Invalidate affected queued evidence; Brain never isolates/quarantines/releases/rolls back devices.
+9. Implement one shared `scripts/run_case.py` runner with `--scenario S01` through S05 and `--case base` or refusal. Load the selected domain case, create shared fixtures/runtime, evaluate its batches and write a redacted trace under ignored .artifacts/. Do not copy orchestration into five scripts. Default uses fixture AI/peers; live Gemini smoke is separate.
+10. Save redacted decision/evidence traces. Readiness stays false until the completed acceptance matrix passes.
+
+Copy this prompt:
+
+```text
+Implement Elyes's shared Gemini adapter and runtime using the frozen Scenario/PlanProvider/ToolPeer/build_runtime contracts, then Power/AQ alert-only draft_plan methods. Do not implement traffic/water/emergency modules. Follow Step 4's bounded free-API, discovery, evidence, deterministic validation, exact-action token, preview, idempotency, cap refusal and optional pending rules. No guessed Guardian names/scales/safety settings, fabricated preview or containment operation. Keep secrets out of logs/tests and readiness false until final acceptance. Work in small tested increments; report partner gaps explicitly.
+```
+
+## Step 5: shared integration proof and sequential member review
+
+Workflow tests use:
+
+```python
+from civis_brain.integration.runtime import build_runtime
+
+runtime = build_runtime(
+    twin=fake_twin,
+    guardian=fake_guardian,
+    provider=fake_provider,
+    policies=policies,
+    features=features,
+    artifact_dir=tmp_path,
+)
+result = await runtime.evaluate_tick(batch)
+```
+
+Use the feature schema in CONTRACT/SCENARIOS, not guessed dictionary keys.
+
+- Review each member's own unit work and changed paths before sequential merges. A unit-complete draft can be merged after your review to unblock composition if integration-pending is recorded.
+- Each scenario must ultimately prove its base and refusal behavior through the actual shared runtime. Your AQ/Power outcomes are successful alerts, not successful physical actions.
+- Shared tests cover authentication/caller roles, unavailable tool/schema, bad AI output, missing/mismatched token, unsafe/missing preview, cap refusal, duplicate/changed intent, pending, containment invalidation, peer timeout and secret redaction.
+- Reject false-positive testing that mocks the entire workflow, skips missing functionality or catches `NotImplementedError` as success.
+- Update bootstrap health tests to reflect conditional readiness without claiming unfinished functions are implemented.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/scenarios/power/ tests/scenarios/air_quality/ tests/integration/ -q
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
+```
+
+Copy this prompt:
+
+```text
+Review member PR contracts and then test the real shared Brain runtime using injected recorded provider and fake peers. Add only Elyes-owned integration and S03/S04 tests. Assert final decisions, evidence, exact call/effect counts and no unwanted action for all refusals. Keep tests key/network-free. Missing core or partner schema is a recorded dependency, never skipped acceptance. Run focused tests, all tests and Ruff; review auth, token, preview, caps, idempotency, pending, containment and log redaction. Record actual outputs in elyes progress.
+```
+
+## Step 6: review, integration branch and final release
+
+Members PR into `codex/civis-elyes`. You review their scope, test evidence, assumptions and both workflow outcomes. Merge sequentially and rerun all tests. Shared changes must be communicated before members refresh their branches. Do not edit their active scenario packages behind their branches.
+
+For your own scenario progress commit, from `brain/`:
+
+```powershell
+cd ..
+git status --short
+git add brain/src/civis_brain/scenarios/power/ brain/src/civis_brain/scenarios/air_quality/ brain/tests/scenarios/power/ brain/tests/scenarios/air_quality/ brain/mocks/cases/power/ brain/mocks/cases/air_quality/ brain/config/scenarios/power.json brain/config/scenarios/air_quality.json brain/docs/mock-team/progress/elyes.md
+git diff --cached --check
+git diff --cached
+git commit -m "Implement S03 power and S04 air quality mock scenarios"
+git push origin codex/civis-elyes
+```
+
+For shared-core commits, stage explicit reviewed paths inside your ownership scope. Do not use `git add .`, include `.env`, stage another member's active work or force push. Admin maintenance bypass is available, but record local checks before pushing integration changes.
+
+Before release, run the full acceptance matrix, one synthetic live Gemini check and actual partner discovery/auth checks. Exchange real keys privately. Handover includes commit/branch, Windows launch commands, MCP URL/protocol, example payloads, fixture assumptions and current partner gaps.
+
+Ask **Maram to open the release PR** from `codex/civis-elyes` into `brain` under her own account, then review it yourself. GitHub authors cannot approve their own PR. Keep root/Brain CODEOWNERS assigned to you.
+
+Copy this prompt:
+
+```text
+Review Elyes-owned staged changes and all scenario integration evidence. Check secrets, file ownership, unchanged public interfaces, Windows setup, five scenario scope and unresolved partner assumptions. Prepare a concise release description and partner launch handover. Do not create false readiness, skip acceptance or claim fixtures prove live integration. Stage only explicit Elyes-owned paths and show the diff before commit. Member PRs target codex/civis-elyes. After final checks, Maram opens the release PR into brain and Elyes reviews.
+```
+
+## Deadline and workload
+
+- **8 October, 12:00 UTC+1:** all members have small draft PRs; shared fixture/runtime contracts are usable.
+- **8 October, 20:00:** your detector/alert unit work and reviewed member unit work are ready.
+- **9 October, 12:00:** reviewed scenario PRs merged and shared core composed.
+- **9 October, 18:00:** all five scenario success/refusal checks, safeguards and live smoke checks complete.
+- **9 October, 20:00:** release candidate handed over before 10 October.
+
+The core is the schedule's critical dependency. If partner preview/Guardian schemas cannot be confirmed, report the blocked live pathways and fixture-only demonstrations accurately. No last-minute extra scenario, dashboard or AI framework belongs in this checkpoint.

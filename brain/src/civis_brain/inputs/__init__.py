@@ -1,1 +1,1 @@
-"""Yassine's input processing module."""
+"""Elyes-owned shared batch normalization."""

@@ -1,44 +1,146 @@
-# Maram: fake peers, recorded AI responses and workflow proof
+# Maram: S05 medical emergency
 
-Branch: `codex/civis-maram`. PR base: `codex/civis-elyes`. Reviewer: Elyes.
+Branch: `codex/civis-maram`. PR base: `codex/civis-elyes`. Reviewer: Elyes, `CodeSailor411`.
+
+You own one complete scenario: its candidate detector, constrained response, local fixtures and tests. You do not build a separate Brain server. The five release scenarios are the selected planning subset; the October checkpoint's eight incident rows are a broader catalog.
 
 ## Your exact files
 
-- `brain/mocks/` (Python fake peers, JSON cases and fixture AI outputs)
-- `brain/tests/workflows/`
-- `brain/docs/mock-team/progress/maram.md`
+- `src/civis_brain/scenarios/emergency/service.py`: `EmergencyScenario`, plus helper modules inside this package.
+- `tests/scenarios/emergency/test_detection.py`, `test_planning.py`, `test_workflow.py` and `helpers.py`.
+- `mocks/cases/emergency/manifest.json`, `base_case.json` and `refusal_case.json`; additional variants stay here.
+- `config/scenarios/emergency.json`: explicit mock policy only.
+- `docs/mock-team/progress/maram.md`.
 
-You may read every module, but do not change detector/planner/integration code or shared schemas. If an acceptance test fails because another module is incomplete, record the failure and ask Elyes to route the fix. Do not weaken the assertion to make it green.
+Paths above are relative to `brain/`. Elyes owns shared normalization, state routing, registry, Gemini, fake peers, approval and execution. Only your scenario receives your state dictionary. Use the fixed signatures in CONTRACT and the shared Pydantic models.
 
-## Deliverables
+## Step 1: inspect and set up on Windows
 
-Complete the three stub classes in `mocks/civis_mock_peers/peers.py`: `FixtureTwin`, `FixtureGuardian`, `FixturePlanProvider`. Preserve `async call_tool(name, arguments) -> dict` and `async generate(context) -> Plan`. Constructors may take a case dictionary and record calls.
+First clone/select your branch as described in SETUP. Run these from the repository root:
 
-Put case data under `mocks/cases/`. Build fake peers as plain Python objects injected through the shared ports. You do not need to build two additional HTTP servers or a city simulator. Elyes supplies the live MCP adapters. Fixtures must never call the real Twin, Guardian or Gemini API.
+```powershell
+git branch --show-current
+powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
+cd brain
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
+```
 
-## Implement in this order
+Confirm the branch is `codex/civis-maram`. In VS Code select `brain/.venv/Scripts/python.exe`. No Gemini key is required for your fixtures. Explain `Reading`, `Incident`, `Plan` and `Decision` in your own words before coding. Keep the terminal in `brain/` until Step 6.
 
-1. Create a fixture loader and cases with declared mock data: node topology, action manifest, two consecutive reading batches when needed, simulated clock, numeric trust response, recorded AI `Plan`, configured peer refusal/commit results, and expected decision status/calls.
-2. Implement FixtureTwin's `get_capabilities`, `list_nodes`, `get_readings`, `get_clock`, `list_actions`, and `actuate`. Match current Twin field names and record every invocation. Unknown tools fail clearly.
-3. Make `actuate` require a token bound to action, sorted targets and normalized params; reject wrong run/expiry/mismatch. Store successful answers by logical idempotency key: same request replays, changed request rejects. Refuse over-cap requests atomically. The fake does not reproduce all Twin internals; label its assumptions in case data.
-4. Count action targets as distinct nodes in each applicable domain, including both memberships of a shared node. Read cap values from the case's discovered data, not the production source's fixed table. Refused actions create no simulated effects.
-5. Implement FixtureGuardian using **Elyes's frozen internal tool map**. Scores are numeric; thresholds and token lifetime are explicit fixture values, not triplet defaults. Return denial for the configured bad evidence case. Issue unsigned exact-action test tokens only inside the fake Guardian. Follow the current Twin token sample/format; Brain must never mint them.
-6. Implement FixturePlanProvider by returning recorded schema-valid Plan JSON for the case. This proves predictable orchestration without consuming AI quota. It does not replace Meriem's separate live API smoke test.
-7. Add explicit fixture profiles for preview available/safe, preview absent/unsafe, immediate commit, and pending/commit. Preview/commit tool names must be advertised in fixture discovery and read by the adapter. Never make fixture-only support look like present live Twin support.
-8. Initially test each fake class directly. After Elyes wires orchestration, inject them and run the full acceptance matrix in `tests/workflows/`. Add a one-command test runner or pytest entry that exercises all cases and leaves a JSONL trace under ignored `.artifacts/`.
+Copy this prompt:
 
-## Required cases
+```text
+I am Maram on branch codex/civis-maram, implementing S05 only. Read brain/AGENTS.md, brain/docs/mock-team/CONTRACT.md, MARAM.md and PARTNER_GAPS.md. My editable paths are brain/src/civis_brain/scenarios/emergency/, brain/tests/scenarios/emergency/, brain/mocks/cases/emergency/, brain/config/scenarios/emergency.json and brain/docs/mock-team/progress/maram.md. Preserve EmergencyScenario.scenario_id="S05", detect(batch,nodes,policy,state)->DetectionResult and async draft_plan(context,provider)->Plan. Do not edit shared models, registry, Gemini adapter, fake peers, dependencies or other scenarios. For this step, inspect only and make no code changes. Confirm my branch and Windows interpreter, run the common checks, list the stubs and dependencies, and explain input, output and what my scenario is forbidden to do. Green bootstrap checks mean setup works, not that my scenario is implemented.
+```
 
-`traffic_r1`, `medical_r2`, `water_r3_preview`, `air_alert`, `power_no_preview`, `bad_evidence`, `missing_token`, `cap_exceeded`, `shared_node_cap`, `duplicate_command`, `pending_commit`, `ai_bad_output`, `peer_timeout`, `containment_notice`.
+## Step 2: write the two scenario fixtures
 
-For each case, assert exact action/targets/params where relevant, number/order of peer calls, evidence references, final status and the absence of side effects for failures. A failure case is not passed merely because the process stayed alive. See [ACCEPTANCE.md](ACCEPTANCE.md).
+Base evidence: A numeric emergency_calls medical channel in calls/min, with separate units_free ambulance evidence. Do not infer patient details from the numeric feed.
 
-## Timing and dependencies
+Use shared wire models and SCENARIOS.md's fixture conventions. Case keys are `scenario_id`, `fixture_only`, `assumptions`, `nodes`, `actions`, `batches`, `policy`, `guardian`, `preview`, `ai_plan`, `twin_outcome` and `expected`. Give each fixture a scenario ID, a clear assumption list, nodes/actions/readings, recorded typed AI output when applicable, configured peer replies and expected decisions/call counts. Case files contain no keys or token strings. Shared fake Guardian generates test-only tokens in memory.
 
-8 Oct 12:00: fixture loader and recorded AI provider in a draft PR. 8 Oct 20:00: first three fake-peer cases and fake class tests. 9 Oct 12:00: update your branch from the integration branch after Yassine/Meriem merges, then complete workflow tests with Elyes. 9 Oct 18:00: full matrix and sample trace ready.
+- **Base case:** A medical-channel event, an available ambulance, an advertised dispatch carrier and destination, exact Guardian approval and one successful Twin response.
+- **Refusal case:** The same medical event with no available ambulance or no exact-action approval. Expect alert/blocked with zero dispatch effects.
 
-You can create fixtures before other modules are finished. Write no global `conftest.py`; put helpers inside `tests/workflows/` to avoid interfering with teammates' tests. Include the case assumptions, test output and one redacted trace in your progress file.
+Keep a small fake `PlanProvider` and fixture-reading helpers in your own `tests/scenarios/emergency/helpers.py`. Reuse Elyes's peer fixtures; do not implement another transport or shared fake peer.
 
-## Prompt to give your AI coding assistant
+Copy this prompt:
 
-> I am Maram. Read brain/docs/mock-team/CONTRACT.md, MARAM.md and ACCEPTANCE.md. Implement only brain/mocks/, tests/workflows/, and my progress file. Use injected fake peers and recorded Plan JSON with no network/API key. Match current Twin action/params/token shapes, simulate precise refusals, record calls, and assert that failure cases have no effects. Start with fixture loading and one happy path, then add the listed failure cases. Do not implement detectors, AI API calls, orchestration or shared schemas. If another member's code is incomplete, keep the meaningful test and report the dependency to Elyes instead of silently skipping it or changing their files.
+```text
+I am Maram on branch codex/civis-maram, implementing S05 only. Read brain/AGENTS.md, brain/docs/mock-team/CONTRACT.md, MARAM.md and PARTNER_GAPS.md. My editable paths are brain/src/civis_brain/scenarios/emergency/, brain/tests/scenarios/emergency/, brain/mocks/cases/emergency/, brain/config/scenarios/emergency.json and brain/docs/mock-team/progress/maram.md. Preserve EmergencyScenario.scenario_id="S05", detect(batch,nodes,policy,state)->DetectionResult and async draft_plan(context,provider)->Plan. Do not edit shared models, registry, Gemini adapter, fake peers, dependencies or other scenarios. Work only on my domain's manifest/base/refusal JSON, config and local test helpers. Write the base and refusal cases exactly as specified in my task card, with explicit synthetic assumptions and expected call counts. Validate JSON and shared model compatibility. Do not invent a fixture harness schema, partner tool, token format or safety threshold if CONTRACT leaves it unresolved; record that precise dependency in my progress file for Elyes. No scenario implementation yet.
+```
+
+## Step 3: implement the candidate detector
+
+1. Recognize only the medical emergency_calls channel in calls/min using the declared mock event threshold.
+2. Keep the event's actual location and evidence references. Numeric call counts cannot establish injury details, diagnosis or severity.
+3. Preserve units_free ambulance observations as availability evidence. Do not substitute another unit type or invent extra units.
+4. Do not implement fire or road-accident scenarios. Keep state local to the supplied emergency/run dictionary and handle duplicate input consistently.
+
+Shared normalization runs first. Your detector still checks its sensor/unit/channel and ignores unusable/null values. A candidate is not a Guardian-approved fact. No AI or peer calls occur during detection.
+
+Run focused tests from `brain/`:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/scenarios/emergency/test_detection.py -q
+```
+
+Copy this prompt:
+
+```text
+I am Maram on branch codex/civis-maram, implementing S05 only. Read brain/AGENTS.md, brain/docs/mock-team/CONTRACT.md, MARAM.md and PARTNER_GAPS.md. My editable paths are brain/src/civis_brain/scenarios/emergency/, brain/tests/scenarios/emergency/, brain/mocks/cases/emergency/, brain/config/scenarios/emergency.json and brain/docs/mock-team/progress/maram.md. Preserve EmergencyScenario.scenario_id="S05", detect(batch,nodes,policy,state)->DetectionResult and async draft_plan(context,provider)->Plan. Do not edit shared models, registry, Gemini adapter, fake peers, dependencies or other scenarios. Implement only EmergencyScenario.detect and domain-local helpers/tests using my supplied config and fixtures. Follow the detector requirements in Step 3, preserve source IDs and stable incident identity, and make no network, AI, approval or actuation call. Add meaningful tests for the normal input, applicable incident candidate, null/wrong units, duplicate ticks and run changes. If shared normalization/state handling is unavailable, report the dependency instead of changing the shared interface. Explain each helper briefly and run the focused detection tests.
+```
+
+## Step 4: implement the constrained response
+
+1. Restrict an actionable context to the discovered dispatch manifest and an available ambulance with valid evidence.
+2. Call only await provider.generate(context), once for this supported actionable case. Shared Elyes code owns Gemini and peer APIs.
+3. Use dispatch targets for the carrier node and params.destination for the incident location. They are different identifiers.
+4. Use only unit types/counts accepted by the manifest and justified by availability. Return R2 and the actual evidence references.
+5. Unavailable units or unsupported destination/carrier means alert/no dispatch. No invented victim details, containment commands or human-review flow.
+
+The shared core restricts the manifest and performs final evidence/action/target/parameter/risk validation. It obtains the exact-action token and requests Twin execution. Your module proposes; it cannot approve itself.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/scenarios/emergency/test_planning.py -q
+```
+
+Copy this prompt:
+
+```text
+I am Maram on branch codex/civis-maram, implementing S05 only. Read brain/AGENTS.md, brain/docs/mock-team/CONTRACT.md, MARAM.md and PARTNER_GAPS.md. My editable paths are brain/src/civis_brain/scenarios/emergency/, brain/tests/scenarios/emergency/, brain/mocks/cases/emergency/, brain/config/scenarios/emergency.json and brain/docs/mock-team/progress/maram.md. Preserve EmergencyScenario.scenario_id="S05", detect(batch,nodes,policy,state)->DetectionResult and async draft_plan(context,provider)->Plan. Do not edit shared models, registry, Gemini adapter, fake peers, dependencies or other scenarios. Implement only async EmergencyScenario.draft_plan(context,provider) and domain-local planning tests. Use await provider.generate(context) at most once for a supported actionable candidate; use a fake provider in every test. Follow Step 4's response limits, return shared Plan types, and forbid unknown actions/evidence and containment. Do not import google-genai, read secrets, call peers, generate tokens or relax preview/approval. Empty or unsupported context must produce no action. Run the focused planning tests and explain the input/output.
+```
+
+## Step 5: prove success and refusal through the shared core
+
+Required variants: normal/no medical event; one valid medical event; wrong channel/unit; null; unavailable ambulance; carrier/destination distinction; invalid unit count/type; unknown evidence; successful dispatch; missing approval refusal.
+
+Add a workflow test using `from civis_brain.integration.runtime import build_runtime`. Construct it with `build_runtime(twin=fake_twin, guardian=fake_guardian, provider=fake_provider, policies=policies, features=features, artifact_dir=tmp_path)`, then call `await runtime.evaluate_tick(batch)`. Reuse the shared peer fixtures and feature schema specified in CONTRACT/SCENARIOS. Assert the final decision and exact peer call/effect counts, not just that no exception occurred. Prove both the applicable supported success and refusal case. Do not treat fixture preview/approval as evidence of live partner support.
+
+If the core or harness is still unimplemented, record the missing function in your progress file. Keep the PR draft and label unit-complete/integration-pending when appropriate. Do not skip tests, catch `NotImplementedError` as a successful scenario, or replace workflow assertions with mocks of the entire function under test. Elyes may review/merge a unit-complete draft to enable integration; final release still needs real workflow proof.
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests/scenarios/emergency/ -q
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
+```
+
+Copy this prompt:
+
+```text
+I am Maram on branch codex/civis-maram, implementing S05 only. Read brain/AGENTS.md, brain/docs/mock-team/CONTRACT.md, MARAM.md and PARTNER_GAPS.md. My editable paths are brain/src/civis_brain/scenarios/emergency/, brain/tests/scenarios/emergency/, brain/mocks/cases/emergency/, brain/config/scenarios/emergency.json and brain/docs/mock-team/progress/maram.md. Preserve EmergencyScenario.scenario_id="S05", detect(batch,nodes,policy,state)->DetectionResult and async draft_plan(context,provider)->Plan. Do not edit shared models, registry, Gemini adapter, fake peers, dependencies or other scenarios. Add tests only under my scenario test paths, reusing the exact shared core/harness contracts. Prove my base case and refusal case with recorded provider output and fake peers, including final decision, evidence and exact actuation/effect counts. Add the Step 5 edge variants. No live API/key or network in tests. If shared core is incomplete, record the precise blocking dependency and leave integration status pending; never skip acceptance or weaken assertions to claim success. Run focused tests, all tests and Ruff, then update my progress with actual outputs.
+```
+
+## Step 6: inspect changes and open your PR
+
+From `brain/`, return to the repository root. Stage only your assigned paths:
+
+```powershell
+cd ..
+git status --short
+git add brain/src/civis_brain/scenarios/emergency/ brain/tests/scenarios/emergency/ brain/mocks/cases/emergency/ brain/config/scenarios/emergency.json brain/docs/mock-team/progress/maram.md
+git diff --cached --check
+git diff --cached --stat
+git diff --cached
+git commit -m "Implement S05 emergency mock scenario"
+git push origin codex/civis-maram
+```
+
+Run the commit/push only after reviewing the staged diff and tests. In GitHub open a PR with **base `codex/civis-elyes`**, compare `codex/civis-maram`, and request Elyes. Include implemented functions, assumptions, actual test results, base/refusal trace and remaining dependencies. Keep a draft if integration is pending. Do not force push or resolve a shared-file conflict blindly.
+
+Copy this prompt:
+
+```text
+I am Maram on branch codex/civis-maram, implementing S05 only. Read brain/AGENTS.md, brain/docs/mock-team/CONTRACT.md, MARAM.md and PARTNER_GAPS.md. My editable paths are brain/src/civis_brain/scenarios/emergency/, brain/tests/scenarios/emergency/, brain/mocks/cases/emergency/, brain/config/scenarios/emergency.json and brain/docs/mock-team/progress/maram.md. Preserve EmergencyScenario.scenario_id="S05", detect(batch,nodes,policy,state)->DetectionResult and async draft_plan(context,provider)->Plan. Do not edit shared models, registry, Gemini adapter, fake peers, dependencies or other scenarios. Review my diff and tests before committing. Confirm only my five allowed path groups changed, detect accidental secrets and missing assertions, and report defects before fixing only my files. Prepare a concise PR description with function changes, fixture assumptions, test commands/results and integration dependencies. Stage only the exact Step 6 paths. Do not claim unsupported live integration or approve/merge my PR. Target codex/civis-elyes and request CodeSailor411.
+```
+
+## Deadlines
+
+- **8 October, 12:00 UTC+1:** small draft PR with fixtures, one function and its meaningful test.
+- **8 October, 20:00:** detector/response unit work ready for review; record integration dependencies.
+- **9 October, 12:00:** Elyes has merged reviewed scenario work and shared core.
+- **9 October, 18:00:** your success/refusal workflows and applicable acceptance checks pass.
+- **9 October, 20:00:** release candidate delivered before 10 October.
+
+After Elyes signs off the complete candidate, open the final release PR from `codex/civis-elyes` into `brain` and request Elyes's review. Open it under your own GitHub account so he can approve. Do not merge it or use Elyes's credentials.

@@ -1,7 +1,6 @@
 from civis_brain.contracts import Plan, PlanningContext
-from civis_brain.ports import PlanProvider
 
 
-async def draft_plan(context: PlanningContext, provider: PlanProvider) -> Plan:
-    """Meriem: request a typed proposal. This function never calls Twin or Guardian."""
-    raise NotImplementedError("Meriem: implement draft_plan; see docs/mock-team/MERIEM.md")
+def validate_plan(context: PlanningContext, plan: Plan) -> Plan:
+    """Elyes: validate scenario proposals against evidence and discovered actions."""
+    raise NotImplementedError("Elyes: shared plan validation; see docs/mock-team/ELYES.md")

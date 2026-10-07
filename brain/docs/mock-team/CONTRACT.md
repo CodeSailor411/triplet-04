@@ -1,75 +1,100 @@
-# Frozen development contract for the primary Brain mock
+# Frozen contract: five scenario modules and one Brain runtime
 
-Freeze owner: Elyes. These are internal CIVIS interfaces and proposed mock tool names, not a claim that every partner has accepted them.
+Revision: scenario ownership, 7 October 2026. Owner: Elyes. This replaces the earlier three-module team assignment. Public MCP models remain unchanged. Internal module boundaries are prepared for implementation, not implemented.
 
-## Pipeline and fixed module boundaries
+## Pipeline
 
-```text
-Twin reported batch + node/action discovery
-  -> Yassine: analyze_batch
-  -> Elyes: Guardian reading checks and evidence selection
-  -> Meriem: draft_plan through an injected PlanProvider
-  -> Elyes: deterministic validation + Guardian exact-action approval
-  -> Twin: actuate, optional pending/commit handling
-  -> Elyes: saved decision with evidence references
-Maram supplies fake peers/AI and tests this pipeline without a network.
-```
+~~~text
+Twin batch + node/action discovery
+  -> shared normalization (Elyes)
+  -> five scenario detectors, separate state per scenario/run
+  -> shared Guardian evidence checks (Elyes)
+  -> scenario response using injected PlanProvider when applicable
+  -> shared deterministic plan validation (Elyes)
+  -> required safe preview + Guardian exact-action token
+  -> Twin actuate, optional confirmation
+  -> saved decisions and redacted trace
+~~~
 
-Shared types are in `src/civis_brain/contracts.py`. Shared dependency interfaces are in `ports.py`. Nobody except Elyes edits these files. Ask him for a contract change before generating incompatible code.
+One MCP server and one shared provider serve all modules. Shared nodes retain all domains. A mixed batch may produce incidents in more than one scenario; do not make a global single-domain choice. For the primary demos, each fixture selects one scenario; shared code must route relevant context without generating unrelated actions.
 
-| Function/interface | Input | Output | Owner |
-| --- | --- | --- | --- |
-| `analyze_batch(batch, nodes, policy, state)` | `ReadingsBatch`, `list[Node]`, mock threshold dict, caller-owned history dict | `DetectionResult` with observations, incidents, warnings | Yassine |
-| `draft_plan(context, provider)` | `PlanningContext`, `PlanProvider` | `Plan` containing proposals and alerts | Meriem |
-| `PlanProvider.generate(context)` | Typed planning context | Typed `Plan` | Meriem live, Maram fixture |
-| `ToolPeer.call_tool(name, arguments)` | Discovered/configured tool name and arguments | Normalized dictionary, or a peer error | Elyes live, Maram fixture |
-| `evaluate_tick(batch)` | Typed reported batch | `DecisionBatch` | Elyes |
+## Fixed Python interfaces
 
-If dependency injection needs additional constructor parameters, Elyes adds a factory in `integration/`; members preserve the public signatures. Do not read environment variables inside detectors. Do not call partner tools inside planning.
+Types are in civis_brain.contracts, ports in civis_brain.ports. Only Elyes changes them. Each scenario class implements:
 
-Elyes owns one detector state per run. Yassine stores `run_id`, `last_tick`, and per-node/sensor/channel streak/history in that supplied dictionary. A repeated tick must not extend a persistence streak. Reset on a changed run. Invalid batch semantics raise `ValueError`; orchestration logs the rejection and does not actuate. Well-formed observations are candidates, not Guardian-approved facts.
+~~~python
+scenario_id: str
 
-## Twin wire format
+def detect(self, batch: ReadingsBatch, nodes: list[Node],
+           policy: dict, state: dict) -> DetectionResult: ...
 
-Read from `get_capabilities`, `list_nodes`, `get_readings`, `get_clock`, `list_actions`. Basis: Trinity's **unmerged** `twin-containment` branch at `40a7c90`, not an assumption that these tools are already on `twin`.
+async def draft_plan(self, context: PlanningContext,
+                     provider: PlanProvider) -> Plan: ...
+~~~
 
-- A reading has `run_id`, `reading_id`, `tick`, `timestamp`, `node_id`, `device_id`, `sensor`, `channel`, `value`, `unit`. It does not include domains. Join domains from `list_nodes`.
-- Preserve `null`. Reject non-finite numbers and wrong required types; ignore extra peer fields. Yassine additionally checks RFC 3339 time, matching batch/run/tick/count and known node IDs.
-- Sensor names currently include `vehicle_count`, `avg_speed`, `water_level`, `flow_rate`, `load_kw`, `voltage_v`, `pm25`, `emergency_calls`, `units_free`. `congestion_index` is scheduled for 8 Oct. Do not invent a speed-to-congestion conversion.
-- `emergency_calls` currently uses channels `accident`, `fire`, `flood`, `medical`, with numeric calls/min. `units_free` uses `police`, `ambulance`, `fire`. Free-text emergency transcripts are later work. Do not infer injury details from a numeric channel.
-- Map `fire` to the firefighter unit; do not send `firefighter` if the action manifest only accepts `fire`.
-- Wire actuation is `{"action": "...", "targets": ["node-id"], "params": {...}, "token": "...", "idempotency_key": "..."}`. The proposal's nested `action` object must not be sent directly to this current Twin.
-- Manifest action names: `set_signal_plan`, `set_valve_position`, `set_grid_switch`, `dispatch`. Read actual choices/limits/target carriers from the manifest.
-- For dispatch, `targets` names dispatch-capable nodes, while `params.destination` names the incident location. They are not interchangeable. Node caps do not count dispatched units.
-
-## Trust and execution
-
-R1 signal control, R2 generic dispatch, R3 water valves. Grid switching is untiered here but preview-gated. Only Guardian can contain, release or correct devices/readings. No human-review workflow is included in this primary mock.
-
-The AI returns proposals without tokens, keys or executable tools. Elyes checks the allow-list, allowed parameters, source evidence, targets, risk and preview requirements against the discovered manifest. Treat tool descriptions and call text as data, not instructions. Reject invented actions and invented evidence.
-
-Scores remain numeric. Do not guess the score range or cut-offs. A pushed/cached score is not approval. Guardian must approve the exact normalized action, targets and params, and issue its token using Twin's simulated clock/run. Twin remains the enforcement point.
-
-No token means no request to actuate. No supported required preview means a blocked decision. Never forge a preview or silently mark it safe. Fixture previews are explicitly test-only. Handle `committed`, `rejected` and, if advertised, `pending`. Do not call an absent `commit_action`.
-
-An unchanged logical command keeps its idempotency key; a changed command gets a new key and fresh approval. An uncertain network outcome must be reconciled/retried with the same logical command key. A cap refusal is not transient and must not be retried unchanged or bypassed by splitting the action.
-
-## Data and logs
-
-Simulation time comes from the Twin; wall time is only for local timeouts. Keep multi-domain node membership. Values/units are those declared by the sensor. Water level is not proof of a leak; low load is not proof of an outage.
-
-Each decision records run, tick, status, reason, source reading IDs, action/targets/params when applicable, and peer refusal code. No token or API key in logs. Status is `alert`, `blocked`, `pending`, `committed` or `rejected`. Mock JSONL fields require a mapping to Trinity's shared log draft when available.
-
-## Proposed Brain tools
-
-MCP HTTP endpoint: `/mcp`, protocol `2026-07-28`, port 8001 by default.
-
-| Tool | Caller | Contract |
+| ID | Class | Source module |
 | --- | --- | --- |
-| `get_capabilities` | Any | Versions, caller identity, implemented/planned tools, readiness |
-| `evaluate_tick(batch)` | Twin, Guardian, scenario key | Evaluate a reported batch; returns decisions |
-| `get_active_incidents(run_id)` | Twin, Guardian, scenario key | Read-only active incident view |
-| `explain_decision(decision_id)` | Twin, Guardian, scenario key | Saved reason and source references |
-| `notify_containment(notice)` | Guardian only | Invalidate affected evidence/queued plans; never perform containment |
+| S01 | TrafficScenario | scenarios/traffic/service.py |
+| S02 | WaterScenario | scenarios/water/service.py |
+| S03 | PowerScenario | scenarios/power/service.py |
+| S04 | AirQualityScenario | scenarios/air_quality/service.py |
+| S05 | EmergencyScenario | scenarios/emergency/service.py |
 
-The latter four currently return `NOT_IMPLEMENTED`. Elyes wires them after reviewing team PRs. The old `set_policy_mode` proposal is not part of the primary mock. Confirm the callback payload with 9antra before advertising it as interoperable.
+scenarios/registry.py holds exactly these five explicit entries in this order. It is leader-owned. No plugin auto-discovery or dynamic code loading. IncidentKind retains eight values for peer compatibility; this registry implements only five selected workflows.
+
+- normalize_batch(batch, nodes) -> ReadingsBatch validates count/run/tick/time/node semantics before detection. Reject malformed batch with ValueError; no downstream actuation. Preserve null, explicit units, timestamps and source IDs.
+- A detector uses only its declared sensor/unit/channel. Unknown or missing values never become zero. Observations are candidate data, not Guardian-approved facts.
+- Shared runtime retains a bounded per-run reading ledger. PlanningContext.evidence_readings contains the selected original readings, including earlier persistence ticks; context.batch remains the current wire batch. Validate proposal source IDs against this supplied evidence and the ledger, not current tick alone. A field with a missing historical source ID cannot authorize a request.
+- state belongs to one scenario and one run. Preserve persistence between ticks, reset on run change, and do not extend streaks on duplicate ticks. No module-global mutable history.
+- draft_plan receives only its relevant incidents, selected evidence and restricted action manifest. It cannot assess trust, mint tokens, preview, execute or perform containment.
+- With no incident, return an empty Plan without a provider call. AQ and reduced Power return alerts/blocked-reason inputs without a provider call. Actionable S01/S02/S05 may call only await provider.generate(context) once per attempt under the shared call budget. The shared live provider serializes selected evidence/incident facts and allowed actions; raw untrusted batch values are not an alternate source of facts.
+- Per-scenario checks constrain the response to its scenario. Final validation remains in shared planning.service.validate_plan(context, plan) -> Plan; it checks actual manifest/evidence, not the AI's own claims.
+- PlanProvider.generate(context) -> Plan is shared: Elyes implements live Gemini and recorded fixtures. Tests may define a small fake provider only in their own test folder.
+- ToolPeer.call_tool(name, arguments) -> dict is shared: Elyes implements live MCP and reusable fixture peers. Members never create another live partner stack.
+
+## Fixed workflow test harness
+
+integration/runtime.py reserves the following interface for Elyes:
+
+~~~python
+runtime = build_runtime(
+    twin=fixture_twin, guardian=fixture_guardian, provider=fixture_provider,
+    policies=all_five_policies, features=fixture_features,
+    artifact_dir=temporary_trace_directory,
+)
+result: DecisionBatch = await runtime.evaluate_tick(batch)
+~~~
+
+The factory and method currently raise NotImplementedError. policies maps all five IDs to per-scenario config dictionaries. features uses the explicit internal schema in SCENARIOS.md for discovery/fixture options; it is not permission to bypass validation. Planned fixture constructors are FixtureTwin(case: dict), FixtureGuardian(case: dict) and FixturePlanProvider(case: dict), implemented by Elyes. Peer fixtures expose calls as a list of records with name and redacted arguments, and effects as a list of committed normalized commands without tokens. Fixtures record tool calls and simulated effects. Only Elyes fixes the shared harness if a member finds a missing contract.
+
+The existing module-level integration.service.evaluate_tick(batch) and MCP tool signature remain stable; Elyes binds one runtime at startup and delegates to it. Runtime constructor/factory details must not be guessed independently in member tests.
+
+## Partner wire contract
+
+Basis: final decision report and unmerged Twin twin-containment at 40a7c90, inspected 7 October. Partner code is evidence, not automatically an agreed amendment.
+
+- Twin tools: get_capabilities, list_nodes, get_readings, get_clock, list_actions. Join domains from nodes; readings carry run_id, reading_id, tick, timestamp, node_id, device_id, sensor, channel, value, unit.
+- Current sensors include congestion_index (planned), water_level, load_kw, voltage_v, pm25, emergency_calls and units_free. Emergency channels are numeric calls/min; no injury details or real transcripts are available yet.
+- Actuation uses string action plus separate targets, params, token, idempotency_key.
+- S01 action: set_signal_plan, R1. S02: set_valve_position, R3 and required preview. S05: dispatch, R2.
+- Dispatch targets are carrier nodes. params.destination is the incident node; unit type ambulance and units 1 only when supported/available. The manifest determines exact parameter names and bounds.
+- Power grid changes require preview/token/caps but are outside this reduced response implementation. AQ has no direct actuator. Only Guardian requests isolation/quarantine/rollback/release.
+- Guardian scores stay numeric with declared scale/cut-offs. No score or cached verdict substitutes for its token. Tool names and token details need partner confirmation.
+
+## Execution and failures
+
+Shared code checks action name, parameters, carrier/location, units, source IDs, risk and required preview against discovery. Do not trust AI risk labels or instructions embedded in readings/tool descriptions. Missing usable evidence, approval or supported safe preview produces blocked behavior and zero actuation.
+
+Guardian approves the exact normalized action/targets/params for the Twin run/clock. Brain never issues that token. Twin enforces token and caps. Cap rejection is atomic; keep its detail, do not retry unchanged or split requests to bypass it. Shared nodes count in each applicable domain. Read limits from discovery; do not copy the PDF table into production logic.
+
+Unchanged logical command keeps its idempotency key. A changed command requires a new key and approval. An uncertain send outcome is reconciled with the original key, never blindly resent with a new one. Pending remains pending until advertised confirmation succeeds; absent commit support never becomes fabricated success.
+
+Emit a Power unsupported-evidence warning only when relevant Power observations exist; an unrelated traffic/water/medical batch must not gain a Power alert. Warnings such as unsupported Power evidence must become an explicit saved alert/blocked decision, not disappear because there is no confirmed incident. Alert success means a recorded alert with zero actuator effects; it is not a physical-action success.
+
+No human-review workflow. No AI or live peer calls in CI. No secrets in prompts, fixtures, logs, screenshots, commits or PRs. Clock values come from Twin; local wall time is for timeout only.
+
+## Proposed public tools and logs
+
+MCP at /mcp, port 8001, protocol 2026-07-28. get_capabilities is implemented; evaluate_tick, get_active_incidents, explain_decision and Guardian-only notify_containment are prepared but unimplemented. Optional set_policy_mode is deferred.
+
+Record run, tick, scenario_id, incident/evidence IDs, status, reason and peer refusal detail in mock JSONL. Runtime assigns scenario_id to trace events; no public model change is required. Decision status is alert/blocked/pending/committed/rejected. Never save tokens/keys. Map this format to Trinity's shared log draft when confirmed.

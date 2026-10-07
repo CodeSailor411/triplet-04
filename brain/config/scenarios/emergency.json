@@ -1,0 +1,17 @@
+{
+  "status": "illustrative fixture policy, not triplet-approved safety thresholds",
+  "fixture_only": true,
+  "scenario_id": "S05",
+  "sensor": "emergency_calls",
+  "channel": "medical",
+  "threshold_min": 1.0,
+  "persistence_ticks": 1,
+  "allowed_actions": [
+    "dispatch"
+  ],
+  "unit_type": "ambulance",
+  "risk": "R2",
+  "unit": "calls/min",
+  "availability_sensor": "units_free",
+  "availability_unit": "units"
+}

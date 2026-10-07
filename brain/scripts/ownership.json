@@ -1,9 +1,31 @@
 {
   "integration_branch": "codex/civis-elyes",
   "branches": {
-    "codex/civis-yassine": ["brain/src/civis_brain/inputs/", "brain/tests/inputs/", "brain/config/detection-mock.json", "brain/docs/mock-team/progress/yassine.md"],
-    "codex/civis-meriem": ["brain/src/civis_brain/planning/", "brain/tests/planning/", "brain/docs/mock-team/progress/meriem.md"],
-    "codex/civis-maram": ["brain/mocks/", "brain/tests/workflows/", "brain/docs/mock-team/progress/maram.md"],
-    "codex/civis-elyes": ["brain/", ".github/workflows/civis-mock.yml", "README.md"]
+    "codex/civis-yassine": [
+      "brain/src/civis_brain/scenarios/traffic/",
+      "brain/tests/scenarios/traffic/",
+      "brain/mocks/cases/traffic/",
+      "brain/config/scenarios/traffic.json",
+      "brain/docs/mock-team/progress/yassine.md"
+    ],
+    "codex/civis-meriem": [
+      "brain/src/civis_brain/scenarios/water/",
+      "brain/tests/scenarios/water/",
+      "brain/mocks/cases/water/",
+      "brain/config/scenarios/water.json",
+      "brain/docs/mock-team/progress/meriem.md"
+    ],
+    "codex/civis-maram": [
+      "brain/src/civis_brain/scenarios/emergency/",
+      "brain/tests/scenarios/emergency/",
+      "brain/mocks/cases/emergency/",
+      "brain/config/scenarios/emergency.json",
+      "brain/docs/mock-team/progress/maram.md"
+    ],
+    "codex/civis-elyes": [
+      "brain/",
+      ".github/workflows/civis-mock.yml",
+      "README.md"
+    ]
   }
 }

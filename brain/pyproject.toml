@@ -10,7 +10,12 @@ requires-python = ">=3.12,<3.13"
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-packages = ["civis_brain", "civis_brain.inputs", "civis_brain.planning", "civis_brain.integration", "civis_mock_peers"]
+packages = [
+    "civis_brain", "civis_brain.inputs", "civis_brain.planning", "civis_brain.integration",
+    "civis_brain.scenarios", "civis_brain.scenarios.traffic", "civis_brain.scenarios.water",
+    "civis_brain.scenarios.power", "civis_brain.scenarios.air_quality",
+    "civis_brain.scenarios.emergency", "civis_mock_peers",
+]
 package-dir = {"" = "src", "civis_mock_peers" = "mocks/civis_mock_peers"}
 
 [tool.setuptools.dynamic]

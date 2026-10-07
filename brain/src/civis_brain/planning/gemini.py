@@ -8,5 +8,5 @@ class GeminiPlanProvider:
         self.timeout_seconds = timeout_seconds
 
     async def generate(self, context: PlanningContext) -> Plan:
-        """Meriem: implement with google-genai, schema-constrained JSON and no tools."""
-        raise NotImplementedError("Meriem: Gemini adapter is assigned, not implemented")
+        """Elyes: one shared free-API adapter, constrained JSON and no tool execution."""
+        raise NotImplementedError("Elyes: shared Gemini adapter is assigned, not implemented")

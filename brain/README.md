@@ -1,31 +1,31 @@
-# CIVIS Brain: primary mock development
+# CIVIS Brain: five-scenario primary mock preparation
 
-The shared environment and transport scaffold are ready for team development. Business logic is assigned to Elyes, Yassine, Meriem and Maram and is deliberately not implemented by this setup.
+Windows environment, fixed scenario interfaces and four branches are prepared. Business logic remains assigned to the team and raises NotImplementedError; this setup is not a completed mock.
 
-Start with the [team meeting/work plan](docs/mock-team/README.md), [exact software setup](docs/mock-team/SETUP.md) and [frozen module contract](docs/mock-team/CONTRACT.md).
+Start with the [meeting plan](docs/mock-team/README.md), [Windows setup](docs/mock-team/SETUP.md), [five scenarios](docs/mock-team/SCENARIOS.md) and [frozen contract](docs/mock-team/CONTRACT.md).
 
-| Member | Task | Branch |
+| Member | Scenario and responsibility | Branch |
 | --- | --- | --- |
-| Elyes | Integration, trust gate, peer adapters, MCP callbacks, logging and release | `codex/civis-elyes` |
-| Yassine | Input validation, normalization and incident candidates | `codex/civis-yassine` |
-| Meriem | Free Gemini adapter and constrained action proposals | `codex/civis-meriem` |
-| Maram | Fake peers, recorded AI outputs and workflow tests | `codex/civis-maram` |
+| Yassine | S01 persistent congestion | codex/civis-yassine |
+| Meriem | S02 flood/high water | codex/civis-meriem |
+| Maram | S05 medical emergency | codex/civis-maram |
+| Elyes | S03 power, S04 air pollution, plus shared Gemini/peers/approval/runtime/reviews | codex/civis-elyes |
 
-Members submit PRs to `codex/civis-elyes`. Elyes reviews and merges. The release candidate goes to `brain` before 10 October 2026.
+Each scenario owner writes the detector, bounded response, fixtures and tests inside their own domain folder. One shared Brain runtime handles all external communication. Member PRs target codex/civis-elyes; release goes to brain before 10 October 2026.
 
 ## Windows setup
 
-From the repository root, after installing Git, VS Code and uv:
+From repo root after installing Git, VS Code and uv:
 
-```powershell
+~~~powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
 cd brain
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m civis_brain
-```
+~~~
 
-Health: `http://127.0.0.1:8001/health`. MCP: `http://127.0.0.1:8001/mcp`. The scaffold reports `ready=false`; workflow tools return `NOT_IMPLEMENTED` until the assigned code lands. Never treat the bootstrap tests as proof of completed partner workflows.
+Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Current readiness is false and workflow tools return NOT_IMPLEMENTED. Passing preparation checks proves setup, not completed partner scenarios.
 
-All members use Python 3.12 and the committed lock file. `.env` and `.venv` are ignored. Local tests must not need API keys or network. Live free Gemini testing is separate. Current partner disagreements and implementation gaps are in [PARTNER_GAPS.md](docs/mock-team/PARTNER_GAPS.md).
+Python 3.12 and committed dependencies remain unchanged. Tests use recorded responses and fake peers without keys/network; Elyes implements the single free Gemini adapter and performs a separate live check. .env/.venv are ignored.
 
-The earlier CIVIS technical checkpoint is in [docs/oct05](docs/oct05/README.md). The development plan records newer unmerged Twin code separately; it does not silently replace triplet agreements.
+The [4 October checkpoint](docs/oct05/README.md) has eight incident rows; this plan selects five primary workflows. Secondary cross-domain actions and the remaining three incident types are deferred. [Partner gaps](docs/mock-team/PARTNER_GAPS.md) remain explicit, especially missing live water preview and Guardian schemas.

@@ -1,4 +1,4 @@
-"""Frozen internal interfaces for parallel development. Only Elyes changes this file.
+"""Frozen shared types for five scenario modules. Only Elyes changes this file.
 
 Twin-facing shapes follow twin-containment commit 40a7c90. Guardian adaptation
 and the proposed Brain tool names still require partner confirmation.
@@ -117,6 +117,8 @@ class PlanningContext(WireModel):
     incidents: list[Incident]
     nodes: list[Node]
     actions: list[ActionInfo]
+    # Earlier persistence evidence is separate from the current-tick wire batch.
+    evidence_readings: list[Reading] = Field(default_factory=list)
 
 
 class TrustResult(WireModel):

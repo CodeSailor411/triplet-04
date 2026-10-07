@@ -1,0 +1,16 @@
+{
+  "status": "illustrative fixture policy, not triplet-approved safety thresholds",
+  "fixture_only": true,
+  "scenario_id": "S02",
+  "sensor": "water_level",
+  "unit": "cm",
+  "threshold_min": 100.0,
+  "persistence_ticks": 2,
+  "allowed_actions": [
+    "set_valve_position"
+  ],
+  "risk": "R3",
+  "requires_topology": true,
+  "requires_preview": true,
+  "safe_valve_choices": []
+}

@@ -1,6 +1,6 @@
-from civis_brain.contracts import DetectionResult, Node, ReadingsBatch
+from civis_brain.contracts import Node, ReadingsBatch
 
 
-def analyze_batch(batch: ReadingsBatch, nodes: list[Node], policy: dict, state: dict) -> DetectionResult:
-    """Yassine: normalize readings and find incidents using the frozen task card."""
-    raise NotImplementedError("Yassine: implement analyze_batch; see docs/mock-team/YASSINE.md")
+def normalize_batch(batch: ReadingsBatch, nodes: list[Node]) -> ReadingsBatch:
+    """Elyes: validate shared batch semantics before calling scenario detectors."""
+    raise NotImplementedError("Elyes: shared normalization; see docs/mock-team/ELYES.md")

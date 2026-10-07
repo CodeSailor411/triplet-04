@@ -1,52 +1,69 @@
-# Member PR and leader review procedure
+# Windows member PR and Elyes review procedure
 
-## Member workflow
+Each member edits only their assigned scenario source, config, fixture data, tests and progress file. Elyes maintains shared infrastructure. Check scripts/ownership.json; CI reads that policy from the integration base, not the member's proposed edit.
 
-1. Start from your assigned branch. Never edit another member's folder or the shared contract.
-2. Work on one function/test at a time. Run your module tests, then all tests and Ruff.
-3. Check `git diff` and `git status`. Stage only your paths with `git add <assigned-paths>`, not every file blindly.
-4. Use a short technical commit message, such as `Add consecutive-tick congestion detection`. Do not paste a chat command or API key into a commit message.
-5. Push your own branch. In GitHub, create a PR with **base `codex/civis-elyes`** and your branch as compare. Mark draft while incomplete; request CodeSailor411 when ready.
-6. PR body: implemented functions, sample input/output, test command/results, known gaps. Include no credentials. Do not merge your own PR.
+## Run before committing
 
-## Updating after another merge
+In PowerShell from brain/:
 
-Run Git commands from the repository root. If the terminal is currently in `brain/`, run `cd ..` first. After tests pass, stage your files with the exact member command:
+~~~powershell
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
+~~~
 
-| Member | Stage command |
+Initial setup has only preparation checks. Add meaningful scenario tests before claiming scenario completion. Describe a missing shared runtime as an integration dependency; do not fake passing full workflows. The final candidate cannot skip required workflow tests.
+
+Return to repository root with `cd ..`. Run git branch --show-current, git status --short, git diff. Confirm correct branch and absence of credentials/artifacts. Use your exact stage command:
+
+| Member | Stage only these paths |
 | --- | --- |
-| Yassine | `git add brain/src/civis_brain/inputs brain/config/detection-mock.json brain/tests/inputs brain/docs/mock-team/progress/yassine.md` |
-| Meriem | `git add brain/src/civis_brain/planning brain/tests/planning brain/docs/mock-team/progress/meriem.md` |
-| Maram | `git add brain/mocks brain/tests/workflows brain/docs/mock-team/progress/maram.md` |
+| Yassine | git add brain/src/civis_brain/scenarios/traffic brain/config/scenarios/traffic.json brain/mocks/cases/traffic brain/tests/scenarios/traffic brain/docs/mock-team/progress/yassine.md |
+| Meriem | git add brain/src/civis_brain/scenarios/water brain/config/scenarios/water.json brain/mocks/cases/water brain/tests/scenarios/water brain/docs/mock-team/progress/meriem.md |
+| Maram | git add brain/src/civis_brain/scenarios/emergency brain/config/scenarios/emergency.json brain/mocks/cases/emergency brain/tests/scenarios/emergency brain/docs/mock-team/progress/maram.md |
 
-Then `git diff --cached`, `git commit -m "Add completed module and its tests"`, and `git push`. Use a more specific technical message where possible. Your upstream branch is already configured by the first checkout, so `git push` targets your member branch. In GitHub the PR base dropdown must still be `codex/civis-elyes`.
+Inspect git diff --cached before committing. Use a concise technical message, for example Add congestion scenario detection and tests. Never copy a chat instruction into a commit message. Then git push to your own tracked branch.
 
-Commit your work first. With a clean working tree:
+## Create the PR
 
-```powershell
+In GitHub: base codex/civis-elyes, compare your own branch. Keep draft until the declared scope is tested. Request CodeSailor411. Do not merge your own PR or target main/brain directly.
+
+PR body:
+
+~~~text
+Scenario: S01 / persistent congestion
+Implemented: [actual functions and case files]
+Expected base/refusal outcomes: [status, action/evidence, zero effects when refused]
+Validation: [Windows commands and results]
+Integration: [proved through shared core, or exact remaining dependency]
+Assumptions/gaps: [fixture-only choices and partner limitations]
+~~~
+
+Elyes may review and merge a clearly scoped unit-complete change while full integration remains assigned, but it must not claim release readiness. Final scenario sign-off requires the common-runtime workflow proof.
+
+## Refresh after leader or another member merges
+
+Commit your own work first; clean working tree required. From repo root:
+
+~~~powershell
 git fetch origin
 git merge origin/codex/civis-elyes
-```
+~~~
 
-Then re-run tests and push. Do not use force push, hard reset, or accept every conflict automatically. If a conflict appears, stop and let Elyes inspect it with you. Each branch owns separate paths, so shared-file changes should normally come from Elyes only.
+Run tests again and push. Do not force push, hard reset or choose all conflict sides blindly. Show a real conflict to Elyes. A leader setup update reaches your clone using these same commands; it does not erase existing local commits.
 
-## Elyes's review checklist
+## Elyes review checklist
 
-- The diff contains only assigned files and no environment/key/generated artifact.
-- Imports, function signatures, return models and failure behavior match CONTRACT.md.
-- Tests include expected values and no unwanted side effects, not just happy-path execution.
-- The member explains their function and one failed case in plain language.
-- No invented partner tool/parameter name, hardcoded global cap, score range or physical inference.
-- The AI planner cannot call an actuator or issue a token. Brain requests; Guardian approves; Twin executes.
-- Required CI checks pass on the latest integration base and conversations are resolved.
-- Approve only the latest ready PR; merge serially; run all checks after the merge.
+- Assigned paths only; no keys/.env/generated artifacts, partner-layer implementation or shared-contract edits.
+- Scenario ID, class/signatures, units and source evidence match CONTRACT/SCENARIOS.
+- Member can explain one base case and one refusal without reading the AI's summary.
+- No copied Gemini/MCP/Guardian stack or scenario-local token/actuation logic.
+- R1/R2/R3 and preview come from the manifest; no invented safety scale, cap or physical inference.
+- Tests assert exact output, call order/count and no unwanted effects.
+- Latest Windows CI passes, integration base current and conversations resolved.
+- Request precise changes where needed; approve only reviewed scope and merge serially.
 
-Use **Approve** in the Files changed review menu, then merge. If changes are needed, use **Request changes** and give a precise file/test request. A new commit dismisses the old approval under the integration rule.
+Integration requires one code-owner review, CIVIS bootstrap and CIVIS file ownership checks, resolved conversations and an up-to-date base. New commits dismiss old approvals. Force pushes/deletion are disabled. Elyes retains repository-owner bypass for shared maintenance and root ownership.
 
-## Final release to the triplet
+## Release
 
-After M01-M18 and the smoke checks pass, Maram opens a PR from `codex/civis-elyes` to `brain`. Elyes reviews it as CODEOWNER. This keeps the PR author separate from its reviewer. Do not send three unfinished member branches directly to other teams.
-
-The integration branch requires one code-owner approval and successful bootstrap/file-ownership checks. Strict status checks require updating from the integration branch after it moves. Admin bypass remains available to Elyes for leader maintenance; member PRs still follow the review process. The `brain` layer's existing ownership rule remains in place.
-
-GitHub CODEOWNERS: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+After five workflows and shared acceptance checks pass, Maram opens the PR from codex/civis-elyes to brain. Elyes approves as Code Owner; GitHub authors cannot approve their own PR. Keep member daily commits on their own branches. Other triplet teams receive one tested integration commit, not four unfinished branches.

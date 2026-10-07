@@ -1,63 +1,63 @@
-# CIVIS primary mock: team meeting and work plan
+# CIVIS primary mock: five scenarios, four Windows branches
 
-Owner: Elyes (CodeSailor411). Team: Elyes, Yassine, Meriem, Maram.
-Target: a handover candidate on **9 October 2026 at 20:00**, before 10 October. Times below are UTC+1.
+Team: Elyes (CodeSailor411), Yassine, Meriem, Maram. Handover target: **9 October 2026 at 20:00 UTC+1**, before 10 October.
 
-## What we are building
+## Decision and scope
 
-A small Python City Brain that other layers can call over MCP. It consumes reported readings, detects incidents, asks a free AI API for a typed action proposal, validates that proposal, obtains Guardian approval for the exact request, and asks Twin to act. Brain never acts directly and never performs containment.
+Use scenario ownership for this small mock. Each beginner owns a complete, bounded scenario: sample inputs, detector, response rules, fixtures, tests and PR. Elyes owns two smaller scenario modules and the common runtime. This is easier to explain and demonstrate than making everyone wait for a detector, planner or fixture team to finish.
 
-The source tree is a runnable **development scaffold**, not a completed mock. The business functions deliberately raise `NOT_IMPLEMENTED`. Green bootstrap checks establish that the environment works, not that the mock is delivered.
+There is **one Brain service**, one free AI API adapter, one Guardian approval path and one Twin connection. A scenario is a Python module inside that service, not a separate server or copied pipeline. The AI proposes; shared code validates; Guardian approves the exact request; Twin executes. Brain never performs containment. No human-review workflow is included.
 
-Primary workflows: congestion -> R1 signal request; medical/fire -> R2 dispatch; high water -> R3 valve request with preview. Also cover the other incidents in the CIVIS table, with alerts or explicit blocked decisions when prerequisites are absent. All five domains remain represented. Telecom and Waste are outside this checkpoint.
+The user requested five primary scenarios. The [4 October PDF](../oct05/CIVIS_4_October_2026.pdf) actually lists eight incident types, without designating a five-scenario subset. The following five are selected from that table for this reduced checkpoint. This selection is a development plan, not a claim that the PDF records approval of these exact five. Road accident, low water and fire are deferred. Existing incident enum values remain for compatibility, but are not promised as supported workflows.
 
-## Four branches, one repository
-
-| Member | Branch | Exact work | Task card |
+| ID | Incident from the PDF | Owner | Bounded primary response |
 | --- | --- | --- | --- |
-| Elyes | `codex/civis-elyes` | Integration branch, shared interfaces, live MCP clients, trust gate, action validation, logging, final release | [ELYES.md](ELYES.md) |
-| Yassine | `codex/civis-yassine` | Input normalization and deterministic incident detection | [YASSINE.md](YASSINE.md) |
-| Meriem | `codex/civis-meriem` | Free Gemini API adapter, prompt, typed and constrained proposals | [MERIEM.md](MERIEM.md) |
-| Maram | `codex/civis-maram` | Recorded AI responses, fake Twin/Guardian, workflow tests and handover evidence | [MARAM.md](MARAM.md) |
+| S01 | Persistent congestion | Yassine | Advertised safe signal proposal, R1 |
+| S02 | Flood / high water | Meriem | Topology-supported valve proposal, R3, only with required safe preview |
+| S03 | Power overload / confirmed service loss | Elyes | Alert or blocked decision until fault evidence, topology and preview are supported; no invented outage |
+| S04 | Sustained air pollution | Elyes | Air-quality alert; no AQ actuator or unsupported dispatch |
+| S05 | Medical emergency | Maram | Available ambulance dispatch, R2, to the reported location |
 
-Yassine, Meriem and Maram open PRs **into `codex/civis-elyes`**, not `main` or `brain`. Elyes reviews and merges them sequentially. The final release goes from `codex/civis-elyes` to the triplet's `brain` branch. Other teams continue using their own layer branches.
+The first version uses one primary response per scenario. The PDF's conditional cross-domain responses remain documented, but extra dispatches, grid changes or signal assistance are outside this checkpoint unless separately assigned. Keep all domain memberships and relevant context; do not claim those secondary actions are implemented.
 
-Only Elyes changes shared models, dependencies, environment settings, server wiring and CI. Members may add helper files only under their assigned folders. CI checks the allowed file list from the integration branch. This reduces file conflicts; frozen function signatures and tests address integration conflicts. Nobody can promise that arbitrary edits will never conflict.
+## Read these in order
 
-## Schedule and meeting checklist
+1. [Windows setup](SETUP.md)
+2. [Five scenario definitions and fixture format](SCENARIOS.md)
+3. [Frozen internal contract](CONTRACT.md)
+4. Your task card, with an AI prompt for each development step
+5. [Acceptance](ACCEPTANCE.md), [PR/review procedure](REVIEW.md), [partner gaps](PARTNER_GAPS.md)
 
-| When | Deliverable | Owner |
+| Member | Branch | Task card |
 | --- | --- | --- |
-| 7 Oct, team meeting | Everyone checks out their branch, installs the same environment, runs bootstrap tests, explains their input/output function | All |
-| 7 Oct, end of meeting | Freeze Guardian tool map, confirm Twin `params`/dispatch schema, choose mock preview policy, collect GitHub usernames | Elyes |
-| 8 Oct, 12:00 | First small draft PR: one completed function plus one meaningful test; post progress in own file | Each member |
-| 8 Oct, 20:00 | Detection and planning unit PRs ready; fake peers implement the first three fixture workflows | Yassine, Meriem, Maram |
-| 9 Oct, 12:00 | Elyes merges reviewed unit PRs, wires orchestration and callbacks; Maram updates her branch and completes end-to-end tests | Elyes, Maram |
-| 9 Oct, 18:00 | Run complete acceptance matrix, one live Gemini smoke test, and real partner discovery/auth smoke tests | Elyes, supported by team |
-| 9 Oct, 20:00 | Release candidate, launch instructions, example payloads and limitations ready for partners | Elyes |
-| 10 Oct | Reserved for partner feedback and fixes, not first integration | All |
+| Elyes | codex/civis-elyes | [Two scenarios and shared core](ELYES.md) |
+| Yassine | codex/civis-yassine | [S01 traffic](YASSINE.md) |
+| Meriem | codex/civis-meriem | [S02 water](MERIEM.md) |
+| Maram | codex/civis-maram | [S05 medical](MARAM.md) |
 
-First meeting: spend 10 minutes on Brain/Twin/Guardian roles, 15 on setup, 20 walking through task cards and one sample payload, then 15 on the three workflows and blockers. Each member must explain what their function receives, returns, and is forbidden to do.
+Each member owns their scenario source folder, config, case data, tests and progress file. Only Elyes changes contracts, package pins, Gemini adapter, fake peers, normalization, registry, orchestration, auth, server, CI and shared documents. See scripts/ownership.json for the enforced path list. The previous split by detector/planner/fixtures is superseded.
 
-## Handover definition
+PR base for member work: **codex/civis-elyes**. Elyes reviews and merges one at a time. Update your branch after each integration merge; never force push. Fixed interfaces and separate files reduce conflicts, but do not guarantee arbitrary edits will merge safely. Maram opens the final integration-to-brain PR so Elyes can approve it.
 
-- A fresh clone starts with the documented commands on Python 3.12.
-- Health and capabilities distinguish readiness from mere process availability.
-- Partner tool names, auth keys, URLs and capability flags are configured, not buried in code.
-- Tests run without network access or API keys, using fixture AI and local fake peers.
-- A separate live Gemini check proves the real AI adapter works; free quota errors become blocked decisions.
-- Missing approval, untrusted evidence, invalid AI JSON, unsupported preview and cap rejection never actuate.
-- Exact action/targets/params approval, idempotency and optional pending/commit handling are tested.
-- Read-only incident/explanation tools and Guardian containment notifications are available or explicitly reported unsupported.
-- Every run produces a JSONL decision trace. The shared triplet log format remains a separate agreement; the mock format must be labelled.
-- Other teams receive the actual branch/commit, launch command, MCP URL, input example, tool list and known limitations. Do not claim fixtures prove live integration.
+## Meeting and delivery schedule
 
-## Read first
+| Time, UTC+1 | Deliverable | Owner |
+| --- | --- | --- |
+| 7 Oct, meeting | Accept invitations, install Windows environment, explain assigned input/output and one refusal | All |
+| 7 Oct, meeting end | Confirm five-scenario selection and partner gaps; freeze fixture assumptions and interfaces | Elyes |
+| 8 Oct, 12:00 | Small draft PR: base/refusal data, detector and first meaningful unit test | Each member |
+| 8 Oct, 20:00 | Each scenario's detection/planning unit tests ready; shared fake peers and Gemini adapter usable | All, Elyes for core |
+| 9 Oct, 12:00 | Merge reviewed scenario PRs and compose the one shared runtime | Elyes |
+| 9 Oct, 18:00 | Five workflow outcomes and failure variants pass; separate real AI/partner smoke checks | All, Elyes signs off |
+| 9 Oct, 20:00 | Partner handover candidate and final release PR ready | Elyes, Maram opens PR |
+| 10 Oct | Partner feedback buffer | All |
 
-1. [SETUP.md](SETUP.md)
-2. [CONTRACT.md](CONTRACT.md)
-3. Your task card
-4. [REVIEW.md](REVIEW.md), [ACCEPTANCE.md](ACCEPTANCE.md)
-5. [PARTNER_GAPS.md](PARTNER_GAPS.md)
+Do not wait until 9 October to build the core: Elyes starts it in parallel on 7 October. Members use a tiny local fake PlanProvider for unit tests, so no live API, token or completed core is needed for initial progress. Full workflow checks depend on the common runtime; report that dependency, never hide it with skips or weakening assertions.
 
-Business implementation, a dashboard, full city simulation, databases, deployment infrastructure and v1.0 security are not completed by this setup. The shared dashboard is Trinity's responsibility. A free AI API is used at runtime; AI coding assistants may help implement each member's assigned module.
+## Prepared now, still to be implemented
+
+Environment, five scenario stubs, frozen types/ports, folder ownership, Windows CI and detailed guides are prepared. Business functions still raise NotImplementedError and MCP workflows still return NOT_IMPLEMENTED. Passing setup checks does not mean the mock is finished.
+
+Elyes implements one future case trigger: from brain/, `.\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base` (select S01-S05). That runner is assigned, not available yet.
+
+Release requires all five scenario outcomes, meaningful refusal tests, redacted traces, one launch/trigger path, honest readiness and documented partner gaps. Live R3 water must stay blocked if required preview is unavailable. Alert-only power is a deliberate reduced mock outcome; it does not demonstrate live grid switching. The full eight-row incident table remains the broader roadmap.

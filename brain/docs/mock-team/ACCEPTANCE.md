@@ -1,32 +1,35 @@
-# Primary mock acceptance matrix
+# Acceptance: five scenarios plus shared checks
 
-Elyes signs off the candidate only after these tests pass. Maram owns fixture/workflow tests; module owners own their unit tests. The current bootstrap tests do not cover these unimplemented behaviors.
+Elyes approves release evidence. Each owner proves their own full scenario through the common runtime; unit tests alone are not partner handover. Current tests verify preparation only.
 
-| ID | Given | Expected result and proof |
-| --- | --- | --- |
-| M01 | Two consecutive usable congestion ticks, supported signal, numeric trust and exact approval | R1 advertised signal request; correct params/evidence; exactly one committed action |
-| M02 | Medical channel event, available ambulance, actual dispatch carrier and destination | R2 dispatch; targets is carrier and destination is event location; exactly one unit requested if available |
-| M03 | High water with an explicitly safe fixture preview and approved valve request | R3 preview occurs before actuate; exact token binding; commit is logged |
-| M04 | Same water incident but no preview tool or unsafe result | Blocked; zero actuate calls |
-| M05 | PM2.5 evidence without independent emergency evidence | Air alert; no AQ actuator and no emergency dispatch |
-| M06 | Low load only, no configured outage evidence, no preview | Alert/blocked; no invented outage or grid operation |
-| M07 | Untrusted evidence, no usable alternative after bounded attempts | Blocked; zero actuation; reason/evidence/attempts recorded |
-| M08 | Missing token, expired/wrong-run/mismatched token, or numeric score only | No successful actuation; precise refusal retained; Brain never creates permission |
-| M09 | Action targets exceed one domain cap | Entire request rejected; zero effects; CAP_EXCEEDED detail retained; no unchanged retry or splitting |
-| M10 | Shared node plus other targets breaks its second domain's cap | Same atomic refusal; both memberships were checked |
-| M11 | Duplicate input/command, then changed command using old key | Unchanged command executes once; changed intent is rejected/newly keyed, not replayed as the old action |
-| M12 | Twin advertises pending and confirmation support | One pending request and one correct confirmation; pending is not logged as committed early |
-| M13 | Twin returns pending but no confirmation tool | Remains pending/blocked with explanation; no fabricated commit call |
-| M14 | AI bad JSON, unknown action/evidence, quota error or timeout | Blocked/no effects; no paid fallback, random substitute or unbounded retry |
-| M15 | Twin/Guardian timeout, malformed data or protocol mismatch | Bounded failure, preserved reason; no cached score used as approval |
-| M16 | Guardian notify_containment for an evidence device; Twin attempts same callback | Guardian callback invalidates affected queued evidence; Twin caller denied; no Brain containment action |
-| M17 | Fire/accident/flood/low-water candidates and malformed/unit-mismatched inputs | Correct incident kind or explicit unsupported/blocked outcome; no guessed injury/topology facts |
-| M18 | Literal prompt-injection text in a synthetic incident/partner result | Cannot produce containment, reveal key/token, disable validation, or add unknown action |
+| ID | Owner | Base outcome | Required refusal/edge proof |
+| --- | --- | --- | --- |
+| S01 persistent congestion | Yassine | R1 advertised signal request commits exactly once with correct evidence | One tick/null/duplicate tick does not create persistence; denied/missing approval produces zero actuation |
+| S02 flood/high water | Meriem | Declared safe topology/preview fixture permits exact R3 valve request | Missing/unsafe preview or unsupported target blocks; no assumed valve direction; zero actuation |
+| S03 power overload/service loss | Elyes | Explicit saved alert/blocked result when confirmed fault/preview/topology is unavailable | Low load alone never asserts outage; no grid operation; unsupported-evidence warning appears in decisions/trace |
+| S04 sustained air pollution | Elyes | Alert with source readings and no AQ actuator | No uncorroborated emergency dispatch; missing/wrong-unit/single-tick evidence does not trigger sustained incident |
+| S05 medical emergency | Maram | R2 dispatch with ambulance carrier, separate destination and supported available unit | No available units, wrong carrier/destination or denied approval means no dispatch; no inferred injury facts |
 
-## Release evidence
+Power/AQ successful demonstration means correct alert/blocked handling and zero physical effects. Water's positive path is explicitly fixture-only until live preview support is confirmed. Keep base and refusal variations under these same five IDs. Accident, low water and fire are not required scenario workflows in this checkpoint.
 
-Save the test command/output, one successful trace, one blocked trace, exact fixture assumptions, current partner branch/commit and model name. Traces contain no tokens or keys. All fake-peer tests must pass without internet or credentials.
+## Shared checks, owned by Elyes
 
-Run one separate live Gemini smoke check with synthetic context. Check schema-valid output and bounded failure behavior. Run partner discovery/auth smoke checks against the actual supplied endpoints. Do not equate either smoke check with passing every scenario on real partners.
+| Check | Evidence required |
+| --- | --- |
+| Input/auth | Reject wrong required fields, mismatched run/tick/count, unknown nodes and unauthenticated callers; ignore unknown extra fields; preserve null |
+| Evidence/approval | Untrusted data, numeric score only, absent/mismatched/expired/wrong-run token cannot authorize a successful action |
+| AI failure | Invalid JSON, unknown action/evidence, extra token, quota/timeout and injected instructions become bounded failures, with zero actuator effects |
+| Caps | Atomic CAP_EXCEEDED, shared-domain counting and original detail retained; no partial effects, unchanged retry or split-to-bypass |
+| Idempotency | Same command acts once; modified intent cannot reuse old approval/key; uncertain network outcome keeps original key |
+| Optional pending | Confirm only if advertised; absent confirmation leaves honest pending/blocked result; never log premature commit |
+| Containment notice | Only Guardian caller accepted; affected evidence/queued intent invalidated; Brain never contains/releases |
+| Five-module routing | Fixed registry, independent per-run scenario state, preserved shared-node domains, no unrelated action from a single-case run |
+| Handover | One launch and one scenario-trigger path, honest readiness, redacted trace, exact commit/config and documented live limitations |
 
-Before partners use the mock, they need: launch command, configuration example, MCP URL and protocol, tool/payload examples, current readiness, and known gaps (especially preview, Guardian schemas, cap discovery, transcript feed and pending support).
+These are shared test assertions or variants within S01-S05, not additional primary scenarios. No live AI/peer request in automated tests. Never mark a required workflow passed merely because the server stays alive or NotImplementedError was expected.
+
+## Release record
+
+All tests and Ruff pass on Windows, including meaningful full workflows. Save one trace per scenario with status, reason and evidence, plus at least one blocked trace. No skipped required behavior. Record fixture assumptions and partner commit/protocol versions.
+
+Run one separate synthetic live Gemini smoke check under free-tier access and real partner discovery/auth checks when endpoints/keys are supplied. Passing fixtures cannot be reported as completed live integration. Preview/schema gaps must be visible in the partner handover; readiness describes actual supported features.
