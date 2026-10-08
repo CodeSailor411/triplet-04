@@ -97,7 +97,7 @@ In VS Code open brain/civis.code-workspace or select interpreter brain/.venv/Scr
 | pydantic-settings | 2.15.0 | Local environment settings |
 | Official MCP SDK | 2.3.0 | Shared server/client; protocol 2026-07-28 |
 | httpx / httpx2 | 0.28.1 / 2.13.1 | HTTP tests/AI SDK and MCP transport |
-| google-genai | 2.28.0 | Shared free Gemini adapter |
+| google-genai | 2.28.0 | Existing optional Gemini adapter; OpenRouter uses httpx |
 | pytest / pytest-asyncio | 9.1.1 / 1.4.0 | Unit and async workflow tests |
 | Ruff | 0.16.10 | Lint checks |
 
@@ -105,16 +105,16 @@ requirements-lock.txt includes transitive dependencies. The lock remains pinned.
 
 | Person | Extra requirement | Focus |
 | --- | --- | --- |
-| Elyes | Own Google AI Studio key for shared adapter/live smoke; GitHub CLI optional | Common runtime, free API, MCP, auth, approvals, two small scenarios |
+| Elyes | Own OpenRouter key for shared adapter/live smoke; GitHub CLI optional | Common runtime, free API, MCP, auth, approvals, two small scenarios |
 | Yassine | None beyond common setup; no API key needed | Traffic detector/response, JSON fixtures, pytest |
 | Meriem | None beyond common setup; no API key needed | Water evidence/topology/preview rules, async response/tests |
 | Maram | None beyond common setup; no API key needed | Medical event/carrier/destination/availability, async response/tests |
 
-Each scenario uses an injected provider; it does not install another framework or create another network client. Coding-assistant accounts are separate from the runtime Gemini API. A member may use their own free API key for an optional live check, but it is not required for their scenario unit tests.
+Each scenario uses an injected provider; it does not install another framework or create another network client. Coding-assistant accounts are separate from the runtime OpenRouter API. A member may use their own free API key for an optional live check, but it is not required for their scenario unit tests.
 
 ## 6. Local keys and shared connections
 
-Default LLM_MODE=fixture is for repeatable tests. Elyes obtains a key at https://aistudio.google.com/apikey and edits ignored brain/.env locally. Set GEMINI_API_KEY and switch LLM_MODE=gemini for a live AI run. Configured model remains gemini-3.5-flash-lite; verify free-tier availability/access in the account before the live check. Quota/timeout is a blocked outcome; no paid fallback.
+Default LLM_MODE=fixture is for repeatable tests. Elyes configures an OpenRouter key in ignored brain/.env. For live AI set LLM_MODE=openrouter, OPENROUTER_API_KEY, OPENROUTER_MODEL=google/gemma-4-31b-it:free and AI_TIMEOUT_SECONDS=30. Keep PEER_MODE=fixture until partner contracts are confirmed. Run scripts/smoke_openrouter.py or click Check AI connection in the console. One synthetic request executes no command. Quota/timeout is blocked; no retry loop, provider fallback or paid route. Gemma supports JSON output; local JSON-schema and Plan validation enforce the contract. Gemini is available only when deliberately selected with LLM_MODE=gemini and its own key.
 
 Do not paste real keys/tokens into an AI chat, fixture, screenshot, commit or PR. Fixtures and automated tests do not need credentials.
 
@@ -130,7 +130,7 @@ From brain/:
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
-Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Readiness stays false until all five workflows and live checks pass. S03/S04 and shared tools work; relevant unfinished member inputs return SCENARIO_NOT_IMPLEMENTED. Ctrl+C stops the process.
+Debug console: http://127.0.0.1:8001/. Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Readiness stays false until all five workflows and live checks pass. S03/S04 and shared tools work; relevant unfinished member inputs return SCENARIO_NOT_IMPLEMENTED. Ctrl+C stops the process.
 
 A second PowerShell terminal in brain/ can check the initial transport:
 
@@ -153,8 +153,8 @@ Then use the separate prompt at each step of your own card. Read the explanation
 - [uv installation, including WinGet](https://docs.astral.sh/uv/getting-started/installation/)
 - [VS Code Python setup](https://code.visualstudio.com/docs/python/python-tutorial)
 - [MCP SDK mounting](https://py.sdk.modelcontextprotocol.io/run/asgi/)
-- [Gemini API setup](https://ai.google.dev/gemini-api/docs/get-started)
-- [Gemini free-tier pricing](https://ai.google.dev/gemini-api/docs/pricing)
-- [Configured model](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
+- [OpenRouter key management](https://openrouter.ai/workspaces/default/keys)
+- [Selected Gemma free model](https://openrouter.ai/google/gemma-4-31b-it:free)
+- [OpenRouter provider filtering](https://openrouter.ai/docs/guides/routing/provider-selection)
 
-Windows preparation checks run in GitHub Actions too. No live AI request has been made by this setup.
+Windows checks run in GitHub Actions with no API/peer calls. On 9 October, all 55 applicable package pins matched locally. The key authenticated successfully; two explicit synthetic OpenRouter inference checks returned HTTP 429. See VERSIONS.md and HANDOVER.md. This is not a successful live planning check.

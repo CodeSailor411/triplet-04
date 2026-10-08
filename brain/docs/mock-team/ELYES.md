@@ -1,6 +1,6 @@
 # Elyes: S03 Power, S04 Air Quality and the shared Brain core
 
-Implementation update, 8 October: your reduced scenarios and shared core are implemented. See [handover](HANDOVER.md) and [verification/progress](progress/elyes.md). The steps below remain the task checklist; live partner/API checks and member review are still pending.
+Implementation update, 9 October: your reduced scenarios and shared core are implemented. See [handover](HANDOVER.md) and [verification/progress](progress/elyes.md). The steps below remain the task checklist; live partner/API checks and member review are still pending.
 
 Branch: `codex/civis-elyes`, the protected integration branch. You review the three member PRs. Your two alert-focused scenarios leave time for the shared integration work.
 
@@ -17,7 +17,7 @@ Your own scenarios:
 - `config/scenarios/power.json`, `config/scenarios/air_quality.json`.
 - `docs/mock-team/progress/elyes.md`.
 
-Shared core: normalization, per-scenario/run state, static registry, models/ports/settings, one Gemini adapter, reusable fake peers, MCP/auth, trust/preview/action validation, execution, logs, CI and release evidence. Paths are relative to `brain/`. Leave traffic/water/emergency implementations, tests, fixtures and policies to their owners. Do not implement `twin/` or `guardian/`.
+Shared core: normalization, per-scenario/run state, static registry, models/ports/settings, one configured AI adapter, reusable fake peers, MCP/auth, trust/preview/action validation, execution, logs, CI and release evidence. Paths are relative to `brain/`. Leave traffic/water/emergency implementations, tests, fixtures and policies to their owners. Do not implement `twin/` or `guardian/`.
 
 Fixed scenario signatures:
 
@@ -41,7 +41,7 @@ cd brain
 
 Confirm `codex/civis-elyes` and select `brain/.venv/Scripts/python.exe` in VS Code. Collect member GitHub usernames and grant individual access. Confirm actual Guardian schemas/tools/keys, Twin `action` plus `params`, dispatch carrier/destination and required preview support. Record unresolved items in PARTNER_GAPS; do not guess the answers.
 
-Only you need a local Gemini key for the shared live smoke test. Keep it in ignored `brain/.env`. Members develop with recorded provider responses; their own keys are optional if they help with the later live check.
+Only you need a local OpenRouter key for the shared live smoke test. Keep it in ignored `brain/.env`. Members develop with recorded provider responses; their own keys are optional if they help with the later live check.
 
 Copy this prompt:
 
@@ -89,7 +89,7 @@ Your Power/AQ `draft_plan` methods return alert-only typed Plans by default. The
 
 Implement the shared core in this order:
 
-1. One `GeminiPlanProvider` using the pinned SDK, schema-constrained `Plan`, bounded context, timeout and call budget. No tools/search/paid fallback. A failed free API call becomes blocked, never random substitute success.
+1. One active `OpenRouterPlanProvider` using existing pinned httpx, JSON-mode output plus local schema-constrained `Plan` validation, bounded context, timeout and call budget. Keep the selected model google/gemma-4-31b-it:free; Gemini is an explicit optional mode only. No tools/search/paid fallback. A failed free API call becomes blocked, never random substitute success.
 2. Live `ToolPeer` adapters use configured endpoints/caller keys and discovered protocol/tool schemas. Missing Guardian mappings block the joint workflow.
 3. Select usable evidence through Guardian's actual checks. Use agreed numeric cut-offs only. A score/cached score is not exact-action permission.
 4. Invoke each applicable scenario's constrained `draft_plan` with a restricted action manifest. Physical proposals still receive shared checks for known action, carriers, params, evidence, risk and preview.
@@ -97,13 +97,13 @@ Implement the shared core in this order:
 6. Twin alone executes. Preserve rejection details/caps, use stable command idempotency, reconcile uncertain outcomes and never split cap-refused commands to bypass limits.
 7. Handle pending/commit only when advertised. Missing confirmation support leaves pending with explanation; never fabricate a commit.
 8. Wire active incidents, explanation and Guardian-only containment notification. Invalidate affected queued evidence; Brain never isolates/quarantines/releases/rolls back devices.
-9. Implement one shared `scripts/run_case.py` runner with `--scenario S01` through S05 and `--case base` or refusal. Load the selected domain case, create shared fixtures/runtime, evaluate its batches and write a redacted trace under ignored .artifacts/. Do not copy orchestration into five scripts. Default uses fixture AI/peers; live Gemini smoke is separate.
+9. Implement one shared `scripts/run_case.py` runner with `--scenario S01` through S05 and `--case base` or refusal. Load the selected domain case, create shared fixtures/runtime, evaluate its batches and write a redacted trace under ignored .artifacts/. Do not copy orchestration into five scripts. Default uses fixture AI/peers; live OpenRouter smoke is separate.
 10. Save redacted decision/evidence traces. Readiness stays false until the completed acceptance matrix passes.
 
 Copy this prompt:
 
 ```text
-Implement Elyes's shared Gemini adapter and runtime using the frozen Scenario/PlanProvider/ToolPeer/build_runtime contracts, then Power/AQ alert-only draft_plan methods. Do not implement traffic/water/emergency modules. Follow Step 4's bounded free-API, discovery, evidence, deterministic validation, exact-action token, preview, idempotency, cap refusal and optional pending rules. No guessed Guardian names/scales/safety settings, fabricated preview or containment operation. Keep secrets out of logs/tests and readiness false until final acceptance. Work in small tested increments; report partner gaps explicitly.
+Implement Elyes's shared OpenRouter adapter and runtime using the frozen Scenario/PlanProvider/ToolPeer/build_runtime contracts, then Power/AQ alert-only draft_plan methods. Do not implement traffic/water/emergency modules. Follow Step 4's bounded free-API, discovery, evidence, deterministic validation, exact-action token, preview, idempotency, cap refusal and optional pending rules. No guessed Guardian names/scales/safety settings, fabricated preview or containment operation. Keep secrets out of logs/tests and readiness false until final acceptance. Work in small tested increments; report partner gaps explicitly.
 ```
 
 ## Step 5: shared integration proof and sequential member review
@@ -162,7 +162,7 @@ git push origin codex/civis-elyes
 
 For shared-core commits, stage explicit reviewed paths inside your ownership scope. Do not use `git add .`, include `.env`, stage another member's active work or force push. Admin maintenance bypass is available, but record local checks before pushing integration changes.
 
-Before release, run the full acceptance matrix, one synthetic live Gemini check and actual partner discovery/auth checks. Exchange real keys privately. Handover includes commit/branch, Windows launch commands, MCP URL/protocol, example payloads, fixture assumptions and current partner gaps.
+Before release, run the full acceptance matrix, one synthetic live OpenRouter check and actual partner discovery/auth checks. Exchange real keys privately. Handover includes commit/branch, Windows launch commands, MCP URL/protocol, example payloads, fixture assumptions and current partner gaps.
 
 Ask **Maram to open the release PR** from `codex/civis-elyes` into `brain` under her own account, then review it yourself. GitHub authors cannot approve their own PR. Keep root/Brain CODEOWNERS assigned to you.
 
@@ -180,4 +180,4 @@ Review Elyes-owned staged changes and all scenario integration evidence. Check s
 - **9 October, 18:00:** all five scenario success/refusal checks, safeguards and live smoke checks complete.
 - **9 October, 20:00:** release candidate handed over before 10 October.
 
-The core is the schedule's critical dependency. If partner preview/Guardian schemas cannot be confirmed, report the blocked live pathways and fixture-only demonstrations accurately. No last-minute extra scenario, dashboard or AI framework belongs in this checkpoint.
+The core is the schedule's critical dependency. If partner preview/Guardian schemas cannot be confirmed, report the blocked live pathways and fixture-only demonstrations accurately. No extra scenario or AI framework belongs in this checkpoint. The requested local debugging console reuses the shared runtime and existing dependencies; it adds no member task or partner interface.

@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     guardian_brain_key: str = "dev-brain-to-guardian"
     guardian_score_tool: str = "CONFIRM_WITH_9ANTRA"
     guardian_token_tool: str = "CONFIRM_WITH_9ANTRA"
-    llm_mode: Literal["fixture", "gemini"] = "fixture"
-    gemini_api_key: str = ""
+    llm_mode: Literal["fixture", "gemini", "openrouter"] = "fixture"
+    gemini_api_key: str = Field(default="", repr=False)
     gemini_model: str = "gemini-3.5-flash-lite"
     ai_timeout_seconds: float = Field(default=15, gt=0, le=60)
     ai_max_calls_per_run: int = Field(default=3, ge=1, le=20)
@@ -33,3 +33,7 @@ class Settings(BaseSettings):
     guardian_mapping_file: str = ""
     twin_preview_tool: str | None = None
     twin_commit_tool: str | None = None
+
+    openrouter_api_key: str = Field(default="", repr=False)
+    openrouter_model: str = "google/gemma-4-31b-it:free"
+    brain_debug_enabled: bool = True

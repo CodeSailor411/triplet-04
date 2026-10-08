@@ -9,6 +9,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from civis_brain import __version__
 from civis_brain.contracts import Capabilities, ContainmentNotice, DecisionBatch, ReadingsBatch
+from civis_brain.debug import attach_debug
 from civis_brain.integration.bootstrap import configured_runtime
 from civis_brain.integration.runtime import BrainRuntime
 from civis_brain.integration.service import bind_runtime
@@ -125,5 +126,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "awaiting_scenarios": ["S01", "S02", "S05"],
         }
 
+    if settings.brain_debug_enabled:
+        attach_debug(app, runtime, settings)
     app.mount("/", mcp_app)
     return app

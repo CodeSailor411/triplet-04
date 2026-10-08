@@ -1,29 +1,39 @@
-"""Check the common environment without exposing keys or calling external services."""
+"""Check every installed lockfile package, without displaying keys or making API calls."""
 
 import sys
 from importlib.metadata import version
+from pathlib import Path
+
+from packaging.requirements import Requirement
 
 from civis_brain.settings import Settings
 
 if sys.version_info[:2] != (3, 12):
     raise SystemExit("Use the brain/.venv Python 3.12 interpreter")
-expected = {
-    "fastapi": "0.142.2",
-    "uvicorn": "0.54.0",
-    "pydantic": "2.13.5",
-    "pydantic-settings": "2.15.0",
-    "mcp": "2.3.0",
-    "google-genai": "2.28.0",
-    "pytest": "9.1.1",
-    "pytest-asyncio": "1.4.0",
-    "ruff": "0.16.10",
-}
-for name, pin in expected.items():
-    actual = version(name)
-    if actual != pin:
-        raise SystemExit(f"{name}: expected {pin}, found {actual}; rerun setup.ps1")
-    print(f"OK {name} {actual}")
-settings = Settings()
+root = Path(__file__).resolve().parents[1]
+count = 0
+for line in (root / "requirements-lock.txt").read_text(encoding="utf-8").splitlines():
+    line = line.split("#", 1)[0].strip()
+    if not line:
+        continue
+    requirement = Requirement(line)
+    if requirement.marker and not requirement.marker.evaluate():
+        continue
+    actual = version(requirement.name)
+    if not requirement.specifier.contains(actual):
+        raise SystemExit(f"{requirement.name}: {actual} disagrees with the lock; rerun setup.ps1")
+    count += 1
+print(f"OK: all {count} applicable locked packages match")
 print(f"OK Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-print(f"AI mode: {settings.llm_mode}; AI key present: {bool(settings.gemini_api_key)}")
-print("Environment ready. S03/S04 and shared core implemented; S01/S02/S05 await owners.")
+for name in ("fastapi", "uvicorn", "pydantic", "pydantic-settings", "mcp", "httpx", "httpx2"):
+    print(f"OK {name} {version(name)}")
+settings = Settings()
+present = (
+    bool(settings.openrouter_api_key)
+    if settings.llm_mode == "openrouter"
+    else bool(settings.gemini_api_key)
+    if settings.llm_mode == "gemini"
+    else False
+)
+print(f"AI mode: {settings.llm_mode}; key present: {present}")
+print("MCP protocol: 2026-07-28. Exact library pins are repo/Twin compatibility choices.")

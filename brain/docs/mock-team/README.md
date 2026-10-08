@@ -6,7 +6,7 @@ Team: Elyes (CodeSailor411), Yassine, Meriem, Maram. Handover target: **9 Octobe
 
 Use scenario ownership for this small mock. Each beginner owns a complete, bounded scenario: sample inputs, detector, response rules, fixtures, tests and PR. Elyes owns two smaller scenario modules and the common runtime. This is easier to explain and demonstrate than making everyone wait for a detector, planner or fixture team to finish.
 
-There is **one Brain service**, one free AI API adapter, one Guardian approval path and one Twin connection. A scenario is a Python module inside that service, not a separate server or copied pipeline. The AI proposes; shared code validates; Guardian approves the exact request; Twin executes. Brain never performs containment. No human-review workflow is included.
+There is **one Brain service**, one active free AI API adapter, one Guardian approval path and one Twin connection. A scenario is a Python module inside that service, not a separate server or copied pipeline. The AI proposes; shared code validates; Guardian approves the exact request; Twin executes. Brain never performs containment. No human-review workflow is included.
 
 The user requested five primary scenarios. The [4 October PDF](../oct05/CIVIS_4_October_2026.pdf) actually lists eight incident types, without designating a five-scenario subset. The following five are selected from that table for this reduced checkpoint. This selection is a development plan, not a claim that the PDF records approval of these exact five. Road accident, low water and fire are deferred. Existing incident enum values remain for compatibility, but are not promised as supported workflows.
 
@@ -35,7 +35,7 @@ The first version uses one primary response per scenario. The PDF's conditional 
 | Meriem | codex/civis-meriem | [S02 water](MERIEM.md) |
 | Maram | codex/civis-maram | [S05 medical](MARAM.md) |
 
-Each member owns their scenario source folder, config, case data, tests and progress file. Only Elyes changes contracts, package pins, Gemini adapter, fake peers, normalization, registry, orchestration, auth, server, CI and shared documents. See scripts/ownership.json for the enforced path list. The previous split by detector/planner/fixtures is superseded.
+Each member owns their scenario source folder, config, case data, tests and progress file. Only Elyes changes contracts, package pins, configured AI adapter, fake peers, normalization, registry, orchestration, auth, server, CI and shared documents. See scripts/ownership.json for the enforced path list. The previous split by detector/planner/fixtures is superseded.
 
 PR base for member work: **codex/civis-elyes**. Elyes reviews and merges one at a time. Update your branch after each integration merge; never force push. Fixed interfaces and separate files reduce conflicts, but do not guarantee arbitrary edits will merge safely. Maram opens the final integration-to-brain PR so Elyes can approve it.
 
@@ -46,7 +46,7 @@ PR base for member work: **codex/civis-elyes**. Elyes reviews and merges one at 
 | 7 Oct, meeting | Accept invitations, install Windows environment, explain assigned input/output and one refusal | All |
 | 7 Oct, meeting end | Confirm five-scenario selection and partner gaps; freeze fixture assumptions and interfaces | Elyes |
 | 8 Oct, 12:00 | Small draft PR: base/refusal data, detector and first meaningful unit test | Each member |
-| 8 Oct, 20:00 | Each scenario's detection/planning unit tests ready; shared fake peers and Gemini adapter usable | All, Elyes for core |
+| 8 Oct, 20:00 | Each scenario's detection/planning unit tests ready; shared fake peers and configured AI adapter usable | All, Elyes for core |
 | 9 Oct, 12:00 | Merge reviewed scenario PRs and compose the one shared runtime | Elyes |
 | 9 Oct, 18:00 | Five workflow outcomes and failure variants pass; separate real AI/partner smoke checks | All, Elyes signs off |
 | 9 Oct, 20:00 | Partner handover candidate and final release PR ready | Elyes, Maram opens PR |
@@ -56,7 +56,7 @@ Do not wait until 9 October to build the core: Elyes starts it in parallel on 7 
 
 ## Prepared now, still to be implemented
 
-Elyes's S03/S04, shared runtime, Gemini adapter, fake peers and MCP tools are implemented. S01/S02/S05 remain assigned to their owners. See HANDOVER.md and progress/elyes.md for verified support. Full-release readiness remains false.
+Elyes's S03/S04, shared runtime, configured AI adapter, fake peers and MCP tools are implemented. S01/S02/S05 remain assigned to their owners. OpenRouter and the local debugging console were added on 9 October. The key authenticates, but synthetic inference returned HTTP 429; live planning is pending. See HANDOVER.md and progress/elyes.md for verified support. Full-release readiness remains false.
 
 Elyes implements one future case trigger: from brain/, `.\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base` (select S01-S05). That runner is assigned, not available yet.
 

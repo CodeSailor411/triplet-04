@@ -2,7 +2,14 @@ import json
 import re
 from pathlib import Path
 
-SENSITIVE_FIELDS = {"token", "api_key", "authorization", "private_key", "gemini_api_key"}
+SENSITIVE_FIELDS = {
+    "token",
+    "api_key",
+    "authorization",
+    "private_key",
+    "gemini_api_key",
+    "openrouter_api_key",
+}
 
 
 class Journal:
@@ -30,6 +37,7 @@ class Journal:
             value = re.sub(
                 r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "<redacted>", value
             )
+            value = re.sub(r"sk-or-v1-[A-Za-z0-9_-]+", "<redacted>", value)
             return value[:4000]
         return value
 
