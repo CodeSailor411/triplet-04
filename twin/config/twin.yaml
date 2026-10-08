@@ -1,0 +1,233 @@
+# Twin configuration. Non-secret settings only. Secrets live in .env (see .env.example).
+# Everything a partner or a teammate might want to change is here, never hard-coded.
+
+server:
+  host: 127.0.0.1
+  port: 8000
+
+# Seed for the whole simulation. Same seed = same city, same run.
+# Treat the demo seed as a real setting: commit the one you show the jury.
+# Override without editing this file: TWIN_SEED=7
+seed: 42
+
+sse:
+  heartbeat_seconds: 15       # how often /events sends a heartbeat when nothing else happens
+
+# ---------------------------------------------------------------------------
+# Simulated clock (CIVIS convention, 4 Oct): every reading carries simulated UTC time (RFC 3339, with Z)
+# plus an integer tick. tick_seconds is the simulated length of one tick. speed 1.0 = real speed, so the
+# spec's "10 s" means 10 real seconds. Raise speed only for fast tests.
+# ---------------------------------------------------------------------------
+clock:
+  start: "2026-10-05T08:00:00.000Z"
+  tick_seconds: 1.0
+  speed: 1.0
+  autorun: true               # false = the clock stands still until something advances it (tests)
+
+# Where the other layers live. The Twin itself does not call them yet.
+# Used later by the Twin's mocks and dashboard (R1: point at another partner by config).
+partners:
+  city_brain:
+    url: http://127.0.0.1:8001/mcp
+  guardian:
+    url: http://127.0.0.1:8002/mcp
+
+# ---------------------------------------------------------------------------
+# What exists in the city. Units are published to partners. Normal ranges are NOT here:
+# the Twin publishes no datasheet, the sensor model (6 Oct) keeps them private.
+# ---------------------------------------------------------------------------
+sensors:
+  vehicle_count:    { unit: "cars/min" }
+  avg_speed:        { unit: "km/h" }
+  water_level:      { unit: "cm" }
+  flow_rate:        { unit: "L/s" }
+  load_kw:          { unit: "kW" }
+  voltage_v:        { unit: "V" }
+  pm25:             { unit: "ug/m3" }
+  co_ppm:           { unit: "ppm" }
+  temperature_c:    { unit: "C" }
+  emergency_calls:  { unit: "calls/min" }   # split by type: accident / fire / flood / medical
+  units_free:       { unit: "units" }       # per unit type: police / ambulance / fire
+
+# Actuator actions. All are called through the single `actuate` tool (from 7 Oct).
+# risk: picked by CIVIS on 4 Oct (signal R1, dispatch R2, valve R3). The grid switch has no tier, but needs preview,
+#       a token and caps. preview_required is OUR flag (not in the spec): valve and grid switch yes, signal and dispatch no.
+# `destination` is OUR name for the dispatch target place (CIVIS's table calls it `target`, which would clash with
+# `targets`, the nodes that carry out the action). To confirm with CIVIS.
+actuators:
+  set_signal_plan:
+    domain: traffic
+    risk: R1
+    preview_required: false
+    params:
+      plan: { type: choice, choices: [normal, favor_main_road, all_red] }
+  set_valve_position:
+    domain: water
+    risk: R3
+    preview_required: true
+    params:
+      position: { type: number, min_value: 0, max_value: 100, unit: "%" }
+  set_grid_switch:
+    domain: power
+    risk: null
+    preview_required: true
+    params:
+      state: { type: choice, choices: [closed, open] }
+  dispatch:
+    domain: emergency
+    risk: R2
+    preview_required: false
+    params:
+      unit_type: { type: choice, choices: [police, ambulance, fire] }
+      destination: { type: node }
+      units: { type: integer, min_value: 1, max_value: 10 }     # the 10 is our sanity limit, change freely
+
+# ---------------------------------------------------------------------------
+# Tokens (Guardian's signed permission for one exact action). Format: JWS compact, header.payload.signature.
+# mode is decided HERE, never by the token: a token cannot talk its way into "unsigned".
+#   unsigned  signature part must be empty (v0 hand-over, mock Guardian). The Twin logs a loud warning.
+#   signed    only EdDSA (Ed25519) accepted, checked against guardian_public_key. Planned default from 24 Oct.
+# min_score: risk level -> minimum score in the token. Empty on purpose: nobody has agreed a number yet (12 Oct call).
+# ---------------------------------------------------------------------------
+tokens:
+  mode: unsigned
+  guardian_public_key: null
+  min_score: {}
+
+actions:
+  preview_enforced: false        # flips to true on 15 Oct, when the dry-run preview tool exists
+
+# ---------------------------------------------------------------------------
+# Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced from 7 Oct, only computed here for now.
+# Counts are per domain. A shared node counts in EACH domain it belongs to, and a request fails if it breaks
+# the cap of any one of them. Formula: floor(nodes x pct), minimum 2, maximum = domain size.
+# ---------------------------------------------------------------------------
+caps:
+  action_pct: 30                 # max share of a domain's nodes one request may change
+  isolation_pct: 50              # max share of a domain's nodes isolated or quarantined at once
+  min_nodes: 2                   # never below this, rounded down otherwise
+  isolation_pct_overrides:
+    power: 100                   # THE NAMED EXCEPTION from meeting 2 ("no cap" for Power): after a big threat or
+                                 # a high-voltage fluctuation Guardian may isolate every power sensor.
+                                 # It cuts data only and never opens a grid switch. 100% = all nodes.
+  # Isolate + quarantine share one pool. Rollback has its own pool with the same sizes
+  # (decided 4 Oct, 9antra has NOT confirmed yet). `release_device` (from 8 Oct) frees a slot in the pool.
+  # CAP_EXCEEDED rejects the whole request and reports: domain, cap, in_use, requested, remaining.
+
+# ---------------------------------------------------------------------------
+# Containment (Guardian's tools: isolate_sensor, quarantine_device, rollback_reading, release_device).
+# ---------------------------------------------------------------------------
+containment:
+  rollback_lookback_ticks: 60    # rollback looks at most this many ticks back for the last trusted value
+  held_commands_kept: 50         # the quarantine lane remembers this many held commands
+
+# ---------------------------------------------------------------------------
+# Topology generator
+# ---------------------------------------------------------------------------
+generator:
+  canvas: { width: 1920, height: 1080 }   # same size as the Grok base-map job
+  node_size_px: 24                        # smallest recommended node size (node-style-spec)
+  min_spacing_factor: 1.5                 # node centres at least 1.5 x node width apart
+  canvas_margin_px: 80
+  road_gap_px: 60
+
+  zone_grid: { cols: 3, rows: 2 }
+  zones:                                  # filled left to right, top to bottom
+    - port                                # top row:    port, centre, north_hills
+    - centre
+    - north_hills
+    - industrial                          # bottom row: industrial, old_town, university
+    - old_town
+    - university
+
+  # Order used when a shared node hands out its sides (node-style-spec section 4).
+  domain_order: [traffic, water, power, emergency, air_quality]
+
+  # count = total nodes in the domain INCLUDING shared ones.
+  # 11 + 9 + 9 + 8 + 7 = 44 memberships, minus 6 shared nodes counted twice = 38 nodes.
+  domains:
+    traffic:
+      prefix: TRF
+      count: 11
+      sensors: [vehicle_count, avg_speed]
+      actuator: set_signal_plan
+      actuator_nodes: 6            # my starting guess, change freely
+    water:
+      prefix: WAT
+      count: 9
+      sensors: [water_level, flow_rate]
+      actuator: set_valve_position
+      actuator_nodes: 4            # my starting guess
+    power:
+      prefix: PWR
+      count: 9
+      sensors: [load_kw, voltage_v]
+      actuator: set_grid_switch
+      actuator_nodes: 4            # my starting guess
+    air_quality:
+      prefix: AIR
+      count: 8
+      sensors: [pm25, co_ppm, temperature_c]
+      actuator: null
+      actuator_nodes: 0
+    emergency:
+      prefix: EMG
+      count: 7                     # 6 call places + 1 dispatch center
+      sensors: []                  # set per role below
+      actuator: dispatch
+      actuator_role: dispatch_center
+
+  emergency_roles:
+    call_place:      { sensors: [emergency_calls] }
+    dispatch_center: { sensors: [units_free], zone: centre }
+
+  # One node per call place, in the zone of the same name. `also_in` makes it a shared node.
+  call_places:
+    - { label: port,        zone: port,        also_in: [water] }     # flood-prone port
+    - { label: old_town,    zone: old_town }
+    - { label: hospital,    zone: centre,      also_in: [power] }     # hospital needs power
+    - { label: industrial,  zone: industrial }
+    - { label: university,  zone: university }
+    - { label: north_hills, zone: north_hills }
+
+  # Other shared nodes (not involving Emergency). Each belongs to exactly two domains.
+  shared:
+    - { label: pumping_station_a, domains: [water, power],        zone: industrial }
+    - { label: pumping_station_b, domains: [water, power],        zone: north_hills }
+    - { label: junction_air_a,    domains: [traffic, air_quality], zone: centre }
+    - { label: junction_air_b,    domains: [traffic, air_quality], zone: old_town }
+
+  # Neighbour lists: used by the Brain to retry with other sensors, and to cross-check calls.
+  neighbours:
+    same_domain: 2
+    cross:
+      - { from_domain: emergency, from_role: call_place, to_domain: air_quality, count: 1 }
+      - { from_domain: emergency, from_role: call_place, to_domain: traffic,     count: 1 }
+
+# ---------------------------------------------------------------------------
+# Sensor model. PRIVATE: these numbers are never published to partners (the Twin publishes no datasheet).
+# Each reading = truth + the device's own bias + noise. Truth moves slowly: a base level, a slow wave and a
+# smooth random wander, all derived from the seed, so the same seed and tick always give the same value.
+#   base          normal level (each device gets its own, spread by device_spread)
+#   wave_amp      size of the slow wave; wave_period_ticks is how long one wave takes
+#   wander_amp    size of the smooth random wander; wander_ticks is how often it picks a new target
+#   noise_sd      noise on every single reading (standard deviation)
+#   bias_sd       each device has one fixed offset, picked once from this spread
+#   follows       truth moves with another sensor on the same node (gain < 0 = moves the other way)
+#   channels      one reading per channel (emergency calls by type, free units by type); value = base per channel
+# ---------------------------------------------------------------------------
+sensor_model:
+  device_spread: 0.12         # each device's base level differs by up to +-12 % from the profile's base
+  timing_wobble_ms: 40        # readings arrive a few ms early or late around the tick time
+  profiles:
+    vehicle_count:   { base: 40,   wave_amp: 14,  wave_period_ticks: 600, wander_amp: 5,   noise_sd: 2.0,  bias_sd: 1.5,  min_value: 0,   max_value: 250, decimals: 0 }
+    avg_speed:       { base: 38,   wave_amp: 1.5, wave_period_ticks: 600, wander_amp: 1.5, noise_sd: 1.2,  bias_sd: 1.0,  min_value: 0,   max_value: 130, decimals: 1, follows: { sensor: vehicle_count, gain: -0.3 } }
+    water_level:     { base: 40,   wave_amp: 5,   wave_period_ticks: 900, wander_amp: 2,   noise_sd: 0.6,  bias_sd: 1.5,  min_value: 0,   max_value: 400, decimals: 1 }
+    flow_rate:       { base: 25,   wave_amp: 5,   wave_period_ticks: 700, wander_amp: 2,   noise_sd: 0.8,  bias_sd: 0.5,  min_value: 0,   max_value: 200, decimals: 1 }
+    load_kw:         { base: 450,  wave_amp: 90,  wave_period_ticks: 800, wander_amp: 25,  noise_sd: 8.0,  bias_sd: 5.0,  min_value: 0,   max_value: 2000, decimals: 0 }
+    voltage_v:       { base: 230,  wave_amp: 1.5, wave_period_ticks: 500, wander_amp: 1,   noise_sd: 0.7,  bias_sd: 0.5,  min_value: 150, max_value: 280, decimals: 1, spread: 0.0 }
+    pm25:            { base: 18,   wave_amp: 4,   wave_period_ticks: 1000, wander_amp: 2,  noise_sd: 1.0,  bias_sd: 0.8,  min_value: 0,   max_value: 600, decimals: 1 }
+    co_ppm:          { base: 1.2,  wave_amp: 0.3, wave_period_ticks: 900, wander_amp: 0.2, noise_sd: 0.08, bias_sd: 0.05, min_value: 0,   max_value: 100, decimals: 2 }
+    temperature_c:   { base: 21,   wave_amp: 2,   wave_period_ticks: 1200, wander_amp: 0.5, noise_sd: 0.2, bias_sd: 0.3,  min_value: -20, max_value: 60,  decimals: 1 }
+    emergency_calls: { base: 0, channels: { accident: 0.15, fire: 0.03, flood: 0.02, medical: 0.30 }, wander_amp: 0.03, noise_sd: 0.02, min_value: 0, max_value: 60, decimals: 2 }
+    units_free:      { base: 0, channels: { police: 6, ambulance: 5, fire: 4 }, noise_sd: 0, bias_sd: 0, min_value: 0, max_value: 50, decimals: 0, spread: 0.0 }
