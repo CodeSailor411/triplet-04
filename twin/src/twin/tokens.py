@@ -1,6 +1,6 @@
 """Guardian's permission token: "this exact action, this score, valid until this time, usable once".
 
-Format (a proposal sent to 9antra on 6 Oct, JWS compact, the same shape as a JWT):
+Format (our proposal for 9antra to confirm, not agreed yet; JWS compact, the same shape as a JWT):
     base64url(header) . base64url(payload) . base64url(signature)
 The mode (signed or unsigned) comes from the Twin's config and never from the token, so a token cannot
 argue its way into being "unsigned". In signed mode only EdDSA (Ed25519) is accepted.

@@ -1,7 +1,9 @@
 """The Twin's MCP tools. Built with the official `mcp` SDK (class MCPServer, formerly FastMCP).
 
-Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, actuate, run_scenario (stub, hidden).
-Next (see the plan): containment tools, two-step commit, real scenario engine.
+Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, actuate, the containment tools
+(isolate_sensor, quarantine_device, rollback_reading, release_device, get_containment_state, get_quarantine_lane)
+and run_scenario (hidden: fake_reading, stuck_sensor, replay_exact, list, stop, reset).
+Next (see the plan): two-step commit, congestion_index, actuator controls.
 """
 from importlib.metadata import version as pkg_version
 from typing import Any, Literal
@@ -14,6 +16,9 @@ from pydantic import BaseModel
 
 from . import __version__
 from .actions import ActionBook, ActionList, ActuateResult, BadRequest
+from .scenarios import ScenarioBook, ScenarioResult
+from .containment import (ContainmentBook, ContainmentState, ContainResult, QuarantineLane, ReleaseResult,
+                          RollbackResult)
 from .auth import HIDDEN_TOOLS, TOOL_ACCESS, Identity, KeyRing, token_from_headers
 from .models import ClockInfo, Node, ReadingsBatch, Topology
 from .sim import Simulation
@@ -41,7 +46,8 @@ def _identity(ctx: ServerRequestContext, keyring: KeyRing) -> Identity | None:
     return keyring.identify(token_from_headers(request.headers)) if request is not None else None
 
 
-def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: ActionBook) -> MCPServer:
+def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: ActionBook,
+              containment: ContainmentBook, scenarios: ScenarioBook) -> MCPServer:
     mcp = MCPServer(
         "twin",
         title="Twin: simulated city",
@@ -68,8 +74,9 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
         """What this Twin is, which versions it runs, who you are logged in as, and which tools you can call.
         Works without a key, so a wrong key can be diagnosed in one call."""
         who = caller(ctx)
+        # Only tools this caller can really call: open to anyone (None) or the caller is on the list.
         visible = [t for t, allowed in TOOL_ACCESS.items()
-                   if t not in HIDDEN_TOOLS or (who is not None and allowed is not None and who in allowed)]
+                   if allowed is None or (who is not None and who in allowed)]
         return Capabilities(
             layer="twin", layer_version=__version__, mcp_sdk_version=pkg_version("mcp"),
             protocol_version=ctx.request_context.protocol_version,
@@ -123,11 +130,68 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
         except BadRequest as e:
             raise ToolError(f"{e.code}: {e.message}") from None
 
+    def contain_call(fn, *args):
+        try:
+            return fn(*args)
+        except BadRequest as e:
+            raise ToolError(f"{e.code}: {e.message}") from None
+
     @mcp.tool()
-    def run_scenario(ctx: Context, name: str) -> dict:
-        """Start a scenario by name. Hidden: only visible to a caller with the scenario key."""
+    def isolate_sensor(ctx: Context, device_ids: list[str], reason: str | None = None) -> ContainResult:
+        """Guardian only. Cut these devices' data off the main feed. Counts against the isolation cap (nodes per
+        domain, shared with quarantine). Repeating it is harmless. A request that would break a cap is refused as a
+        whole: status "rejected", code CAP_EXCEEDED, with domain, cap, in_use, requested, remaining."""
+        require(ctx, "isolate_sensor")
+        return contain_call(containment.contain, "isolate_sensor", device_ids, reason)
+
+    @mcp.tool()
+    def quarantine_device(ctx: Context, device_ids: list[str], reason: str | None = None) -> ContainResult:
+        """Guardian only. Same cut as isolate_sensor, and commands to the device's node are held in a side lane
+        instead of being carried out (answer DEVICE_QUARANTINED). The held data and commands can be read with
+        get_quarantine_lane. Shares the isolation cap with isolate_sensor."""
+        require(ctx, "quarantine_device")
+        return contain_call(containment.contain, "quarantine_device", device_ids, reason)
+
+    @mcp.tool()
+    def rollback_reading(ctx: Context, reading_ids: list[str]) -> RollbackResult:
+        """Guardian only. Replace bad readings with the last trusted value the sensor REPORTED (never the Twin's
+        true value). Each answer is marked corrected and names the reading it corrects. Own cap pool (nodes per
+        domain). A reading that was already corrected is returned unchanged."""
+        require(ctx, "rollback_reading")
+        return contain_call(containment.rollback, reading_ids)
+
+    @mcp.tool()
+    def release_device(ctx: Context, device_ids: list[str]) -> ReleaseResult:
+        """Guardian only. Undo isolate, quarantine and rollback for these devices. Data flows again from the
+        current tick and the cap slots are free again."""
+        require(ctx, "release_device")
+        return contain_call(containment.release, device_ids)
+
+    @mcp.tool()
+    def get_containment_state(ctx: Context) -> ContainmentState:
+        """Which devices are isolated or quarantined, which readings were corrected, and how much of each
+        domain's isolation and rollback cap is in use. Held data is not included (see get_quarantine_lane)."""
+        require(ctx, "get_containment_state")
+        return containment.state()
+
+    @mcp.tool()
+    def get_quarantine_lane(ctx: Context) -> QuarantineLane:
+        """Guardian only. What quarantined devices report right now (kept off the main feed) and the commands
+        that were held because their node is quarantined."""
+        require(ctx, "get_quarantine_lane")
+        return containment.lane()
+
+    @mcp.tool()
+    async def run_scenario(ctx: Context, name: str, params: dict[str, Any] | None = None) -> ScenarioResult:
+        """Start an attack on purpose. Hidden: only visible to a caller with the scenario key.
+        name: fake_reading, stuck_sensor or replay_exact (each works with no params), or list, stop, reset.
+        params: device_id, channel, delay_ticks, duration_ticks, plus value (fake_reading) or lag_ticks (replay_exact);
+        stop takes scenario_id. Faults change what a sensor REPORTS, never the true value."""
         require(ctx, "run_scenario")
-        raise ToolError(f"NOT_IMPLEMENTED: the scenario engine arrives on 8 Oct (asked for '{name}').")
+        try:
+            return await scenarios.run(name, params)
+        except BadRequest as e:
+            raise ToolError(f"{e.code}: {e.message}") from None
 
     async def access_filter(ctx: ServerRequestContext, call_next):
         """Hides tools from callers who may not use them (tool list and tool calls)."""

@@ -1,6 +1,6 @@
-# Twin: Interface Card (draft v5, 6 Oct 2026, one page)
+# Twin: Interface Card (draft v6, 7 Oct 2026, must be cut to one page by 10 Oct)
 
-**Status:** the tools in the table exist. Everything else is listed under "Planned" at the bottom. Known gap: `get_capabilities` lists `actuate` for every caller, but only `city_brain` may call it.
+**Status:** the tools in the table exist. Everything else is listed under "Planned" at the bottom. `get_capabilities` lists only the tools the caller can really call.
 
 ## Connect
 MCP over HTTP (Streamable HTTP), protocol version `2026-07-28`, endpoint `http://<twin-host>:8000/mcp`. The Twin address is a
@@ -21,7 +21,13 @@ The Twin learns who you are from the key. Keys come from the `.env` of whoever r
 | `get_clock` | `city_brain`, `guardian` | none | `run_id`, `tick`, simulated `time`, `tick_seconds`, `speed`, `running` |
 | `list_actions` | `city_brain`, `guardian` | none | each action: inputs with allowed values, `risk` (R1 to R3 or null), `preview_required`, `target_nodes`, `action_cap`; plus `token_mode`, `preview_enforced` |
 | `actuate` | `city_brain` | `action`, `targets`, `params`, `token`, `idempotency_key` | `status` committed or rejected, `action_id`, `code`, `message`, `details`, `replayed` |
-| `run_scenario` | `scenario` key only, hidden from others | `name` | not implemented yet |
+| `isolate_sensor` | `guardian` | `device_ids`, optional `reason` | `status` applied or rejected, `changed`, `unchanged`, `code`, `details` |
+| `quarantine_device` | `guardian` | `device_ids`, optional `reason` | same as `isolate_sensor` |
+| `rollback_reading` | `guardian` | `reading_ids` | `corrections`: each marked `corrected: true`, with `corrects` (the bad `reading_id`), `restored_from`, `value` |
+| `release_device` | `guardian` | `device_ids` | `released`, `not_contained` |
+| `get_containment_state` | `city_brain`, `guardian` | none | devices cut off (`isolated` or `quarantined`), corrections, cap use per domain |
+| `get_quarantine_lane` | `guardian` | none | readings held off the feed, commands held because of quarantine |
+| `run_scenario` | `scenario` key only, hidden from others | `name`, optional `params` | what was started: `scenario_id`, `faults`. Names: `fake_reading`, `stuck_sensor`, `replay_exact`, `list`, `stop`, `reset` |
 
 ## actuate: the rules
 * `targets` are nodes that carry that actuator (`list_actions` lists them). `params` are the action's inputs, unknown names are refused.
@@ -35,7 +41,7 @@ The Twin learns who you are from the key. Keys come from the `.env` of whoever r
 * Caps: one request may touch at most `action_cap` nodes per domain. A shared node counts in each domain it belongs to. Over the cap
   refuses the whole request.
 * Refusals come back as a normal result with `status: "rejected"` and a `code`: `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_WRONG_RUN`, `TOKEN_EXPIRED`,
-  `TOKEN_REUSED`, `TOKEN_MISMATCH`, `TOKEN_SCORE_TOO_LOW`, `IDEMPOTENCY_CONFLICT`, `PREVIEW_REQUIRED`, `CAP_EXCEEDED`.
+  `TOKEN_REUSED`, `TOKEN_MISMATCH`, `TOKEN_SCORE_TOO_LOW`, `IDEMPOTENCY_CONFLICT`, `PREVIEW_REQUIRED`, `CAP_EXCEEDED`, `DEVICE_QUARANTINED`.
 * A wrong request is an error instead (the call fails, text `CODE: message`): `UNKNOWN_ACTION`, `UNKNOWN_NODE`, `INVALID_TARGETS`, `INVALID_PARAMS`, `INVALID_IDEMPOTENCY_KEY`.
 
 ## Examples (real output, shortened)
@@ -61,6 +67,15 @@ Bad input: field name and allowed values. Feed without a key: HTTP 401 `{"error"
 Messages we send are strict. Messages we receive: unknown extra fields are ignored, missing or wrong required fields are rejected with a message
 (exception: unknown names inside `params` are refused, because a silently ignored typo on an actuator command is worse than an error).
 
+## Containment: the rules (Guardian only; `release_device`, `get_containment_state`, `get_quarantine_lane` are our additions)
+* Device = one sensor at one node (`device_id` from `list_nodes`). `isolate_sensor` removes the device's readings from the feed and `get_readings` from
+  the current tick on. `quarantine_device` does the same, and an `actuate` aimed at that node is held (`DEVICE_QUARANTINED`, token not spent).
+* `rollback_reading` never uses the true value. It returns the last value the sensor reported that was not already known bad. The feed itself is
+  not rewritten: the correction is the tool answer and appears in `get_containment_state`. Errors: `UNKNOWN_READING`, `READING_NOT_PUBLISHED`. Refusal: `NO_TRUSTED_VALUE`.
+* Caps count nodes per domain, a device counts in its own sensor's domain. Isolate and quarantine share one pool, rollback has its own.
+  A request over a cap is refused whole: `status: "rejected"`, `CAP_EXCEEDED`, with `pool`, `domain`, `cap`, `in_use`, `requested`, `remaining`.
+* Repeating isolate or quarantine is harmless. `release_device` frees the slots. Errors for bad input: `UNKNOWN_DEVICE`, `INVALID_DEVICE_IDS`, `INVALID_REASON`.
+
 ## Conventions (from CIVIS, 4 Oct)
 UTF-8 JSON, snake_case. Stable ids `run_id`, `reading_id`, `device_id` (`<node_id>.<sensor>`), `node_id`. Time: simulated UTC, RFC 3339 with Z plus an integer
 `tick` (1 tick = `tick_seconds`, default 1 s, real speed); a reading's `timestamp` may be a few ms off its tick. Missing value: `null`, never zero.
@@ -68,7 +83,7 @@ UTF-8 JSON, snake_case. Stable ids `run_id`, `reading_id`, `device_id` (`<node_i
 Units: congestion 0-100 %, water cm above the sensor's own zero, power kW, PM2.5 ug/m3.
 
 ## Planned
-* 8 Oct: `congestion_index`, `isolate_sensor`, `quarantine_device`, `rollback_reading`, `release_device` (Guardian only), scenario engine, optional
+* 8 Oct: `congestion_index`, optional
   two-step commit (`status: "pending"`, then `commit_action`, off by default).
 * 15-17 Oct: dry-run preview (then `preview_required` is enforced), undo, `get_flagged_readings`, emergency events with transcript.
 * Not final: dispatch uses `destination` for the place (CIVIS's table says `target`); `params` as a separate field; token field names.

@@ -6,6 +6,7 @@ Order of checks in `actuate` (the order matters, it is on purpose):
   2. Same idempotency key as before? Same request: return the first result. Changed request: rejected.
   3. The token: present, signed (if required), this run, not expired, never used, same action/targets/params as
      the request, score high enough. Any failure is a REJECTION (a normal result with status "rejected" and a code).
+  3b. Quarantine: a target node with a quarantined device holds the command (it is not carried out).
   4. Preview rule (flag exists, enforced from 15 Oct).
   5. Caps: how many nodes of each domain this one request touches.
   6. Commit: the actuator now holds the commanded value, the token is spent.
@@ -107,6 +108,7 @@ class ActionBook:
         self.nodes = {n.node_id: n for n in topology.nodes}
         self.caps = compute_caps(config.generator, config.caps)
         self._lock = threading.Lock()
+        self.containment = None            # set by the app: used to hold commands for quarantined nodes
         self._run = sim.run_number
         self._reset_state()
 
@@ -178,6 +180,12 @@ class ActionBook:
                 return self._reject("TOKEN_SCORE_TOO_LOW", action, targets, cleaned,
                                     f"Score is too low for a {act.risk} action.", {"risk": act.risk})
 
+            held = self.containment.quarantined_nodes(targets) if self.containment else []
+            if held:
+                self.containment.hold_command(caller, action, targets, cleaned)
+                return self._reject("DEVICE_QUARANTINED", action, targets, cleaned,
+                                    "A target node has a quarantined device. The command is held in the quarantine "
+                                    "lane and was not carried out. Guardian can release the device.", {"nodes": held})
             if act.preview_required and self.cfg.actions.preview_enforced:
                 return self._reject("PREVIEW_REQUIRED", action, targets, cleaned,
                                     f"'{action}' must be previewed before it is committed.")

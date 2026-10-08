@@ -142,6 +142,11 @@ class CapsCfg(_Strict):
     isolation_pct_overrides: dict[str, int] = {}
 
 
+class ContainmentCfg(_Strict):
+    rollback_lookback_ticks: int = Field(default=60, ge=1)    # how far back rollback searches for a trusted value
+    held_commands_kept: int = Field(default=50, ge=1)         # how many held commands the quarantine lane remembers
+
+
 class CanvasCfg(_Strict):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
@@ -227,6 +232,7 @@ class TwinConfig(_Strict):
     sensors: dict[str, SensorCfg]
     actuators: dict[str, ActuatorCfg]
     caps: CapsCfg
+    containment: ContainmentCfg = ContainmentCfg()
     generator: GeneratorCfg
 
     @model_validator(mode="after")

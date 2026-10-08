@@ -56,6 +56,12 @@ TOOL_ACCESS: dict[str, frozenset[Identity] | None] = {     # None = anyone, even
     "get_clock": LAYERS,
     "list_actions": LAYERS,
     "actuate": frozenset({Identity.CITY_BRAIN}),      # the permission table: the Brain requests, Guardian signs
+    "get_containment_state": LAYERS,                   # which devices are cut off, caps used (ours, not in the spec)
+    "isolate_sensor": frozenset({Identity.GUARDIAN}),  # the permission table: only Guardian contains
+    "quarantine_device": frozenset({Identity.GUARDIAN}),
+    "rollback_reading": frozenset({Identity.GUARDIAN}),
+    "release_device": frozenset({Identity.GUARDIAN}),  # ours, not in the spec
+    "get_quarantine_lane": frozenset({Identity.GUARDIAN}),   # held data stays away from the Brain (ours)
     "run_scenario": frozenset({Identity.SCENARIO}),
 }
 HIDDEN_TOOLS = frozenset({"run_scenario"})

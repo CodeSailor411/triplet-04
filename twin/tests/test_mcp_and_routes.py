@@ -18,7 +18,23 @@ async def test_capabilities_without_key_says_not_logged_in(mcp_client):
     assert data["authenticated_as"] is None
     assert data["protocol_version"] == "2026-07-28"
     assert data["mcp_sdk_version"] == "2.3.0"
-    assert data["tools_you_can_call"] == ["get_capabilities", "list_nodes", "get_readings", "get_clock", "list_actions", "actuate"]
+    assert data["tools_you_can_call"] == ["get_capabilities"]        # no key: only the tool that works without one
+
+
+async def test_capabilities_lists_only_tools_that_caller_can_really_call(mcp_client):
+    """Row 25 fix: the list used to show actuate to everyone."""
+    expected = {
+        "city_brain": {"get_capabilities", "list_nodes", "get_readings", "get_clock", "list_actions", "actuate",
+                       "get_containment_state"},
+        "guardian": {"get_capabilities", "list_nodes", "get_readings", "get_clock", "list_actions",
+                     "get_containment_state", "isolate_sensor", "quarantine_device", "rollback_reading",
+                     "release_device", "get_quarantine_lane"},
+        "scenario": {"get_capabilities", "run_scenario"},
+    }
+    for who, names in expected.items():
+        async with mcp_client(who) as c:
+            data = (await c.call_tool("get_capabilities", {})).structured_content
+        assert set(data["tools_you_can_call"]) == names
 
 
 @pytest.mark.parametrize("identity", ["city_brain", "guardian"])
@@ -68,7 +84,7 @@ async def test_scenario_tool_visible_and_reachable_with_the_scenario_key(mcp_cli
         names = [t.name for t in (await c.list_tools()).tools]
         r = await c.call_tool("run_scenario", {"name": "t5"})
     assert "run_scenario" in names
-    assert r.is_error and "NOT_IMPLEMENTED" in r.content[0].text      # reached the tool itself
+    assert r.is_error and "UNKNOWN_SCENARIO" in r.content[0].text      # reached the tool itself
 
 
 async def test_hidden_tool_error_looks_like_a_missing_tool(mcp_client):

@@ -115,6 +115,13 @@ caps:
   # CAP_EXCEEDED rejects the whole request and reports: domain, cap, in_use, requested, remaining.
 
 # ---------------------------------------------------------------------------
+# Containment (Guardian's tools: isolate_sensor, quarantine_device, rollback_reading, release_device).
+# ---------------------------------------------------------------------------
+containment:
+  rollback_lookback_ticks: 60    # rollback looks at most this many ticks back for the last trusted value
+  held_commands_kept: 50         # the quarantine lane remembers this many held commands
+
+# ---------------------------------------------------------------------------
 # Topology generator
 # ---------------------------------------------------------------------------
 generator:

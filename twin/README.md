@@ -77,13 +77,26 @@ python mocks/example_client.py --key $K --tool actuate --args "{\"action\":\"set
   three valves in one request (`CAP_EXCEEDED`, the cap for water is 2), a valve at 150 (`INVALID_PARAMS`, this one fails as an error, not a rejection).
 * Try the same call with Guardian's key: `FORBIDDEN: 'guardian' may not call actuate`. Only the Brain asks for actions, Guardian only approves them.
 
-**The hidden scenario tool**
+**The hidden scenario tool** (works since 7 Oct)
 
 ```
-python mocks/example_client.py --key dev-scenario-key-change-me --tool run_scenario --args '{"name": "flood"}'
+python mocks/example_client.py --key dev-scenario-key-change-me --tool run_scenario --args '{"name": "list"}'
+python mocks/example_client.py --key dev-scenario-key-change-me --tool run_scenario --args '{"name": "fake_reading"}'
+python mocks/example_client.py --key dev-scenario-key-change-me --tool run_scenario --args '{"name": "stuck_sensor", "params": {"device_id": "AIR-01.pm25", "duration_ticks": 60}}'
 ```
 
-It only shows up for the scenario key (try `get_capabilities` with each key and compare). Right now it answers `NOT_IMPLEMENTED`, the engine arrives 8 Oct.
+One command starts an attack. With no `params` each one has a default sensor, so `fake_reading` is the spec's T5 case: `WAT-01.water_level` reports 180 cm while the real level stays about 40.
+
+| Name | What the sensor does |
+|---|---|
+| `fake_reading` | Reports a made-up `value`. The true value does not change. |
+| `stuck_sensor` | Keeps repeating the last value it reported before the fault. |
+| `replay_exact` | Re-sends an old reading exactly as it was (same `reading_id`, old tick and time), `lag_ticks` old. |
+| `list`, `stop`, `reset` | List the scenarios. Stop one (`{"scenario_id": "sc-0001"}`). Start a new run (new run id, clock at 0, everything forgotten). |
+
+Params for the attacks: `device_id`, `channel` (only for sensors with channels), `delay_ticks` (at least 1, default 2: a fault never changes readings that were already sent), `duration_ticks` (default: until stopped), plus `value` or `lag_ticks`. Two faults on the same sensor at the same time are refused. A replay needs `lag_ticks` of history first, so at the very start of a run it answers `START_TOO_EARLY`.
+
+It only shows up for the scenario key (try `get_capabilities` with each key and compare).
 
 ## What you can see today
 
@@ -94,10 +107,11 @@ It only shows up for the scenario key (try `get_capabilities` with each key and 
 | List nodes, readings, actions, the clock | Yes | `example_client.py` tools above |
 | Make the Twin act through the trust gate | Yes, with test tokens | `token_tool.py` plus `actuate` |
 | See the city as a map or a timeline screen (R3) | **No**, comes 9 Oct | nothing to open in a browser yet |
-| Start a scenario with one command or button (R2) | **No**, engine 8 Oct | `run_scenario` is a stub |
+| Start a scenario with one command or button (R2) | **Partly** | `run_scenario` starts an attack. The log file per run comes 9 Oct, and there is no button yet |
 | A log file for every run (R2) | **No**, shared log format 9 Oct | the Twin writes no log files yet, only console output |
 | Mock Brain and mock Guardian that call the Twin on their own (R1) | **No**, 9 Oct | `example_client.py` is only a one-shot caller |
-| Faults, attacks, an actuator changing a sensor | **No**, 8 and 15 Oct | `actuate` stores the commanded value and nothing reacts |
+| Faults and attacks | **Yes**, fake reading, stuck sensor, exact replay | `run_scenario` above. The recycled-values replay comes 28 Oct |
+| An actuator changing a sensor | **No**, 15 Oct | `actuate` stores the commanded value and nothing reacts |
 
 To see the nodes as a picture before the dashboard exists, the generator (see below) writes `topology.json` with every node's position.
 
@@ -148,7 +162,8 @@ always gives the same city. Change the seed with `TWIN_SEED=7` or in `config/twi
 | Seeded city (38 nodes, 6 shared, layout file) | Done |
 | Sensor model, simulated clock, readings on the live feed, `get_readings`, `get_clock` | Done 6 Oct |
 | `actuate` with the trust gate, idempotency, caps, `list_actions` | Done 6 Oct |
-| Containment tools, scenario engine | 8 Oct |
+| Scenario engine (fake reading, stuck sensor, exact replay) | **Done 7 Oct** |
+| Containment tools (isolate, quarantine, rollback, release) | **Done 7 Oct** |
 | Shared log format, timeline dashboard, mocks | 9 Oct |
 | TimescaleDB and Redis storage, Ed25519 token check | 14-15 Oct, 18 Oct |
 
@@ -162,13 +177,12 @@ always gives the same city. Change the seed with `TWIN_SEED=7` or in `config/twi
 * `tokens.mode` is `unsigned` for now, with a loud warning at startup. Signed mode (Ed25519) is built and tested but waits for 9antra's answer on
   format and key. `tokens.min_score` is empty because nobody has agreed a number.
 * `preview_required` is published but not enforced until the preview tool exists (15 Oct).
-* The action cap is per request. The isolation and rollback pools (cumulative) arrive with the containment tools.
+* The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run.
 * Used token ids are remembered until they expire, in memory only. A restart forgets them. A restarted Twin starts again at tick 0 with the SAME run id
   (`run-42-001` for seed 42), so a token that was already used and has not expired yet would be accepted a second time. Only a scenario reset
   (8 Oct) creates a new run id. Not a problem for the demo, but do not claim restarts protect against replay.
 * A feed reader that falls more than 100 ticks behind skips ahead (the event says how many it skipped).
-* `get_capabilities` lists `actuate` under `tools_you_can_call` for every caller, even Guardian and callers without a key, who cannot actually call it (the
-  call itself is refused correctly). The tool list is only filtered for the hidden scenario tool. A test currently expects this list, so changing it needs a test change too.
+* `tools/list` shows every tool except the hidden scenario tool to every caller, but `get_capabilities` now lists only the tools the caller can really call.
 * `mocks/token_tool.py make` defaults to a 30-second token issued at the clock's start time, so it expires quickly. Pass `--ttl 3600` (or `--now` from `get_clock`).
 * `ServerMiddleware` in the `mcp` SDK is marked provisional by its authors. We pin `mcp==2.3.0`, so it cannot change
   under us, but upgrading needs a re-test.
