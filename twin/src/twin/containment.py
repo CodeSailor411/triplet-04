@@ -149,6 +149,7 @@ class ContainmentBook:
         self.devices: dict[str, Device] = {d.device_id: d for d in sim.devices}
         self.caps = compute_caps(config.generator, config.caps)
         self._lock = threading.RLock()
+        self.recorder = None                        # set by the app: the run log
         self._run = sim.run_number
         self._reset_state()
 
@@ -209,8 +210,11 @@ class ContainmentBook:
                 self.contained[d.device_id] = DeviceState(device_id=d.device_id, node_id=d.node_id, sensor=d.sensor,
                                                           domain=d.domain, state=state, since_tick=tick,
                                                           since_time=now, reason=reason)
-            return ContainResult(status="applied", run_id=self.sim.run_id, tick=tick, time=now, tool=tool,
-                                 changed=[d.device_id for d in todo], unchanged=same)
+            res = ContainResult(status="applied", run_id=self.sim.run_id, tick=tick, time=now, tool=tool,
+                                changed=[d.device_id for d in todo], unchanged=same)
+            self._record("containment", {"tool": tool, "status": "applied", "changed": res.changed, "unchanged": res.unchanged,
+                                         "reason": reason})
+            return res
 
     # ------------------------------------------------------------------ release
     def release(self, device_ids: list[str]) -> ReleaseResult:
@@ -233,6 +237,8 @@ class ContainmentBook:
                     self.rolled_back[d.device_id] = 0                      # frees the rollback slot (and the correction records)
                     had = True
                 (released if had else nothing).append(d.device_id)
+            self._record("containment", {"tool": "release_device", "status": "applied", "changed": released,
+                                         "unchanged": nothing})
             return ReleaseResult(run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick),
                                  released=released, not_contained=nothing)
 
@@ -270,11 +276,17 @@ class ContainmentBook:
                     corrects=rid, restored_from=_reading_id(src_tick, d, ch), run_id=self.sim.run_id, tick=t,
                     timestamp=self.sim.clock.iso_of(t), node_id=d.node_id, device_id=d.device_id, sensor=d.sensor,
                     channel=ch, value=value, unit=d.unit)
-            return RollbackResult(status="applied", run_id=self.sim.run_id, tick=tick_now,
-                                  time=self.sim.clock.iso_of(tick_now),
-                                  corrections=[self.corrections[(d.device_id, ch, t)] for _, d, ch, t, *_ in made]
-                                  + [self.corrections[(d.device_id, ch, t)] for _, d, ch, t in again],
-                                  already_corrected=[rid for rid, *_ in again])
+            res = RollbackResult(status="applied", run_id=self.sim.run_id, tick=tick_now,
+                                 time=self.sim.clock.iso_of(tick_now),
+                                 corrections=[self.corrections[(d.device_id, ch, t)] for _, d, ch, t, *_ in made]
+                                 + [self.corrections[(d.device_id, ch, t)] for _, d, ch, t in again],
+                                 already_corrected=[rid for rid, *_ in again])
+            if made:                                                     # a repeat of an old rollback is not a new event
+                self._record("containment", {"tool": "rollback_reading", "status": "applied",
+                                             "corrections": [{"corrects": c.corrects, "restored_from": c.restored_from,
+                                                              "value": c.value, "device_id": c.device_id}
+                                                             for c in res.corrections if c.corrects not in res.already_corrected]})
+            return res
 
     def _last_trusted(self, d: Device, ch: str | None, tick: int) -> tuple[int, float] | None:
         """Walk back from tick-1: the first tick that was reported and not known to be bad. Observed values only."""
@@ -379,8 +391,13 @@ class ContainmentBook:
                             "remaining": max(0, cap - in_use)})
         return out
 
+    def _record(self, event_type: str, data: dict[str, Any]) -> None:
+        if self.recorder is not None:
+            self.recorder.record(event_type, data)
+
     def _contain_reject(self, tool: str, code: str, violations: list[dict[str, Any]]) -> ContainResult:
         tick = self.sim.tick
+        self._record("containment", {"tool": tool, "status": "rejected", "code": code, "details": violations[0]})
         return ContainResult(status="rejected", run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick),
                              tool=tool, code=code,
                              message="This request would put more nodes in the pool than the blast-radius cap allows. "
@@ -389,6 +406,8 @@ class ContainmentBook:
 
     def _rollback_reject(self, code: str, message: str, details: dict[str, Any]) -> RollbackResult:
         tick = self.sim.tick
+        self._record("containment", {"tool": "rollback_reading", "status": "rejected", "code": code,
+                                     "details": {k: v for k, v in details.items() if k != "violations"}})
         return RollbackResult(status="rejected", run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick),
                               code=code, message=message, details=details)
 

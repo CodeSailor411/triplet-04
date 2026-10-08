@@ -99,11 +99,13 @@ class ScenarioBook:
         self.sim = sim
         self.devices: dict[str, Device] = {d.device_id: d for d in sim.devices}
         self._lock = threading.RLock()
+        self.recorder = None                        # set by the app: the run log
         self._run = sim.run_number
         self._reset_state()
 
     def _reset_state(self) -> None:
         self.faults: list[Fault] = []
+        self._event_ids: dict[str, str] = {}         # scenario_id -> event_id of its "started" line in the run log
         self.history: list[dict[str, Any]] = []      # what happened, in order. The log writer (9 Oct) reads this.
         self._n_scenario = 0
         self._n_fault = 0
@@ -125,6 +127,15 @@ class ScenarioBook:
     def is_faulty(self, device_id: str, channel: str | None, tick: int) -> bool:
         return self.fault_at(device_id, channel, tick) is not None
 
+    def active_faults(self, tick: int) -> list[Fault]:
+        with self._lock:
+            self._sync()
+            return [f for f in self.faults if f.start_tick <= tick and (f.end_tick is None or tick < f.end_tick)]
+
+    def event_id_of(self, scenario_id: str) -> str | None:
+        with self._lock:
+            return self._event_ids.get(scenario_id)
+
     # ------------------------------------------------------------------ the one entry point
     async def run(self, name: str, params: dict[str, Any] | None) -> ScenarioResult:
         if params is None:
@@ -133,6 +144,8 @@ class ScenarioBook:
             raise BadRequest("INVALID_PARAMS", "params must be an object like {\"device_id\": \"WAT-01.water_level\"}.")
         if name == "reset":
             self._only(params, set())
+            if self.recorder is not None:
+                self.recorder.end_run()                      # close the old run's log before the run id changes
             await self.sim.reset()
             with self._lock:
                 self._sync()
@@ -180,6 +193,12 @@ class ScenarioBook:
         res = self._result("started", name, scenario_id=sid, faults=[fault])
         self.history.append({"tick": res.tick, "time": res.time, "event": "scenario_started", "name": name,
                              "scenario_id": sid, "faults": [f.model_dump() for f in res.faults]})
+        if self.recorder is not None:
+            eid = self.recorder.record("scenario", {"phase": "started", "scenario_id": sid, "name": name,
+                                                    "params": {k: v for k, v in params.items()},
+                                                    "faults": [f.model_dump() for f in res.faults]})
+            if eid:
+                self._event_ids[sid] = eid
         return res
 
     # ------------------------------------------------------------------ stop
@@ -196,6 +215,12 @@ class ScenarioBook:
         res = self._result("stopped", "stop", scenario_id=sid, faults=mine)
         self.history.append({"tick": res.tick, "time": res.time, "event": "scenario_stopped", "scenario_id": sid,
                              "faults": [f.model_dump() for f in res.faults]})
+        if self.recorder is not None:
+            started = self._event_ids.get(sid)
+            self.recorder.record("scenario", {"phase": "stopped", "scenario_id": sid,
+                                              "faults": [f.model_dump() for f in res.faults]},
+                                 caused_by=[started] if started else None)
+            self.recorder.export()                           # a stopped scenario leaves its log file now
         return res
 
     # ------------------------------------------------------------------ checks

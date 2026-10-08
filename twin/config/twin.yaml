@@ -122,6 +122,14 @@ containment:
   held_commands_kept: 50         # the quarantine lane remembers this many held commands
 
 # ---------------------------------------------------------------------------
+# Run log (R2). The Twin writes its own part file, the merge step writes one file per run into the shared logs folder.
+# ---------------------------------------------------------------------------
+logging:
+  enabled: true
+  parts_dir: run-logs        # relative to where you start the Twin (the twin/ folder). Git-ignored.
+  merged_dir: ../logs        # the repo's shared logs/ folder, one file per run
+
+# ---------------------------------------------------------------------------
 # Topology generator
 # ---------------------------------------------------------------------------
 generator:

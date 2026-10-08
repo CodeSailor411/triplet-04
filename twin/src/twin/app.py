@@ -18,6 +18,7 @@ from .mcp_server import build_mcp
 from .actions import ActionBook
 from .containment import ContainmentBook
 from .scenarios import ScenarioBook
+from .runlog import RunLog
 from .settings import Settings, load_settings
 from .sim import Simulation
 from .util import now_iso
@@ -45,6 +46,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     sim.overlay, book.containment = containment, containment
     scenarios = ScenarioBook(sim)
     sim.faults = scenarios
+    runlog = RunLog(cfg.logging, sim, scenarios, {"seed": cfg.seed, "city_fingerprint": fingerprint(topology),
+                                                  "nodes": len(topology.nodes), "tick_seconds": cfg.clock.tick_seconds,
+                                                  "twin_version": __version__})
+    book.recorder = containment.recorder = scenarios.recorder = runlog
     mcp = build_mcp(topology, keyring, sim, book, containment, scenarios)
     if cfg.tokens.mode == "unsigned":
         log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
@@ -53,10 +58,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         ticker = asyncio.create_task(sim.run_forever()) if cfg.clock.autorun else None
+        follower = asyncio.create_task(runlog.follow_clock()) if runlog.enabled else None
+        runlog.record("scenario", {"phase": "twin_started"})            # opens the run's part file, also after a restart
         try:
             async with mcp.session_manager.run():      # a mounted sub-app does not start its own lifespan
                 yield
         finally:
+            if follower:
+                follower.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await follower
+            runlog.end_run()                              # closing line and the merged file
             if ticker:
                 ticker.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -65,7 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="Twin", version=__version__, lifespan=lifespan)
     app.state.settings, app.state.topology, app.state.layout, app.state.keyring = settings, topology, layout, keyring
     app.state.sim, app.state.book, app.state.containment = sim, book, containment
-    app.state.scenarios = scenarios
+    app.state.scenarios, app.state.runlog = scenarios, runlog
 
     @app.get("/health")
     async def health():
