@@ -16,3 +16,5 @@ Read docs/mock-team/README.md, SCENARIOS.md, CONTRACT.md and the card matching t
 - Keep API/peer calls out of CI. Never expose/commit .env, keys or tokens.
 - Run meaningful member tests plus full suite/Ruff. Do not skip required failures or hide an incomplete shared runtime.
 - Member PRs target codex/civis-elyes, reviewed by CodeSailor411. No force push or blind conflict resolution.
+
+- Keep the local debug page plain: light background, standard controls, tables and JSON. No decorative dashboard or frontend framework.

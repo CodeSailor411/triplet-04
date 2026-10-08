@@ -1,67 +1,81 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CIVIS | Brain console</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CIVIS Brain debug</title>
 <style nonce="__NONCE__">
-:root{color-scheme:dark;--bg:#0b111b;--panel:#121c2b;--border:#26354a;--text:#e9eff8;--muted:#99abc1;--cyan:#65dbdb;--blue:#75a8fa;--amber:#f4c373}
-*{box-sizing:border-box}body{margin:0;font:15px/1.6 "Segoe UI",sans-serif;background:var(--bg);color:var(--text)}button,textarea{font:inherit}button{cursor:pointer}
-.layout{display:grid;grid-template-columns:225px 1fr;min-height:100vh}aside{padding:30px 24px;background:#0d1624;border-right:1px solid var(--border)}
-.brand{font-weight:750;letter-spacing:3px;font-size:23px}.brand span{color:var(--cyan)}.tag{font-size:12px;color:var(--muted);margin:5px 0 44px}
-nav a{display:block;color:var(--muted);padding:12px;text-decoration:none;border-radius:7px;margin-bottom:6px}nav a:hover{background:var(--panel);color:var(--text)}
-.rail-note{margin-top:50px;font-size:12px;color:var(--muted);border-top:1px solid var(--border);padding-top:20px}
-main{padding:34px 40px;max-width:1480px;width:100%;margin:auto}header{display:flex;justify-content:space-between;align-items:center;gap:20px}
-.eyebrow{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--cyan);font-weight:650}h1{font-size:32px;line-height:1.3;margin:8px 0}h2{font-size:19px;margin:0}p{margin:6px 0;color:var(--muted)}
-.badge{display:inline-block;border:1px solid #655030;background:#2a241c;color:var(--amber);padding:6px 12px;border-radius:30px;font-size:12px;white-space:nowrap}
-.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:28px 0}.card,.panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:20px}
-.card .label{color:var(--muted);font-size:12px}.card .value{font-size:21px;font-weight:650;margin:8px 0}.small{font-size:12px;color:var(--muted)}
-.content{display:grid;grid-template-columns:315px minmax(0,1fr);gap:20px}.panel-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
-.fixture{border:1px solid var(--border);border-radius:9px;padding:16px;margin-top:12px}.fixture strong{display:block}.fixture .label{font-size:11px;color:var(--cyan);letter-spacing:1px}
-.actions{display:flex;gap:8px;margin-top:14px}button{background:#1c2b40;color:var(--text);border:1px solid #3b5271;padding:8px 12px;border-radius:7px;font-size:13px}
-button:hover{border-color:var(--cyan);background:#24364e}button:disabled{opacity:.5;cursor:wait}.primary{background:#68d9d5;color:#0c252a;border-color:#68d9d5;font-weight:650}
-.pending{padding:16px 0 0;font-size:12px;color:var(--muted)}.pending strong{color:var(--amber)}
-.result-meta{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}.pill{color:var(--cyan);font-size:12px;border:1px solid #2b565c;background:#142e35;border-radius:6px;padding:4px 9px}
-.empty{min-height:190px;display:grid;place-content:center;text-align:center;border:1px dashed #324259;border-radius:8px;margin:18px 0;padding:25px}
-.decision{border-left:3px solid var(--cyan);padding:12px 16px;background:#0e1826;border-radius:4px;margin:12px 0}.decision .status{color:var(--cyan);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px}
-.tabs{display:flex;gap:8px;margin:24px 0 12px}.tabs button.active{border-color:var(--cyan);color:var(--cyan)}.table-wrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;font-size:12px;text-align:left}th{font-weight:600;color:var(--muted);padding:10px;border-bottom:1px solid var(--border)}td{padding:10px;border-bottom:1px solid #1d2b3d}
-pre{font:12px/1.6 Consolas,monospace;background:#0c1522;border-radius:8px;padding:16px;overflow:auto;max-height:370px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
-.bottom{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}.provider-name{font-size:18px;font-weight:650;margin:14px 0}
-.notice{padding:12px 15px;margin-bottom:16px;background:#302718;border:1px solid #675131;border-radius:8px;color:#f4d69c;font-size:13px}
-footer{font-size:12px;color:var(--muted);margin-top:25px;display:flex;justify-content:space-between}
-textarea{width:100%;height:190px;background:#0c1522;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:12px;font-family:Consolas,monospace;font-size:12px}
-details{margin-top:18px}summary{cursor:pointer;color:var(--blue);font-size:13px} [hidden]{display:none!important}
-@media(max-width:1050px){.layout{grid-template-columns:175px 1fr}main{padding:25px}.cards{grid-template-columns:repeat(2,1fr)}.content{grid-template-columns:270px 1fr}}
-@media(max-width:760px){.layout{display:block}aside{padding:15px 22px;border-right:0;border-bottom:1px solid var(--border)}.tag,.rail-note,nav{display:none}.content,.bottom{grid-template-columns:1fr}main{padding:20px}h1{font-size:26px}header{align-items:flex-start}.cards{gap:10px}.card{padding:14px}}
-</style></head><body>
-<div class="layout"><aside><div class="brand">CIV<span>IS</span></div><div class="tag">CITY BRAIN / PRIMARY MOCK</div>
-<nav><a href="#overview">Overview</a><a href="#fixtures">Run a fixture</a><a href="#inspection">Evidence &amp; decisions</a><a href="#provider">AI connection</a><a href="#service">Service events</a></nav>
-<div class="rail-note">Local debugging console<br><br>Brain proposes.<br>Guardian approves.<br>Twin executes.</div></aside>
-<main><header id="overview"><div><div class="eyebrow">Developer workspace</div><h1>Brain console</h1><p>Inspect readings, replay your cases, and follow each decision.</p></div><span class="badge">Partial mock / 2 of 5 scenarios</span></header>
-<div id="notice" class="notice" hidden></div>
-<section class="cards">
-<div class="card"><div class="label">ENVIRONMENT</div><div class="value" id="python">Loading</div><div class="small" id="versions">Checking pinned modules</div></div>
-<div class="card"><div class="label">PARTNER CONNECTIONS</div><div class="value" id="peer-mode">Loading</div><div class="small">Fixture runs use fake peers</div></div>
-<div class="card"><div class="label">AI PROVIDER</div><div class="value" id="ai-mode">Loading</div><div class="small" id="key-status">Key status</div></div>
-<div class="card"><div class="label">RELEASE STATUS</div><div class="value">In progress</div><div class="small">Traffic, Water and Medical await owners</div></div>
+:root { color-scheme: light; }
+body { margin: 20px; max-width: 1100px; color: #111; background: white; font: 14px/1.5 Arial, sans-serif; }
+h1 { font-size: 22px; }
+h2 { font-size: 17px; margin: 0 0 10px; }
+section { margin: 24px 0; padding-top: 12px; border-top: 1px solid #ccc; }
+button { margin: 3px 4px 3px 0; padding: 4px 8px; cursor: pointer; }
+button:disabled { cursor: default; }
+button.active { font-weight: bold; }
+table { border-collapse: collapse; text-align: left; }
+th, td { padding: 6px 10px; border: 1px solid #ccc; }
+.table-wrap { overflow-x: auto; }
+pre { background: #f5f5f5; border: 1px solid #ddd; padding: 10px; max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea { box-sizing: border-box; width: 100%; height: 180px; font: 13px Consolas, monospace; }
+.result-meta span { margin-right: 16px; }
+.decision { margin: 12px 0; }
+.status { font-weight: bold; }
+.tabs, details { margin: 12px 0; }
+.notice { border: 1px solid #999; padding: 8px; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) { body { margin: 12px; } }
+</style>
+</head>
+<body>
+<h1>CIVIS Brain console</h1>
+<p>Local developer debugging. Partial mock: S03 and S04 implemented; S01, S02 and S05 pending.</p>
+<div id="notice" class="notice" role="alert" hidden></div>
+<table aria-label="Service configuration">
+<tr><th>Python and modules</th><td><span id="python">Loading</span><br><span id="versions"></span></td></tr>
+<tr><th>Peers</th><td id="peer-mode">Loading</td></tr>
+<tr><th>AI provider</th><td><span id="ai-mode">Loading</span><br><span id="key-status"></span></td></tr>
+<tr><th>Model</th><td id="model">Loading</td></tr>
+<tr><th>Active run</th><td id="active-run">None</td></tr>
+</table>
+<section id="fixtures">
+<h2>Replay fixtures</h2>
+<p>Isolated runs with fake peers. No live AI calls or actuator effects.</p>
+<div>Power (S03): <button class="run" data-sid="S03" data-case="base">Base</button><button class="run" data-sid="S03" data-case="refusal">Refusal</button></div>
+<div>Air Quality (S04): <button class="run" data-sid="S04" data-case="base">Base</button><button class="run" data-sid="S04" data-case="refusal">Refusal</button></div>
 </section>
-<div class="content">
-<section class="panel" id="fixtures"><div class="eyebrow">Isolated replay</div><h2>Your scenarios</h2><p class="small">These cases do not alter the active service run.</p>
-<div class="fixture"><div class="label">S03 / POWER</div><strong>Power evidence</strong><p class="small">Mock overload candidate or uncertainty. No grid switching.</p><div class="actions"><button class="primary run" data-sid="S03" data-case="base">Run base</button><button class="run" data-sid="S03" data-case="refusal">Run refusal</button></div></div>
-<div class="fixture"><div class="label">S04 / AIR QUALITY</div><strong>Sustained pollution</strong><p class="small">Two distinct PM2.5 ticks. An alert, with no inferred dispatch.</p><div class="actions"><button class="primary run" data-sid="S04" data-case="base">Run base</button><button class="run" data-sid="S04" data-case="refusal">Run refusal</button></div></div>
-<div class="pending"><strong>Awaiting teammates</strong><br>S01 Traffic / Yassine<br>S02 Water / Meriem<br>S05 Medical / Maram</div></section>
-<section class="panel" id="inspection"><div class="panel-title"><h2 id="result-title">Evidence &amp; decisions</h2><span class="small" id="result-run">No case selected</span></div>
-<div id="empty" class="empty"><strong>Choose a case to inspect</strong><p class="small">Readings and their original evidence IDs<br>will appear beside the recorded decisions.</p></div>
-<div id="result" hidden><div class="result-meta" id="result-meta"></div><div id="decisions"></div>
-<div class="tabs"><button class="active tab" data-view="readings">Readings</button><button class="tab" data-view="trace">Decision trace</button><button class="tab" data-view="json">Full result</button></div>
+<section id="inspection">
+<h2 id="result-title">Case result</h2>
+<p id="result-run">No case selected</p>
+<p id="empty">Run a fixture to inspect its readings and decisions.</p>
+<div id="result" hidden>
+<div class="result-meta" id="result-meta"></div>
+<div id="decisions"></div>
+<div class="tabs"><button class="active tab" data-view="readings">Readings</button><button class="tab" data-view="trace">Decision trace</button><button class="tab" data-view="json">Result JSON</button></div>
 <div class="table-wrap" id="readings-view"><table><thead><tr><th>Tick</th><th>Node</th><th>Sensor</th><th>Value</th><th>Unit</th><th>Reading ID</th></tr></thead><tbody id="readings"></tbody></table></div>
-<pre id="trace-view" hidden></pre><pre id="json-view" hidden></pre></div>
-<details><summary>Evaluate a custom fixture batch</summary><p class="small">Paste a ReadingsBatch for known fixture nodes AQ-01 or POW-01. This uses the active mock runtime.</p>
-<textarea id="batch" spellcheck="false" aria-label="Fixture batch JSON" placeholder="Paste JSON here"></textarea><div class="actions"><button id="evaluate">Evaluate batch</button></div><pre id="custom-result" hidden></pre></details>
-</section></div>
-<section class="bottom">
-<div class="panel" id="provider"><div class="eyebrow">One bounded planning call</div><h2>AI connection</h2><div class="provider-name" id="model">Loading provider</div><p class="small">Your Power/Air cases need no AI call. This separate smoke test uses synthetic traffic evidence, validates the returned Plan, and executes nothing.</p><div class="actions"><button id="ai-smoke">Check AI connection</button><span class="small">No paid-model fallback</span></div><pre id="ai-result" hidden></pre></div>
-<div class="panel" id="service"><div class="panel-title"><h2>Active service events</h2><span class="small" id="active-run">No active run</span></div><p class="small">Actual MCP evaluations appear here. Fixture replay results stay in the inspection panel above.</p><pre id="service-events">No service decisions yet.</pre></div>
-</section><footer><span>Local session. Keys stay on the server.</span><span>MCP / 2026-07-28</span></footer>
-</main></div>
+<pre id="trace-view" hidden></pre>
+<pre id="json-view" hidden></pre>
+</div>
+</section>
+<section>
+<h2>Evaluate a fixture batch</h2>
+<p>Paste a ReadingsBatch for fixture nodes AQ-01 or POW-01. Uses the active mock runtime.</p>
+<textarea id="batch" spellcheck="false" aria-label="Fixture batch JSON" placeholder="ReadingsBatch JSON"></textarea>
+<div><button id="evaluate">Evaluate batch</button></div>
+<pre id="custom-result" hidden></pre>
+</section>
+<section id="provider">
+<h2>AI connection test</h2>
+<p>One synthetic planning request. Validates the Plan; executes nothing. No paid fallback.</p>
+<button id="ai-smoke">Check AI connection</button>
+<pre id="ai-result" hidden></pre>
+</section>
+<section id="service">
+<h2>Service events</h2>
+<p>Active MCP evaluations and AI test results. Refreshes every 5 seconds.</p>
+<pre id="service-events">No service decisions yet.</pre>
+</section>
+<p>MCP protocol: 2026-07-28. Keys remain on the server.</p>
 <script nonce="__NONCE__">
 const $=id=>document.getElementById(id);let busy=false;
 function notice(message){$("notice").textContent=message;$("notice").hidden=!message}

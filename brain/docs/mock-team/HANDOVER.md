@@ -10,7 +10,7 @@ Updated 9 October 2026. Integration branch: codex/civis-elyes.
 - Reusable network-free Twin/Guardian/provider fixtures, four own scenario cases and one runner.
 - Deterministic parameter/carrier/evidence/risk/topology checks, Guardian score and exact-command approval, required preview, all touched-domain caps, idempotency, refusal detail and optional pending confirmation.
 - OpenRouter with the selected free Gemma model, manifest-constrained local JSON-schema validation, selected evidence, timeout, per-run budget and no paid fallback. Gemini remains an explicit optional mode.
-- Local browser console at http://127.0.0.1:8001/: four isolated own-scenario replays, readings, evidence/decision traces, fixture batch evaluation and a separate synthetic AI test. Loopback checks, HttpOnly session cookie, same-origin POST and CSP protect the console. Set BRAIN_DEBUG_ENABLED=false to disable it.
+- Plain developer debug page at http://127.0.0.1:8001/: four isolated own-scenario replays, readings, evidence/decision traces, fixture batch evaluation and a separate synthetic AI test. Loopback checks, HttpOnly session cookie, same-origin POST and CSP protect the console. Set BRAIN_DEBUG_ENABLED=false to disable it.
 - Authenticated MCP tools and Guardian-only evidence invalidation. Local HTTP/MCP smoke verified actual SDK negotiation, authorization, discovery and workflow.
 
 The final five-scenario release is incomplete. Health/capabilities correctly return ready=false.
@@ -20,7 +20,7 @@ The final five-scenario release is incomplete. Health/capabilities correctly ret
 1. Review Yassine, Meriem and Maram's PRs into codex/civis-elyes. No CIVIS member PR was open during this implementation check.
 2. Ask Houssem for the actual Guardian tools, request/response schemas, numeric score scale, cut-offs, JWS claims and caller key. Configure the explicit adapter mapping after agreement.
 3. Ask Dali for complete shared-domain cap discovery and the required water preview interface. Confirm pending/commit and the shared log format.
-4. Your OpenRouter key is configured in ignored brain/.env with restricted Windows file access. Authentication returned HTTP 200, but both synthetic inference checks returned HTTP 429. Live planning is still blocked. Replace the key disclosed in chat through the OpenRouter dashboard and update only your local .env in an editor. After quota/endpoint availability recovers, run the separate synthetic smoke below. Power/Air replay never needs an AI call.
+4. Your OpenRouter key is configured in ignored brain/.env with restricted Windows file access. Authentication returned HTTP 200, but synthetic inference checks returned HTTP 429. Live planning is still blocked. Replace the key disclosed in chat through the OpenRouter dashboard and update only your local .env in an editor. After quota/endpoint availability recovers, run the separate synthetic smoke below. Power/Air replay never needs an AI call.
 5. After member merges and live checks, complete the five-row acceptance matrix. Maram opens the release PR into brain; Elyes reviews it. Do not merge directly into main.
 
 Containment lifecycle and overlapping requested-node counts remain partner discussion items. Brain does not settle them or call isolation, quarantine, release or rollback.

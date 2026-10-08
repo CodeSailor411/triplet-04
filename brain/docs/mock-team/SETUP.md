@@ -157,4 +157,4 @@ Then use the separate prompt at each step of your own card. Read the explanation
 - [Selected Gemma free model](https://openrouter.ai/google/gemma-4-31b-it:free)
 - [OpenRouter provider filtering](https://openrouter.ai/docs/guides/routing/provider-selection)
 
-Windows checks run in GitHub Actions with no API/peer calls. On 9 October, all 55 applicable package pins matched locally. The key authenticated successfully; two explicit synthetic OpenRouter inference checks returned HTTP 429. See VERSIONS.md and HANDOVER.md. This is not a successful live planning check.
+Windows checks run in GitHub Actions with no API/peer calls. On 9 October, all 55 applicable package pins matched locally. The key authenticated successfully; synthetic OpenRouter inference checks returned HTTP 429. See VERSIONS.md and HANDOVER.md. This is not a successful live planning check.
