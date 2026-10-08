@@ -67,6 +67,9 @@ Bad input: field name and allowed values. Feed without a key: HTTP 401 `{"error"
 Messages we send are strict. Messages we receive: unknown extra fields are ignored, missing or wrong required fields are rejected with a message
 (exception: unknown names inside `params` are refused, because a silently ignored typo on an actuator command is worse than an error).
 
+## Run log (R2)
+The Twin writes `run-logs/<run_id>.twin.jsonl` and merges into `logs/<run_id>.jsonl` (`python -m twin.logmerge <run_id>`). Fields: `run_id`, `event_id`, `timestamp`, `tick`, `wall`, `layer`, `event_type`, `caused_by`, `data`. Twin events: `scenario`, `reading` (faulted readings only), `action` (token ID, not the token), `containment`. No true value is ever in it. Draft, review 9 Oct.
+
 ## Containment: the rules (Guardian only; `release_device`, `get_containment_state`, `get_quarantine_lane` are our additions)
 * Device = one sensor at one node (`device_id` from `list_nodes`). `isolate_sensor` removes the device's readings from the feed and `get_readings` from
   the current tick on. `quarantine_device` does the same, and an `actuate` aimed at that node is held (`DEVICE_QUARANTINED`, token not spent).
