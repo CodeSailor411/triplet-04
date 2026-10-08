@@ -11,8 +11,14 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 Domain = Literal["traffic", "water", "power", "air_quality", "emergency"]
 Risk = Literal["R1", "R2", "R3"]
 IncidentKind = Literal[
-    "congestion", "road_accident", "flood", "low_water", "power_fault",
-    "air_pollution", "fire", "medical",
+    "congestion",
+    "road_accident",
+    "flood",
+    "low_water",
+    "power_fault",
+    "air_pollution",
+    "fire",
+    "medical",
 ]
 
 
@@ -140,6 +146,7 @@ class Decision(WireModel):
     targets: list[str] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)
     peer_code: str | None = None
+    peer_details: dict[str, Any] = Field(default_factory=dict)
 
 
 class DecisionBatch(WireModel):

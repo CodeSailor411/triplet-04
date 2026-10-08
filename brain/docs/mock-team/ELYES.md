@@ -1,5 +1,7 @@
 # Elyes: S03 Power, S04 Air Quality and the shared Brain core
 
+Implementation update, 8 October: your reduced scenarios and shared core are implemented. See [handover](HANDOVER.md) and [verification/progress](progress/elyes.md). The steps below remain the task checklist; live partner/API checks and member review are still pending.
+
 Branch: `codex/civis-elyes`, the protected integration branch. You review the three member PRs. Your two alert-focused scenarios leave time for the shared integration work.
 
 The release contains five selected scenarios. The October checkpoint's eight incident rows remain the broader catalog; the chosen five names are a planning subset, not a claim of recorded triplet approval. Accident, low water and fire are deferred.

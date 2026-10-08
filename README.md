@@ -61,6 +61,6 @@ Each team works inside its assigned layer folder and coordinates shared changes 
 
 ## Current status
 
-The shared layout is scaffolded. CIVIS's primary mock environment, fixed interfaces and four-person work plan are in [brain/](brain/README.md). Its business functions remain assigned to the team. Twin development currently exists on Trinity's separate development branches; do not assume unmerged branch features are already on the layer branch.
+The shared layout is scaffolded. CIVIS's primary mock environment, fixed interfaces and four-person work plan are in [brain/](brain/README.md). Elyes's Power/Air Quality scenarios and common runtime/MCP tools are implemented on codex/civis-elyes; the other three workflows remain assigned. Full-release readiness is false. See [handover](brain/docs/mock-team/HANDOVER.md) for launch and current gaps. Twin development currently exists on Trinity's separate development branches; do not assume unmerged branch features are already on the layer branch.
 
 Reports, pitch, shared integration/Test Book and Compose placeholders remain for the triplet's later work. The repository is named `triplet-04`.

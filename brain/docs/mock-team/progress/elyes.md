@@ -1,49 +1,21 @@
-# Elyes progress: S03 Power, S04 Air Quality and shared core
+# Elyes progress
 
-Branch: `codex/civis-elyes`. Status: assigned, not implemented.
+Updated 8 October 2026. Branch: codex/civis-elyes.
 
-## Steps
+| Work | Status | Evidence |
+| --- | --- | --- |
+| Windows Python environment | Complete | setup.ps1, Python 3.12.13 and committed dependency lock |
+| S03 Power | Complete for reduced mock | Own threshold/uncertainty tests; base/refusal actual-runtime cases |
+| S04 Air Quality | Complete for reduced mock | Own persistence/null/unit/run tests; base/refusal actual-runtime cases |
+| Shared core and fake peers | Implemented | Real runtime tests for trust, exact token, preview, params, caps, idempotency, pending and containment |
+| Gemini adapter | Implemented; live call pending | Mocked SDK schema, failure, timeout/budget tests; smoke_gemini.py ready |
+| MCP/auth/read views | Implemented | Actual local HTTP/MCP smoke and in-memory SDK schema/refusal tests |
+| Release readiness | Incomplete | S01/S02/S05, live Guardian/preview/caps/log agreement and live AI smoke remain pending |
 
-- [ ] Windows setup, member access and partner gaps checked
-- [ ] Shared fixture format/peers, normalization, state and registry
-- [ ] Power/AQ detectors with unit tests
-- [ ] Alert-only plans, shared Gemini adapter and guarded execution
-- [ ] Five scenario base/refusal integration proof and safeguards
-- [ ] Sequential reviews, live checks and release handover
+Local verification: 86 tests passed; Ruff passed; all four S03/S04 fixture replays and local MCP transport smoke passed. Test results are reproduced by the commands in HANDOVER.md. Fixture checks made no external API/peer calls.
 
-## Implemented functions
+No CIVIS member PR was open at the repository check. The open Twin log PR is outside this implementation scope and was not merged. Member implementations, main and other branches were not changed.
 
-Record shared functions and S03/S04 separately. Stubs are not completed work.
+JSONL contains redacted decisions with original evidence IDs and refusal details. Fixture thresholds, cut-offs, unsigned approvals and synthetic candidates are not claims about real city safety or completed partner integration.
 
-## Assumptions and partner decisions
-
-Record thresholds as mock-only and distinguish confirmed evidence from candidates.
-Guardian schema/tool agreement:
-Twin preview support:
-Pending/commit support:
-Cap discovery:
-Current partner branch/commit:
-
-## Test results
-
-Record exact command, date and passed/failed counts. Bootstrap success is setup evidence only.
-
-## Scenario integration status
-
-S01 Traffic:
-S02 Water:
-S03 Power:
-S04 Air Quality:
-S05 Medical:
-
-## Live smoke and release evidence
-
-Synthetic Gemini smoke:
-Actual partner discovery/auth smoke:
-Redacted base/refusal traces:
-Release commit:
-Release PR, opened by Maram:
-
-## Remaining dependencies and next action
-
-Record precise unavailable schemas/tools/functions without bypassing gates.
+Next: review three member PRs sequentially into this branch, confirm partner contracts, supply a local free-tier Gemini key, run live smoke, then complete the five-row acceptance matrix before release into brain.
