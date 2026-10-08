@@ -4,7 +4,8 @@
   "assumptions": [
     "Same synthetic topology and mock thresholds as base_case.json.",
     "The fixture preview reports an unsafe result, so no actuation is allowed.",
-    "Preview and Guardian answers are fixture values and do not prove live support."
+    "Preview and Guardian answers are fixture values and do not prove live support.",
+    "Guardian score scale and cut-offs follow the shared fixture shape; they are mock values, not confirmed by Houssem."
   ],
   "nodes": [
     {"node_id": "tank-01", "domains": ["water"], "role": "tank",
@@ -19,6 +20,7 @@
                  "min_value": 0, "max_value": 100, "unit": "percent"}],
      "target_nodes": ["valve-01"], "action_cap": 1}
   ],
+  "caps": {"water": 1},
   "batches": [
     {"run_id": "run-water-2", "tick": 10, "time": "2026-10-08T10:10:00Z",
      "tick_seconds": 60.0, "count": 1,
@@ -52,8 +54,11 @@
     ]
   },
   "guardian": {
-    "score": 0.9, "score_scale": "0-1", "thresholds": {"approve": 0.7},
-    "approve": true, "token_lifetime_ticks": 3
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {"reading": 60, "R1": 65, "R2": 80, "R3": 90},
+    "approve": true,
+    "token_lifetime_ticks": 3
   },
   "preview": {"available": true, "safe": false,
               "reason": "fixture: preview shows an unsafe downstream effect"},
@@ -70,7 +75,9 @@
                    "details": "Never reached: the request is blocked before actuation."},
   "expected": {
     "decision_status": "blocked",
+    "final_statuses": ["blocked"],
     "reason_contains": "preview",
+    "provider_calls": 1,
     "actuate_calls": 0,
     "effects": 0
   }
