@@ -1,5 +1,7 @@
+from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +22,14 @@ class Settings(BaseSettings):
     llm_mode: Literal["fixture", "gemini"] = "fixture"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.5-flash-lite"
-    ai_timeout_seconds: float = 15
-    ai_max_calls_per_run: int = 3
-    peer_timeout_seconds: float = 5
+    ai_timeout_seconds: float = Field(default=15, gt=0, le=60)
+    ai_max_calls_per_run: int = Field(default=3, ge=1, le=20)
+    peer_timeout_seconds: float = Field(default=5, gt=0, le=30)
+
+    peer_mode: Literal["fixture", "live"] = "fixture"
+    brain_config_root: str = str(Path(__file__).resolve().parents[2])
+    brain_fixture_case: str = "mocks/cases/air_quality/base_case.json"
+    guardian_contract_confirmed: bool = False
+    guardian_mapping_file: str = ""
+    twin_preview_tool: str | None = None
+    twin_commit_tool: str | None = None

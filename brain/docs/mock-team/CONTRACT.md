@@ -1,6 +1,6 @@
 # Frozen contract: five scenario modules and one Brain runtime
 
-Revision: scenario ownership, 7 October 2026. Owner: Elyes. This replaces the earlier three-module team assignment. Public MCP models remain unchanged. Internal module boundaries are prepared for implementation, not implemented.
+Revision: scenario ownership, 7 October 2026. Owner: Elyes. This replaces the earlier three-module team assignment. Public tool signatures remain unchanged; Decision adds optional redacted peer_details. The shared core and S03/S04 are implemented; other scenario modules remain assigned.
 
 ## Pipeline
 
@@ -65,7 +65,7 @@ runtime = build_runtime(
 result: DecisionBatch = await runtime.evaluate_tick(batch)
 ~~~
 
-The factory and method currently raise NotImplementedError. policies maps all five IDs to per-scenario config dictionaries. features uses the explicit internal schema in SCENARIOS.md for discovery/fixture options; it is not permission to bypass validation. Planned fixture constructors are FixtureTwin(case: dict), FixtureGuardian(case: dict) and FixturePlanProvider(case: dict), implemented by Elyes. Peer fixtures expose calls as a list of records with name and redacted arguments, and effects as a list of committed normalized commands without tokens. Fixtures record tool calls and simulated effects. Only Elyes fixes the shared harness if a member finds a missing contract.
+The shared factory and evaluate_tick method are implemented. policies maps all five IDs to per-scenario config dictionaries. features uses the explicit internal schema in SCENARIOS.md for discovery/fixture options; it is not permission to bypass validation. Implemented fixture constructors are FixtureTwin(case: dict), FixtureGuardian(case: dict) and FixturePlanProvider(case: dict), implemented by Elyes. Peer fixtures expose calls as a list of records with name and redacted arguments, and effects as a list of committed normalized commands without tokens. Fixtures record tool calls and simulated effects. Only Elyes fixes the shared harness if a member finds a missing contract.
 
 The existing module-level integration.service.evaluate_tick(batch) and MCP tool signature remain stable; Elyes binds one runtime at startup and delegates to it. Runtime constructor/factory details must not be guessed independently in member tests.
 
@@ -95,6 +95,6 @@ No human-review workflow. No AI or live peer calls in CI. No secrets in prompts,
 
 ## Proposed public tools and logs
 
-MCP at /mcp, port 8001, protocol 2026-07-28. get_capabilities is implemented; evaluate_tick, get_active_incidents, explain_decision and Guardian-only notify_containment are prepared but unimplemented. Optional set_policy_mode is deferred.
+MCP at /mcp, port 8001, protocol 2026-07-28. get_capabilities, evaluate_tick, get_active_incidents, explain_decision and Guardian-only notify_containment are implemented. Full-release readiness remains false. Optional set_policy_mode is deferred.
 
 Record run, tick, scenario_id, incident/evidence IDs, status, reason and peer refusal detail in mock JSONL. Runtime assigns scenario_id to trace events; no public model change is required. Decision status is alert/blocked/pending/committed/rejected. Never save tokens/keys. Map this format to Trinity's shared log draft when confirmed.

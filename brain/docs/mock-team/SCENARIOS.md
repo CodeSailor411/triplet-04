@@ -86,3 +86,36 @@ Water config may include safe_valve_choices, a list of explicitly supported fixt
 Medical Incident.facts carries destination and ambulance_available_by_carrier derived from actual units_free readings at dispatch carriers. Preserve those availability reading IDs as well as the call reading IDs. Units are calls/min for emergency_calls and units for units_free. Unavailable/unknown availability cannot justify dispatch.
 
 PlanningContext.evidence_readings carries trusted-selected original readings, including earlier persistence ticks; current batch stays unchanged. The shared ledger resolves old source IDs. No reconstruction or invented value replaces missing historical evidence.
+
+## Implementation revision, 8 October
+
+The shared factory, peers and MCP tools are implemented. S03/S04 are working; S01/S02/S05 remain assigned to their owners. See HANDOVER.md for actual support and limitations.
+
+Case format additions:
+
+- caps maps every touched domain to a discovered fixture action limit (integer or explicit null). Shared nodes require each domain's limit.
+- guardian.thresholds contains reading and each exercised risk tier, all on guardian.score_scale. These numbers are synthetic fixture configuration, never live defaults.
+- guardian.scores optionally overrides score by reading ID; claim_overrides is a test fault-injection field.
+- twin_outcome.commit_available explicitly advertises fixture_commit. Missing support leaves pending.
+- expected.final_statuses is the ordered list of last-batch decision statuses; effects, provider_calls and actuate_calls are optional exact counts. reason_contains optionally checks a refusal explanation.
+
+~~~json
+{
+  "guardian": {
+    "score": 95.0,
+    "score_scale": 100.0,
+    "thresholds": {"reading": 60.0, "R1": 65.0, "R2": 80.0, "R3": 90.0},
+    "approve": true,
+    "token_lifetime_ticks": 3
+  },
+  "preview": {"available": true, "safe": true, "reason": "Declared synthetic preview"},
+  "twin_outcome": {"status": "committed"},
+  "expected": {"final_statuses": ["committed"], "effects": 1, "provider_calls": 1, "actuate_calls": 1}
+}
+~~~
+
+Fake Guardian generates unsigned JWS in memory with iss, aud, jti, run_id, iat, exp, action, targets, params, score and score_scale. It is test-only; real token claims/signature verification require confirmation with 9antra/Twin. Tokens never belong in case JSON.
+
+Additional internal features: peer_timeout_seconds, ai_timeout_seconds, ai_max_calls_per_run and guardian_contract_confirmed. Existing five feature keys and frozen factory/signatures are preserved. Decision.peer_details is an additive redacted object that retains cap/refusal detail.
+
+Synthetic-candidate integration tests bypass only the unfinished detector in the test harness. They run the actual shared validation/approval/execution code and must never be cited as S01/S02/S05 acceptance.

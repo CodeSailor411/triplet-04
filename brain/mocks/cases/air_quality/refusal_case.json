@@ -1,0 +1,108 @@
+{
+  "scenario_id": "S04",
+  "fixture_only": true,
+  "assumptions": [
+    "Synthetic nodes and values; no claim of approved safety thresholds.",
+    "Guardian cut-offs and unsigned approvals are fixture-only.",
+    "Alert-only; no provider or actuator call."
+  ],
+  "nodes": [
+    {
+      "node_id": "AQ-01",
+      "domains": [
+        "air_quality",
+        "emergency"
+      ],
+      "role": "sensor",
+      "actuators": [],
+      "neighbours": []
+    }
+  ],
+  "actions": [],
+  "policy": {
+    "fixture_only": true,
+    "sensor": "pm25",
+    "unit": "ug/m3",
+    "threshold_min": 80,
+    "persistence_ticks": 2,
+    "allowed_actions": [],
+    "response_mode": "alert"
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_ticks": 3
+  },
+  "preview": {
+    "available": false,
+    "safe": false,
+    "reason": "No actuation in this scenario"
+  },
+  "ai_plan": {
+    "proposals": [],
+    "alerts": []
+  },
+  "twin_outcome": {
+    "status": "committed"
+  },
+  "caps": {},
+  "expected": {
+    "final_statuses": [
+      "alert"
+    ],
+    "effects": 0,
+    "provider_calls": 0,
+    "actuate_calls": 0
+  },
+  "batches": [
+    {
+      "run_id": "elyes-demo",
+      "tick": 1,
+      "time": "2026-10-08T08:00:01.000Z",
+      "tick_seconds": 1,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "elyes-demo",
+          "reading_id": "AQ-01-1",
+          "tick": 1,
+          "timestamp": "2026-10-08T08:00:01.000Z",
+          "node_id": "AQ-01",
+          "device_id": "AQ-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": null,
+          "unit": "ug/m3"
+        }
+      ]
+    },
+    {
+      "run_id": "elyes-demo",
+      "tick": 2,
+      "time": "2026-10-08T08:00:02.000Z",
+      "tick_seconds": 1,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "elyes-demo",
+          "reading_id": "AQ-01-2",
+          "tick": 2,
+          "timestamp": "2026-10-08T08:00:02.000Z",
+          "node_id": "AQ-01",
+          "device_id": "AQ-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": null,
+          "unit": "ug/m3"
+        }
+      ]
+    }
+  ]
+}

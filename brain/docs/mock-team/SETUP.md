@@ -101,7 +101,7 @@ In VS Code open brain/civis.code-workspace or select interpreter brain/.venv/Scr
 | pytest / pytest-asyncio | 9.1.1 / 1.4.0 | Unit and async workflow tests |
 | Ruff | 0.16.10 | Lint checks |
 
-requirements-lock.txt includes transitive dependencies. The lock is unchanged for this reassignment. Only Elyes approves dependency changes. Do not let an AI assistant regenerate the environment to fix a scenario bug.
+requirements-lock.txt includes transitive dependencies. The lock remains pinned. jsonschema 4.26.0 is also declared directly for discovered request validation; it was already in the lock. Only Elyes approves dependency changes. Do not let an AI assistant regenerate the environment to fix a scenario bug.
 
 | Person | Extra requirement | Focus |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ Each scenario uses an injected provider; it does not install another framework o
 
 ## 6. Local keys and shared connections
 
-Default LLM_MODE=fixture is for repeatable tests. Elyes obtains a key at https://aistudio.google.com/apikey and edits ignored brain/.env locally. Set GEMINI_API_KEY and switch LLM_MODE=gemini only when the shared adapter is implemented. Configured model remains gemini-3.5-flash-lite; verify free-tier availability/access in the account before the live check. Quota/timeout is a blocked outcome; no paid fallback.
+Default LLM_MODE=fixture is for repeatable tests. Elyes obtains a key at https://aistudio.google.com/apikey and edits ignored brain/.env locally. Set GEMINI_API_KEY and switch LLM_MODE=gemini for a live AI run. Configured model remains gemini-3.5-flash-lite; verify free-tier availability/access in the account before the live check. Quota/timeout is a blocked outcome; no paid fallback.
 
 Do not paste real keys/tokens into an AI chat, fixture, screenshot, commit or PR. Fixtures and automated tests do not need credentials.
 
@@ -122,7 +122,7 @@ Outbound TWIN_BRAIN_KEY and GUARDIAN_BRAIN_KEY must match the keys supplied priv
 
 Guardian tool names remain CONFIRM_WITH_9ANTRA until confirmed. Shared code must not start a joint workflow with guessed mappings. Partner schemas, preview and caps are tracked in PARTNER_GAPS.md.
 
-## 7. Start the transport scaffold
+## 7. Start the partial Brain mock
 
 From brain/:
 
@@ -130,15 +130,15 @@ From brain/:
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
-Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Initial ready=false and NOT_IMPLEMENTED workflow replies are expected until the team implements them. Ctrl+C stops the process.
+Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Readiness stays false until all five workflows and live checks pass. S03/S04 and shared tools work; relevant unfinished member inputs return SCENARIO_NOT_IMPLEMENTED. Ctrl+C stops the process.
 
 A second PowerShell terminal in brain/ can check the initial transport:
 
 ~~~powershell
-.\.venv\Scripts\python.exe scripts/smoke_scaffold.py
+.\.venv\Scripts\python.exe scripts/smoke_mcp.py
 ~~~
 
-This smoke script checks initial transport/auth/protocol, not completed scenarios. Elyes updates smoke expectations after implementation rather than claiming scaffold responses are final behavior.
+This script starts and closes a temporary local fixture server and verifies real MCP negotiation, auth, Air Quality evaluation, read views and Guardian-only invalidation. It calls no external peer/API. See HANDOVER.md for four actual scenario replays and the separate live AI command.
 
 ## 8. Your first AI-assistant prompt
 

@@ -56,7 +56,7 @@ Do not wait until 9 October to build the core: Elyes starts it in parallel on 7 
 
 ## Prepared now, still to be implemented
 
-Environment, five scenario stubs, frozen types/ports, folder ownership, Windows CI and detailed guides are prepared. Business functions still raise NotImplementedError and MCP workflows still return NOT_IMPLEMENTED. Passing setup checks does not mean the mock is finished.
+Elyes's S03/S04, shared runtime, Gemini adapter, fake peers and MCP tools are implemented. S01/S02/S05 remain assigned to their owners. See HANDOVER.md and progress/elyes.md for verified support. Full-release readiness remains false.
 
 Elyes implements one future case trigger: from brain/, `.\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base` (select S01-S05). That runner is assigned, not available yet.
 
