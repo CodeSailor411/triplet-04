@@ -20,6 +20,7 @@ KEYS = {"city_brain": "brain-test-key", "guardian": "guardian-test-key", "scenar
 def config():
     cfg = load_config()
     cfg.sse.heartbeat_seconds = 0.05          # fast heartbeats so the SSE test finishes quickly
+    cfg.clock.autorun = False                 # the clock stands still, so tests control time
     return cfg
 
 
@@ -28,12 +29,14 @@ def settings(config):
     return Settings(config=config, secrets=Secrets(**KEYS))
 
 
-@pytest.fixture(scope="session")
-def base_url(settings):
+@contextlib.contextmanager
+def run_twin(settings):
+    """A real Twin on a free port in a background thread. Yields (url, app)."""
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1", port=port, log_level="warning"))
+    app = create_app(settings)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     for _ in range(100):
@@ -41,9 +44,29 @@ def base_url(settings):
             break
         time.sleep(0.05)
     assert server.started, "test server did not start"
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True
-    thread.join(timeout=5)
+    try:
+        yield f"http://127.0.0.1:{port}", app
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+
+
+@pytest.fixture(scope="session")
+def base_url(settings):
+    """Twin with a standing-still clock (tick 0 forever)."""
+    with run_twin(settings) as (url, _app):
+        yield url
+
+
+@pytest.fixture(scope="session")
+def running_url(config):
+    """Twin whose clock runs fast (a tick every 50 ms real time), for tests of the live feed."""
+    cfg = config.model_copy(deep=True)
+    cfg.clock.autorun = True
+    cfg.clock.speed = 20.0                    # 1 simulated second per tick / 20 = 50 ms real
+    cfg.sse.heartbeat_seconds = 5
+    with run_twin(Settings(config=cfg, secrets=Secrets(**KEYS))) as (url, _app):
+        yield url
 
 
 @pytest.fixture

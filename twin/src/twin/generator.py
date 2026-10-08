@@ -215,7 +215,9 @@ def generate(config: TwinConfig, seed: int | None = None) -> tuple[Topology, Lay
                 raise ConfigError(f"Sensor '{n}' is used but not listed under sensors:")
         nodes[s.id] = Node(node_id=s.id, label=s.label, domains=s.domains, role=s.role, zone=s.zone or "",
                            x=pos[s.id][0], y=pos[s.id][1],
-                           sensors=[SensorInfo(name=n, unit=config.sensors[n].unit) for n in sensor_names],
+                           sensors=[SensorInfo(name=n, unit=config.sensors[n].unit, device_id=f"{s.id}.{n}",
+                                               channels=list(config.sensor_model.profiles[n].channels))
+                                    for n in sensor_names],
                            actuators=[], neighbours=[])
 
     rng = _rng(seed, "actuators")                     # which nodes carry an actuator

@@ -1,59 +1,74 @@
-# Twin: Interface Card (draft v2, 5 Oct 2026, one page)
+# Twin: Interface Card (draft v5, 6 Oct 2026, one page)
 
-**Status:** skeleton. Only the tools marked "now" exist. Everything else is planned and listed at the bottom.
+**Status:** the tools in the table exist. Everything else is listed under "Planned" at the bottom. Known gap: `get_capabilities` lists `actuate` for every caller, but only `city_brain` may call it.
 
 ## Connect
-MCP over HTTP (Streamable HTTP), protocol version `2026-07-28`, endpoint `http://<twin-host>:8000/mcp`.
-The Twin address is a setting in YOUR config (`partners.twin.url` style), never hard-coded.
-Live feed (server-sent events): `GET http://<twin-host>:8000/events`. Health: `GET /health` (no key).
+MCP over HTTP (Streamable HTTP), protocol version `2026-07-28`, endpoint `http://<twin-host>:8000/mcp`. The Twin address is a
+setting in YOUR config, never hard-coded. Live feed (server-sent events): `GET http://<twin-host>:8000/events` (needs a layer key):
+`hello` once, then one `readings` event per tick (all readings of that tick, `id` = `run_id:tick`), `heartbeat` when quiet.
+Health: `GET /health` (no key).
 
 ## Authenticate
-Send `Authorization: Bearer <your key>` on every request. One key per caller: `city_brain`, `guardian`, and a
-separate `scenario` key for running scenarios. The Twin finds out who you are from the key, so a layer cannot
-pretend to be another. Keys come from the `.env` file of whoever runs the Twin. Never commit them.
+`Authorization: Bearer <your key>` on every request. One key per caller: `city_brain`, `guardian`, and a separate `scenario` key.
+The Twin learns who you are from the key. Keys come from the `.env` of whoever runs the Twin. Never commit them.
 
-## Tools (now)
+## Tools
 | Tool | Who | Input | Output |
 |---|---|---|---|
-| `get_capabilities` | anyone, no key needed | none | layer, versions, protocol version, who you are logged in as, tools you can call |
-| `list_nodes` | `city_brain`, `guardian` | optional `domain`: traffic, water, power, air_quality, emergency | seed, count, nodes (`node_id`, domains, role, zone, x, y, sensors with units, actuators, neighbours) |
-| `run_scenario` | `scenario` key only. Not in anyone else's tool list | `name` | not implemented yet |
+| `get_capabilities` | anyone | none | versions, who you are logged in as, tools you can call |
+| `list_nodes` | `city_brain`, `guardian` | optional `domain` | nodes: `node_id`, domains, zone, x, y, sensors (`device_id`, unit, channels), actuators, neighbours |
+| `get_readings` | `city_brain`, `guardian` | optional `domain`, `node_id`, `sensor` | the latest tick's readings (same shape as one feed event) |
+| `get_clock` | `city_brain`, `guardian` | none | `run_id`, `tick`, simulated `time`, `tick_seconds`, `speed`, `running` |
+| `list_actions` | `city_brain`, `guardian` | none | each action: inputs with allowed values, `risk` (R1 to R3 or null), `preview_required`, `target_nodes`, `action_cap`; plus `token_mode`, `preview_enforced` |
+| `actuate` | `city_brain` | `action`, `targets`, `params`, `token`, `idempotency_key` | `status` committed or rejected, `action_id`, `code`, `message`, `details`, `replayed` |
+| `run_scenario` | `scenario` key only, hidden from others | `name` | not implemented yet |
 
-## Example: ask who you are (real output)
-Call `get_capabilities` with the City Brain key:
+## actuate: the rules
+* `targets` are nodes that carry that actuator (`list_actions` lists them). `params` are the action's inputs, unknown names are refused.
+* `token`: Guardian's permission for this exact action, targets and params. Format: three base64url parts `header.payload.signature`
+  (a JWT). Payload: `iss` "guardian", `aud` "twin", `jti` (unique, single use), `run_id`, `iat`, `exp` (simulated time), `action`,
+  `targets`, `params`, `score`. `token_mode` in `list_actions` says if the signature is required (`signed`, Ed25519 only) or must be empty (`unsigned`).
+* `idempotency_key`: same key and same request returns the first answer (`replayed: true`). Same key, changed request: `IDEMPOTENCY_CONFLICT`.
+  A refused attempt does not use up the key. Keys are per caller.
+* Checks in order: valid request, idempotency, token, preview (not enforced yet), caps. A token is spent only when the action commits.
+* Token times (`iat`, `exp`) use the Twin's simulated clock (`get_clock`), which moves 1 s per real second at speed 1.0. Issue tokens from the clock's time, not your wall clock.
+* Caps: one request may touch at most `action_cap` nodes per domain. A shared node counts in each domain it belongs to. Over the cap
+  refuses the whole request.
+* Refusals come back as a normal result with `status: "rejected"` and a `code`: `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_WRONG_RUN`, `TOKEN_EXPIRED`,
+  `TOKEN_REUSED`, `TOKEN_MISMATCH`, `TOKEN_SCORE_TOO_LOW`, `IDEMPOTENCY_CONFLICT`, `PREVIEW_REQUIRED`, `CAP_EXCEEDED`.
+* A wrong request is an error instead (the call fails, text `CODE: message`): `UNKNOWN_ACTION`, `UNKNOWN_NODE`, `INVALID_TARGETS`, `INVALID_PARAMS`, `INVALID_IDEMPOTENCY_KEY`.
+
+## Examples (real output, shortened)
+A reading, one entry of `readings` (`value` is what the sensor reports, sensors can be wrong, `null` = no value):
 ```json
-{"layer": "twin", "layer_version": "0.1.0", "mcp_sdk_version": "2.3.0", "protocol_version": "2026-07-28",
- "authenticated_as": "city_brain", "tools_you_can_call": ["get_capabilities", "list_nodes"]}
+{"run_id": "run-42-001", "reading_id": "rd0000007-TRF-01.avg_speed", "tick": 7, "timestamp": "2026-10-05T08:00:07.071Z",
+ "node_id": "TRF-01", "device_id": "TRF-01.avg_speed", "sensor": "avg_speed", "channel": null, "value": 35.6, "unit": "km/h"}
 ```
-With no key, `authenticated_as` is `null`: use this to check your key before anything else.
-
-## Example: nodes (real output, shortened)
-Call `list_nodes` with `{"domain": "emergency"}`:
+`actuate` with `{"action": "set_valve_position", "targets": ["WAT-01"], "params": {"position": 40}, "token": "...", "idempotency_key": "demo-1"}`:
 ```json
-{"seed": 42, "count": 7, "nodes": [{"node_id": "EMG-01", "label": "old_town", "domains": ["emergency"],
-  "role": "call_place", "zone": "old_town", "x": 1034.3, "y": 652.8,
-  "sensors": [{"name": "emergency_calls", "unit": "calls/min"}], "actuators": [],
-  "neighbours": ["EMG-05", "EMG-03", "AIR-05", "TRF-05"]}]}
+{"status": "committed", "run_id": "run-42-001", "tick": 4, "time": "2026-10-05T08:00:04.000Z", "action": "set_valve_position",
+ "targets": ["WAT-01"], "params": {"position": 40.0}, "action_id": "ac-00001", "code": null, "replayed": false}
+```
+Same with three valves (cap for water is 2):
+```json
+{"status": "rejected", "code": "CAP_EXCEEDED", "message": "This request touches more nodes than ...",
+ "details": {"pool": "action", "domain": "water", "cap": 2, "in_use": 0, "requested": 3, "remaining": 2, "violations": ["..."]}}
 ```
 
-## Errors (clear text, same shape every time)
-* No or unknown key: `UNAUTHENTICATED: missing or unknown key. Send 'Authorization: Bearer <your key>'.`
-* Known key, not allowed: `FORBIDDEN: '<you>' may not call <tool>.`
-* Bad input: the field name and the allowed values, for example `domain: Input should be 'traffic', 'water', ...`
-* Feed without a key: HTTP 401 with `{"error": {"code": "UNAUTHENTICATED", "message": "..."}}`; wrong caller: 403.
-* Messages we send are strict. Messages we receive: unknown extra fields are ignored, missing or wrong required fields are rejected with a message.
+## Errors
+No or unknown key: `UNAUTHENTICATED: missing or unknown key. ...`. Known key, not allowed: `FORBIDDEN: '<you>' may not call <tool>.`
+Bad input: field name and allowed values. Feed without a key: HTTP 401 `{"error": {"code": "UNAUTHENTICATED", "message": "..."}}`, wrong caller 403.
+Messages we send are strict. Messages we receive: unknown extra fields are ignored, missing or wrong required fields are rejected with a message
+(exception: unknown names inside `params` are refused, because a silently ignored typo on an actuator command is worse than an error).
 
-## Conventions we follow (from CIVIS, 4 Oct)
-UTF-8 JSON, snake_case. Ids: `run_id`, `reading_id`, `device_id`, `node_id` (stable). `domains` can hold several.
-Time (from 6 Oct): simulated UTC, RFC 3339 with Z (`2026-10-04T08:00:00.000Z`) plus an integer `tick`; the tick length is declared per run.
-A missing value is JSON `null`, never zero. A corrected reading keeps a reference to the original.
-Units: traffic congestion index 0-100 %, water level in cm above that sensor's own zero, power load kW, PM2.5 ug/m3.
+## Conventions (from CIVIS, 4 Oct)
+UTF-8 JSON, snake_case. Stable ids `run_id`, `reading_id`, `device_id` (`<node_id>.<sensor>`), `node_id`. Time: simulated UTC, RFC 3339 with Z plus an integer
+`tick` (1 tick = `tick_seconds`, default 1 s, real speed); a reading's `timestamp` may be a few ms off its tick. Missing value: `null`, never zero.
+`channel` is set only for sensors split by type (`emergency_calls`: accident, fire, flood, medical; `units_free`: police, ambulance, fire).
+Units: congestion 0-100 %, water cm above the sensor's own zero, power kW, PM2.5 ug/m3.
 
-## Planned, in this order
-* 6 Oct: readings on `/events` and read tools, simulated clock, `congestion_index`.
-* 7 Oct: `actuate(action, targets, token, idempotency_key)`, `list_actions` (with `risk` and `preview_required` per action),
-  caps. A cap breach rejects the whole request: `CAP_EXCEEDED` with `domain`, `cap`, `in_use`, `requested`, `remaining`.
-  Same idempotency key with a changed request is rejected. A token is single-use and expires.
-* 8 Oct: `isolate_sensor`, `quarantine_device`, `rollback_reading`, `release_device` (Guardian only), scenario engine
-  (fake reading, stuck sensor, replayed reading).
-* 15-17 Oct: `commit_action`, dry-run preview, undo, `get_flagged_readings`, emergency events with transcript.
+## Planned
+* 8 Oct: `congestion_index`, `isolate_sensor`, `quarantine_device`, `rollback_reading`, `release_device` (Guardian only), scenario engine, optional
+  two-step commit (`status: "pending"`, then `commit_action`, off by default).
+* 15-17 Oct: dry-run preview (then `preview_required` is enforced), undo, `get_flagged_readings`, emergency events with transcript.
+* Not final: dispatch uses `destination` for the place (CIVIS's table says `target`); `params` as a separate field; token field names.

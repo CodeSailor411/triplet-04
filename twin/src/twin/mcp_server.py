@@ -1,10 +1,10 @@
 """The Twin's MCP tools. Built with the official `mcp` SDK (class MCPServer, formerly FastMCP).
 
-Right now: get_capabilities, list_nodes, run_scenario (stub, hidden).
-Next (see the plan): read tools, actuate, containment tools, real scenario engine.
+Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, actuate, run_scenario (stub, hidden).
+Next (see the plan): containment tools, two-step commit, real scenario engine.
 """
 from importlib.metadata import version as pkg_version
-from typing import Literal
+from typing import Any, Literal
 
 from mcp.server.context import ServerRequestContext
 from mcp.server.mcpserver import Context, MCPServer
@@ -13,8 +13,10 @@ from mcp.types import CallToolResult, TextContent
 from pydantic import BaseModel
 
 from . import __version__
+from .actions import ActionBook, ActionList, ActuateResult, BadRequest
 from .auth import HIDDEN_TOOLS, TOOL_ACCESS, Identity, KeyRing, token_from_headers
-from .models import Node, Topology
+from .models import ClockInfo, Node, ReadingsBatch, Topology
+from .sim import Simulation
 
 Domain = Literal["traffic", "water", "power", "air_quality", "emergency"]
 
@@ -39,7 +41,7 @@ def _identity(ctx: ServerRequestContext, keyring: KeyRing) -> Identity | None:
     return keyring.identify(token_from_headers(request.headers)) if request is not None else None
 
 
-def build_mcp(topology: Topology, keyring: KeyRing) -> MCPServer:
+def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: ActionBook) -> MCPServer:
     mcp = MCPServer(
         "twin",
         title="Twin: simulated city",
@@ -80,6 +82,46 @@ def build_mcp(topology: Topology, keyring: KeyRing) -> MCPServer:
         require(ctx, "list_nodes")
         nodes = [n for n in topology.nodes if domain is None or domain in n.domains]
         return NodeList(seed=topology.seed, count=len(nodes), nodes=nodes)
+
+    @mcp.tool()
+    def get_readings(ctx: Context, domain: Domain | None = None, node_id: str | None = None,
+                     sensor: str | None = None) -> ReadingsBatch:
+        """The latest readings (what the sensors report right now), all of them or filtered by domain, node_id
+        and/or sensor name. Values are what the sensors report. Sensors can be wrong, so a reading is a report, not a fact.
+        A null value means the sensor gave no value. Each reading carries a tick and a simulated UTC timestamp."""
+        require(ctx, "get_readings")
+        if node_id is not None and node_id not in sim.node_ids:
+            raise ToolError(f"UNKNOWN_NODE: '{node_id}' is not a node. Call list_nodes for the node ids.")
+        if sensor is not None and sensor not in sim.sensor_names:
+            raise ToolError(f"UNKNOWN_SENSOR: '{sensor}' is not a sensor. Known: {', '.join(sorted(sim.sensor_names))}.")
+        return sim.current(domain=domain, node_id=node_id, sensor=sensor)
+
+    @mcp.tool()
+    def get_clock(ctx: Context) -> ClockInfo:
+        """The simulated clock: run id, current tick, simulated UTC time, tick length in simulated seconds,
+        and the speed (1.0 = one simulated second per real second)."""
+        require(ctx, "get_clock")
+        return sim.clock_info()
+
+    @mcp.tool()
+    def list_actions(ctx: Context) -> ActionList:
+        """Every action `actuate` accepts: inputs with allowed values, risk level (R1 to R3, or null), whether a
+        preview is required, the nodes that can carry it out, and the cap on nodes per request."""
+        require(ctx, "list_actions")
+        return book.list_actions()
+
+    @mcp.tool()
+    def actuate(ctx: Context, action: str, targets: list[str], idempotency_key: str, token: str | None = None,
+                params: dict[str, Any] | None = None) -> ActuateResult:
+        """Ask the Twin to carry out one action on one or more nodes. Needs a token from Guardian for exactly this
+        action, targets and params. Repeating a request with the same idempotency_key returns the first answer;
+        using the key for a different request is refused. A wrong request fails with a code and a message. A
+        refused request (bad token, cap exceeded, ...) comes back as status "rejected" with a code."""
+        who = require(ctx, "actuate")
+        try:
+            return book.actuate(who, action, targets, params, token, idempotency_key)
+        except BadRequest as e:
+            raise ToolError(f"{e.code}: {e.message}") from None
 
     @mcp.tool()
     def run_scenario(ctx: Context, name: str) -> dict:

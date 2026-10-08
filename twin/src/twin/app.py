@@ -15,10 +15,14 @@ from . import __version__
 from .auth import LAYERS, KeyRing, token_from_headers
 from .generator import fingerprint, generate
 from .mcp_server import build_mcp
+from .actions import ActionBook
 from .settings import Settings, load_settings
+from .sim import Simulation
 from .util import now_iso
 
 log = logging.getLogger("twin")
+
+MAX_BACKLOG = 100       # a slow feed reader may fall this many ticks behind before it skips ahead
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -33,25 +37,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     log.info("Twin %s: seed %s, city fingerprint %s, %d nodes", __version__, cfg.seed,
              fingerprint(topology), len(topology.nodes))
 
-    mcp = build_mcp(topology, keyring)
+    sim = Simulation(topology, cfg)
+    book = ActionBook(topology, cfg, sim)
+    mcp = build_mcp(topology, keyring, sim, book)
+    if cfg.tokens.mode == "unsigned":
+        log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
     mcp_app = mcp.streamable_http_app()                # the MCP endpoint lives at /mcp inside this app
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
-        async with mcp.session_manager.run():          # a mounted sub-app does not start its own lifespan
-            yield
+        ticker = asyncio.create_task(sim.run_forever()) if cfg.clock.autorun else None
+        try:
+            async with mcp.session_manager.run():      # a mounted sub-app does not start its own lifespan
+                yield
+        finally:
+            if ticker:
+                ticker.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await ticker
 
     app = FastAPI(title="Twin", version=__version__, lifespan=lifespan)
     app.state.settings, app.state.topology, app.state.layout, app.state.keyring = settings, topology, layout, keyring
+    app.state.sim, app.state.book = sim, book
 
     @app.get("/health")
     async def health():
         return {"status": "ok", "service": "twin", "version": __version__, "seed": cfg.seed,
-                "city_fingerprint": fingerprint(topology), "nodes": len(topology.nodes), "time": now_iso()}
+                "city_fingerprint": fingerprint(topology), "nodes": len(topology.nodes), "time": now_iso(),
+                "run_id": sim.run_id, "tick": sim.tick, "sim_time": sim.clock.iso_of(sim.tick)}
 
     @app.get("/events")
     async def events(request: Request, max_events: int | None = Query(None, ge=1, le=1000)):
-        """Live feed (SSE). Right now: a hello event and heartbeats. Readings arrive on 6 Oct.
+        """Live feed (SSE). Events: `hello` once, then one `readings` event per tick (all readings of that
+        tick), plus a `heartbeat` whenever nothing happened for a while. A client that connects starts at the
+        current tick. A client that falls more than MAX_BACKLOG ticks behind skips ahead (the event says how many).
         max_events closes the stream after that many events (for tests and quick checks)."""
         who = keyring.identify(token_from_headers(request.headers))
         if who is None:
@@ -61,13 +80,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         async def stream():
             sent = 0
-            yield {"event": "hello", "data": json.dumps({"service": "twin", "seed": cfg.seed,
-                                                         "you_are": who.value, "time": now_iso()})}
+            yield {"event": "hello", "data": json.dumps({"service": "twin", "seed": cfg.seed, "you_are": who.value,
+                                                         "run_id": sim.run_id, "tick": sim.tick, "time": now_iso()})}
             sent += 1
+            run_number, last = sim.run_number, sim.tick       # everything up to and including `last` counts as seen
             while max_events is None or sent < max_events:
-                await asyncio.sleep(cfg.sse.heartbeat_seconds)
-                yield {"event": "heartbeat", "data": json.dumps({"time": now_iso()})}
-                sent += 1
+                if not await sim.wait_for_change(run_number, last, cfg.sse.heartbeat_seconds):
+                    yield {"event": "heartbeat", "data": json.dumps({"time": now_iso()})}
+                    sent += 1
+                    continue
+                if sim.run_number != run_number:               # a new run started: begin at its current tick
+                    run_number, last = sim.run_number, sim.tick - 1
+                first, skipped = last + 1, 0
+                if sim.tick - last > MAX_BACKLOG:
+                    first, skipped = sim.tick, sim.tick - last - 1
+                for tick in range(first, sim.tick + 1):
+                    batch = sim.readings_at(tick)
+                    payload = batch.model_dump()
+                    if skipped:
+                        payload["skipped_ticks"] = skipped
+                        skipped = 0
+                    yield {"event": "readings", "id": f"{batch.run_id}:{tick}", "data": json.dumps(payload)}
+                    sent += 1
+                    if max_events is not None and sent >= max_events:
+                        return
+                last = sim.tick
 
         return EventSourceResponse(stream())
 

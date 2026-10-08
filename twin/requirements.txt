@@ -1,5 +1,5 @@
-# Runtime dependencies, exact versions (see PROJECT_STATE.md section 3b).
-# Change a version here and in that table, or in neither.
+# Runtime dependencies, exact versions. Everything these packages pull in is frozen in requirements-lock.txt.
+# Change a version here and re-freeze the lock file, or change neither.
 mcp==2.3.0
 fastapi==0.142.2
 uvicorn==0.54.0

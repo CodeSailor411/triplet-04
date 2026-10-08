@@ -18,7 +18,7 @@ async def test_capabilities_without_key_says_not_logged_in(mcp_client):
     assert data["authenticated_as"] is None
     assert data["protocol_version"] == "2026-07-28"
     assert data["mcp_sdk_version"] == "2.3.0"
-    assert data["tools_you_can_call"] == ["get_capabilities", "list_nodes"]
+    assert data["tools_you_can_call"] == ["get_capabilities", "list_nodes", "get_readings", "get_clock", "list_actions", "actuate"]
 
 
 @pytest.mark.parametrize("identity", ["city_brain", "guardian"])

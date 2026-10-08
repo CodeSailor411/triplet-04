@@ -52,6 +52,10 @@ LAYERS = frozenset({Identity.CITY_BRAIN, Identity.GUARDIAN})
 TOOL_ACCESS: dict[str, frozenset[Identity] | None] = {     # None = anyone, even without a key
     "get_capabilities": None,
     "list_nodes": LAYERS,
+    "get_readings": LAYERS,
+    "get_clock": LAYERS,
+    "list_actions": LAYERS,
+    "actuate": frozenset({Identity.CITY_BRAIN}),      # the permission table: the Brain requests, Guardian signs
     "run_scenario": frozenset({Identity.SCENARIO}),
 }
 HIDDEN_TOOLS = frozenset({"run_scenario"})

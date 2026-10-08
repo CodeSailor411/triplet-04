@@ -13,6 +13,17 @@ seed: 42
 sse:
   heartbeat_seconds: 15       # how often /events sends a heartbeat when nothing else happens
 
+# ---------------------------------------------------------------------------
+# Simulated clock (CIVIS convention, 4 Oct): every reading carries simulated UTC time (RFC 3339, with Z)
+# plus an integer tick. tick_seconds is the simulated length of one tick. speed 1.0 = real speed, so the
+# spec's "10 s" means 10 real seconds. Raise speed only for fast tests.
+# ---------------------------------------------------------------------------
+clock:
+  start: "2026-10-05T08:00:00.000Z"
+  tick_seconds: 1.0
+  speed: 1.0
+  autorun: true               # false = the clock stands still until something advances it (tests)
+
 # Where the other layers live. The Twin itself does not call them yet.
 # Used later by the Twin's mocks and dashboard (R1: point at another partner by config).
 partners:
@@ -38,13 +49,53 @@ sensors:
   emergency_calls:  { unit: "calls/min" }   # split by type: accident / fire / flood / medical
   units_free:       { unit: "units" }       # per unit type: police / ambulance / fire
 
-# Actuator actions. They are called through the single `actuate` tool (from 7 Oct).
-# `risk` stays null until CIVIS picks the 2-3 high-risk actions.
+# Actuator actions. All are called through the single `actuate` tool (from 7 Oct).
+# risk: picked by CIVIS on 4 Oct (signal R1, dispatch R2, valve R3). The grid switch has no tier, but needs preview,
+#       a token and caps. preview_required is OUR flag (not in the spec): valve and grid switch yes, signal and dispatch no.
+# `destination` is OUR name for the dispatch target place (CIVIS's table calls it `target`, which would clash with
+# `targets`, the nodes that carry out the action). To confirm with CIVIS.
 actuators:
-  set_signal_plan:     { domain: traffic,   values: [normal, favor_main_road, all_red], risk: null }
-  set_valve_position:  { domain: water,     values: "0-100 %",                          risk: null }
-  set_grid_switch:     { domain: power,     values: [closed, open],                     risk: null }
-  dispatch:            { domain: emergency, values: "unit_type + target + units",       risk: null }
+  set_signal_plan:
+    domain: traffic
+    risk: R1
+    preview_required: false
+    params:
+      plan: { type: choice, choices: [normal, favor_main_road, all_red] }
+  set_valve_position:
+    domain: water
+    risk: R3
+    preview_required: true
+    params:
+      position: { type: number, min_value: 0, max_value: 100, unit: "%" }
+  set_grid_switch:
+    domain: power
+    risk: null
+    preview_required: true
+    params:
+      state: { type: choice, choices: [closed, open] }
+  dispatch:
+    domain: emergency
+    risk: R2
+    preview_required: false
+    params:
+      unit_type: { type: choice, choices: [police, ambulance, fire] }
+      destination: { type: node }
+      units: { type: integer, min_value: 1, max_value: 10 }     # the 10 is our sanity limit, change freely
+
+# ---------------------------------------------------------------------------
+# Tokens (Guardian's signed permission for one exact action). Format: JWS compact, header.payload.signature.
+# mode is decided HERE, never by the token: a token cannot talk its way into "unsigned".
+#   unsigned  signature part must be empty (v0 hand-over, mock Guardian). The Twin logs a loud warning.
+#   signed    only EdDSA (Ed25519) accepted, checked against guardian_public_key. Planned default from 24 Oct.
+# min_score: risk level -> minimum score in the token. Empty on purpose: nobody has agreed a number yet (12 Oct call).
+# ---------------------------------------------------------------------------
+tokens:
+  mode: unsigned
+  guardian_public_key: null
+  min_score: {}
+
+actions:
+  preview_enforced: false        # flips to true on 15 Oct, when the dry-run preview tool exists
 
 # ---------------------------------------------------------------------------
 # Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced from 7 Oct, only computed here for now.
@@ -145,3 +196,31 @@ generator:
     cross:
       - { from_domain: emergency, from_role: call_place, to_domain: air_quality, count: 1 }
       - { from_domain: emergency, from_role: call_place, to_domain: traffic,     count: 1 }
+
+# ---------------------------------------------------------------------------
+# Sensor model. PRIVATE: these numbers are never published to partners (the Twin publishes no datasheet).
+# Each reading = truth + the device's own bias + noise. Truth moves slowly: a base level, a slow wave and a
+# smooth random wander, all derived from the seed, so the same seed and tick always give the same value.
+#   base          normal level (each device gets its own, spread by device_spread)
+#   wave_amp      size of the slow wave; wave_period_ticks is how long one wave takes
+#   wander_amp    size of the smooth random wander; wander_ticks is how often it picks a new target
+#   noise_sd      noise on every single reading (standard deviation)
+#   bias_sd       each device has one fixed offset, picked once from this spread
+#   follows       truth moves with another sensor on the same node (gain < 0 = moves the other way)
+#   channels      one reading per channel (emergency calls by type, free units by type); value = base per channel
+# ---------------------------------------------------------------------------
+sensor_model:
+  device_spread: 0.12         # each device's base level differs by up to +-12 % from the profile's base
+  timing_wobble_ms: 40        # readings arrive a few ms early or late around the tick time
+  profiles:
+    vehicle_count:   { base: 40,   wave_amp: 14,  wave_period_ticks: 600, wander_amp: 5,   noise_sd: 2.0,  bias_sd: 1.5,  min_value: 0,   max_value: 250, decimals: 0 }
+    avg_speed:       { base: 38,   wave_amp: 1.5, wave_period_ticks: 600, wander_amp: 1.5, noise_sd: 1.2,  bias_sd: 1.0,  min_value: 0,   max_value: 130, decimals: 1, follows: { sensor: vehicle_count, gain: -0.3 } }
+    water_level:     { base: 40,   wave_amp: 5,   wave_period_ticks: 900, wander_amp: 2,   noise_sd: 0.6,  bias_sd: 1.5,  min_value: 0,   max_value: 400, decimals: 1 }
+    flow_rate:       { base: 25,   wave_amp: 5,   wave_period_ticks: 700, wander_amp: 2,   noise_sd: 0.8,  bias_sd: 0.5,  min_value: 0,   max_value: 200, decimals: 1 }
+    load_kw:         { base: 450,  wave_amp: 90,  wave_period_ticks: 800, wander_amp: 25,  noise_sd: 8.0,  bias_sd: 5.0,  min_value: 0,   max_value: 2000, decimals: 0 }
+    voltage_v:       { base: 230,  wave_amp: 1.5, wave_period_ticks: 500, wander_amp: 1,   noise_sd: 0.7,  bias_sd: 0.5,  min_value: 150, max_value: 280, decimals: 1, spread: 0.0 }
+    pm25:            { base: 18,   wave_amp: 4,   wave_period_ticks: 1000, wander_amp: 2,  noise_sd: 1.0,  bias_sd: 0.8,  min_value: 0,   max_value: 600, decimals: 1 }
+    co_ppm:          { base: 1.2,  wave_amp: 0.3, wave_period_ticks: 900, wander_amp: 0.2, noise_sd: 0.08, bias_sd: 0.05, min_value: 0,   max_value: 100, decimals: 2 }
+    temperature_c:   { base: 21,   wave_amp: 2,   wave_period_ticks: 1200, wander_amp: 0.5, noise_sd: 0.2, bias_sd: 0.3,  min_value: -20, max_value: 60,  decimals: 1 }
+    emergency_calls: { base: 0, channels: { accident: 0.15, fire: 0.03, flood: 0.02, medical: 0.30 }, wander_amp: 0.03, noise_sd: 0.02, min_value: 0, max_value: 60, decimals: 2 }
+    units_free:      { base: 0, channels: { police: 6, ambulance: 5, fire: 4 }, noise_sd: 0, bias_sd: 0, min_value: 0, max_value: 50, decimals: 0, spread: 0.0 }
