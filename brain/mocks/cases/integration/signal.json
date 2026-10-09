@@ -1,0 +1,142 @@
+{
+  "scenario_id": "S01",
+  "fixture_only": true,
+  "assumptions": [
+    "Shared-core debug fixture, not acceptance of the member Traffic detector.",
+    "All readings, policies, scores, approvals and effects are simulated."
+  ],
+  "nodes": [
+    {
+      "node_id": "DEMO-SIGNAL-01",
+      "domains": [
+        "traffic"
+      ],
+      "role": "fixture",
+      "actuators": [
+        "set_signal_plan"
+      ],
+      "neighbours": []
+    }
+  ],
+  "actions": [
+    {
+      "action": "set_signal_plan",
+      "domain": "traffic",
+      "risk": "R1",
+      "preview_required": false,
+      "params": [
+        {
+          "name": "plan",
+          "type": "choice",
+          "choices": [
+            "mock_priority"
+          ]
+        }
+      ],
+      "target_nodes": [
+        "DEMO-SIGNAL-01"
+      ],
+      "action_cap": 1
+    }
+  ],
+  "policy": {
+    "fixture_only": true,
+    "threshold_min": 80,
+    "unit": "percent"
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_ticks": 3
+  },
+  "preview": {
+    "available": false,
+    "safe": false
+  },
+  "caps": {
+    "traffic": 1
+  },
+  "twin_outcome": {
+    "status": "committed",
+    "code": "FIXTURE_COMMITTED"
+  },
+  "ai_plan": {
+    "proposals": [
+      {
+        "action": "set_signal_plan",
+        "targets": [
+          "DEMO-SIGNAL-01"
+        ],
+        "params": {
+          "plan": "mock_priority"
+        },
+        "risk": "R1",
+        "preview_required": false,
+        "source_reading_ids": [
+          "demo-signal-2"
+        ],
+        "reason": "Synthetic congestion candidate"
+      }
+    ],
+    "alerts": []
+  },
+  "expected": {
+    "final_statuses": [
+      "committed"
+    ],
+    "effects": 1,
+    "provider_calls": 1,
+    "actuate_calls": 1
+  },
+  "batches": [
+    {
+      "run_id": "debug-signal-demo",
+      "tick": 1,
+      "time": "2026-10-09T08:00:01.000Z",
+      "tick_seconds": 1,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "debug-signal-demo",
+          "reading_id": "demo-signal-1",
+          "tick": 1,
+          "timestamp": "2026-10-09T08:00:01.000Z",
+          "node_id": "DEMO-SIGNAL-01",
+          "device_id": "demo.signal.sensor",
+          "sensor": "congestion_index",
+          "channel": null,
+          "value": 35,
+          "unit": "percent"
+        }
+      ]
+    },
+    {
+      "run_id": "debug-signal-demo",
+      "tick": 2,
+      "time": "2026-10-09T08:00:02.000Z",
+      "tick_seconds": 1,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "debug-signal-demo",
+          "reading_id": "demo-signal-2",
+          "tick": 2,
+          "timestamp": "2026-10-09T08:00:02.000Z",
+          "node_id": "DEMO-SIGNAL-01",
+          "device_id": "demo.signal.sensor",
+          "sensor": "congestion_index",
+          "channel": null,
+          "value": 95,
+          "unit": "percent"
+        }
+      ]
+    }
+  ]
+}

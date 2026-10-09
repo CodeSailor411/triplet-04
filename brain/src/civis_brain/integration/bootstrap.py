@@ -6,7 +6,6 @@ from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, Fixture
 from civis_brain.integration.mcp_peer import MappedGuardianPeer, MCPPeer
 from civis_brain.integration.runtime import build_runtime
 from civis_brain.planning.gemini import GeminiPlanProvider
-from civis_brain.planning.openrouter import OpenRouterPlanProvider
 
 
 def configured_runtime(settings):
@@ -86,7 +85,6 @@ def configured_runtime(settings):
     )
     for key in (
         settings.gemini_api_key,
-        settings.openrouter_api_key,
         settings.twin_brain_key,
         settings.guardian_brain_key,
         settings.brain_twin_caller_key,
@@ -99,10 +97,6 @@ def configured_runtime(settings):
 
 
 def configured_provider(settings, case=None):
-    if settings.llm_mode == "openrouter":
-        return OpenRouterPlanProvider(
-            settings.openrouter_api_key, settings.openrouter_model, settings.ai_timeout_seconds
-        )
     if settings.llm_mode == "gemini":
         return GeminiPlanProvider(
             settings.gemini_api_key, settings.gemini_model, settings.ai_timeout_seconds

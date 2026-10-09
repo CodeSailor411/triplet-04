@@ -1,107 +1,7 @@
-import json
-
-import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from civis_brain.app import create_app
-from civis_brain.errors import BrainError
-from civis_brain.planning.openrouter import MODEL, OpenRouterPlanProvider
-from civis_brain.planning.smoke import synthetic_context
 from civis_brain.settings import Settings
-
-
-async def test_openrouter_free_only_request_and_local_schema_validation():
-    calls = []
-
-    def respond(request):
-        calls.append(request)
-        data = {"proposals": [], "alerts": ["Synthetic alert"]}
-        return httpx.Response(
-            200,
-            json={
-                "choices": [
-                    {
-                        "finish_reason": "stop",
-                        "message": {
-                            "content": json.dumps(data),
-                            "reasoning_details": [{"text": "NEVER_EXPOSE"}],
-                        },
-                    }
-                ]
-            },
-        )
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        provider = OpenRouterPlanProvider("fixture-key", client=client)
-        plan = await provider.generate(synthetic_context())
-    assert plan.alerts == ["Synthetic alert"] and "NEVER_EXPOSE" not in str(plan)
-    body = json.loads(calls[0].content)
-    assert body["model"] == MODEL and body["response_format"] == {"type": "json_object"}
-    assert body["provider"]["max_price"] == {"prompt": 0, "completion": 0, "request": 0}
-    assert body["provider"]["allow_fallbacks"] is False and body["reasoning"]["enabled"] is False
-    assert (
-        "models" not in body
-        and "tools" not in body
-        and "fixture-key" not in calls[0].content.decode()
-    )
-    assert "required_json_schema" in json.loads(body["messages"][1]["content"])
-
-
-@pytest.mark.parametrize(
-    "status,code",
-    [
-        (401, "AI_AUTH_FAILED"),
-        (402, "AI_PAYMENT_REQUIRED"),
-        (429, "AI_QUOTA_EXCEEDED"),
-        (503, "AI_UNAVAILABLE"),
-    ],
-)
-async def test_openrouter_failure_never_retries_or_echoes_key(status, code):
-    calls = []
-
-    def respond(request):
-        calls.append(request)
-        return httpx.Response(status, json={"error": {"message": "fixture-key"}})
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        with pytest.raises(BrainError) as error:
-            await OpenRouterPlanProvider("fixture-key", client=client).generate(synthetic_context())
-    assert error.value.code == code and "fixture-key" not in str(error.value)
-    assert len(calls) == 1
-
-
-@pytest.mark.parametrize(
-    "output",
-    [
-        '{"proposals":[],"alerts":[],"token":"invented"}',
-        '{"proposals":[{"action":"invented"}],"alerts":[]}',
-        "not json",
-    ],
-)
-async def test_openrouter_rejects_json_or_plan_outside_schema(output):
-    async with httpx.AsyncClient(
-        transport=httpx.MockTransport(
-            lambda request: httpx.Response(
-                200, json={"choices": [{"finish_reason": "stop", "message": {"content": output}}]}
-            )
-        )
-    ) as client:
-        with pytest.raises(BrainError) as error:
-            await OpenRouterPlanProvider("fixture-key", client=client).generate(synthetic_context())
-    assert error.value.code == "AI_OUTPUT_INVALID"
-
-
-async def test_openrouter_timeout_and_paid_model_rejected():
-    def respond(request):
-        raise httpx.ReadTimeout("fixture-key")
-
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        with pytest.raises(BrainError) as error:
-            await OpenRouterPlanProvider("fixture-key", client=client).generate(synthetic_context())
-    assert error.value.code == "AI_TIMEOUT"
-    with pytest.raises(BrainError):
-        OpenRouterPlanProvider("fixture-key", model="google/paid-model")
 
 
 def test_home_debug_session_and_real_case_replay():
@@ -151,7 +51,7 @@ def test_rebinding_host_and_disabled_debug_are_rejected():
 
 
 def test_debug_exposes_key_presence_only():
-    settings = Settings(_env_file=None, llm_mode="openrouter", openrouter_api_key="fixture-secret")
+    settings = Settings(_env_file=None, llm_mode="gemini", gemini_api_key="fixture-secret")
     assert "fixture-secret" not in repr(settings)
     with TestClient(create_app(settings), base_url="http://localhost") as client:
         client.get("/")
@@ -166,8 +66,8 @@ def test_browser_ai_smoke_is_bounded_and_never_calls_peers(monkeypatch):
     app = create_app(
         Settings(
             _env_file=None,
-            llm_mode="openrouter",
-            openrouter_api_key="fixture-secret",
+            llm_mode="gemini",
+            gemini_api_key="fixture-secret",
             ai_max_calls_per_run=2,
         )
     )

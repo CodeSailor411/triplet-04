@@ -1,7 +1,9 @@
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
+from google import genai
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
@@ -89,17 +91,17 @@ async def test_gemini_schema_selected_evidence_and_one_call():
 
     async def generate(**kwargs):
         calls.append(kwargs)
-        return SimpleNamespace(text=json.dumps(case["ai_plan"]))
+        return SimpleNamespace(output_text=json.dumps(case["ai_plan"]), status="completed")
 
-    client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
+    client = SimpleNamespace(aio=SimpleNamespace(interactions=SimpleNamespace(create=generate)))
     provider = GeminiPlanProvider("", "gemini-3.5-flash-lite", client=client)
     plan = await provider.generate(ctx)
     assert plan.proposals[0].risk == "R1" and len(calls) == 1
-    payload = json.loads(calls[0]["contents"])
+    payload = json.loads(calls[0]["input"])
     assert "selected_evidence" in payload and "batch" not in payload and "readings" not in payload
-    assert calls[0]["config"].response_mime_type == "application/json"
-    assert calls[0]["config"].response_json_schema["additionalProperties"] is False
-    assert calls[0]["config"].tools is None
+    assert calls[0]["response_format"]["mime_type"] == "application/json"
+    assert calls[0]["response_format"]["schema"]["additionalProperties"] is False
+    assert "tools" not in calls[0] and calls[0]["store"] is False
 
 
 @pytest.mark.parametrize(
@@ -117,12 +119,14 @@ async def test_gemini_failures_do_not_retry_or_expose_secret(failure, code):
     async def generate(**kwargs):
         calls.append(kwargs)
         if failure == "invalid":
-            return SimpleNamespace(text='{"proposals":[],"token":"invented"}')
+            return SimpleNamespace(
+                output_text='{"proposals":[],"token":"invented"}', status="completed"
+            )
         error = RuntimeError("PRIVATE_API_KEY")
         error.code = 429 if failure == "quota" else 500
         raise error
 
-    client = SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate)))
+    client = SimpleNamespace(aio=SimpleNamespace(interactions=SimpleNamespace(create=generate)))
     provider = GeminiPlanProvider("", "gemini-3.5-flash-lite", client=client)
     with pytest.raises(BrainError) as error:
         await provider.generate(ctx)
@@ -137,3 +141,36 @@ async def test_gemini_missing_key_and_unverified_model():
     assert error.value.code == "AI_KEY_MISSING"
     with pytest.raises(BrainError):
         GeminiPlanProvider("", "unverified-model")
+
+
+@pytest.mark.parametrize("status", [429, 503])
+async def test_real_gemini_sdk_does_not_retry_failed_http_requests(monkeypatch, status):
+    _, ctx = context()
+    requests = []
+    real_client = genai.Client
+
+    async def respond(request):
+        requests.append(request)
+        return httpx.Response(
+            status,
+            json={"error": {"code": status, "message": "fixture refusal"}},
+            request=request,
+        )
+
+    transport = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+
+    def client_factory(**kwargs):
+        kwargs["http_options"].httpx_async_client = transport
+        return real_client(**kwargs)
+
+    monkeypatch.setattr(genai, "Client", client_factory)
+    provider = GeminiPlanProvider("fixture-only-key", "gemini-3.5-flash-lite")
+    try:
+        with pytest.raises(BrainError) as error:
+            await provider.generate(ctx)
+        assert error.value.code == ("AI_QUOTA_EXCEEDED" if status == 429 else "AI_UNAVAILABLE")
+        assert len(requests) == 1
+        assert requests[0].url.path.endswith("/interactions")
+    finally:
+        await provider.aclose()
+        await transport.aclose()

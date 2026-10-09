@@ -3,6 +3,8 @@ import json
 
 from google import genai
 from google.genai import types
+from jsonschema import ValidationError as SchemaError
+from jsonschema import validate
 from pydantic import ValidationError
 
 from civis_brain.contracts import Plan, PlanningContext
@@ -99,18 +101,21 @@ def response_schema(context: PlanningContext) -> dict:
 
 
 class GeminiPlanProvider:
-    def __init__(self, api_key: str, model: str, timeout_seconds: float = 15, *, client=None):
+    """Direct, stateless Gemini Interactions with a restricted JSON Plan."""
+
+    def __init__(self, api_key: str, model: str, timeout_seconds: float = 60, *, client=None):
         self.api_key = api_key
-        self.model = model
+        self.model = model.removeprefix("models/")
         self.timeout_seconds = timeout_seconds
         self._client = client
-        if model != "gemini-3.5-flash-lite":
-            raise BrainError("AI_MODEL_UNVERIFIED", "Model is not the verified free-tier selection")
+        self._owned = client is None
+        self.last_response = {}
+        if self.model not in {"gemini-3.5-flash-lite"}:
+            raise BrainError(
+                "AI_MODEL_UNVERIFIED", "Use the selected Gemini Flash-Lite free-tier model"
+            )
 
-    async def generate(self, context: PlanningContext) -> Plan:
-        if not self.api_key and self._client is None:
-            raise BrainError("AI_KEY_MISSING", "Set the Gemini key locally before a live AI run")
-        # Never serialize raw untrusted batch values or server settings to the model.
+    def request(self, context: PlanningContext) -> dict:
         payload = {
             "run_id": context.batch.run_id,
             "tick": context.batch.tick,
@@ -124,6 +129,29 @@ class GeminiPlanProvider:
         contents = json.dumps(payload, ensure_ascii=False, allow_nan=False)
         if len(contents) > 32000:
             raise BrainError("AI_CONTEXT_TOO_LARGE", "Selected evidence exceeds the mock AI budget")
+        return {
+            "model": self.model,
+            "system_instruction": SYSTEM_INSTRUCTION,
+            "input": contents,
+            "response_format": {
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": response_schema(context),
+            },
+            "generation_config": {
+                "temperature": 1,
+                "top_p": 0.95,
+                "max_output_tokens": 2048,
+                "thinking_level": "low",
+            },
+            "store": False,
+        }
+
+    async def generate(self, context: PlanningContext) -> Plan:
+        self.last_response = {}
+        if not self.api_key and self._client is None:
+            raise BrainError("AI_KEY_MISSING", "Set GEMINI_API_KEY locally in brain/.env")
+        request = self.request(context)
         if self._client is None:
             self._client = genai.Client(
                 api_key=self.api_key,
@@ -133,37 +161,46 @@ class GeminiPlanProvider:
                     retry_options=types.HttpRetryOptions(attempts=1),
                 ),
             )
+            # google-genai 2.28 maps attempts=1 to an extra Interactions retry.
+            # Explicitly disable it; a transport-level test guards this SDK workaround.
+            self._client.aio.interactions.sdk_configuration.retry_config.max_retries = 0
         try:
             result = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self.model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                        response_mime_type="application/json",
-                        response_json_schema=response_schema(context),
-                        max_output_tokens=1024,
-                    ),
-                ),
+                self._client.aio.interactions.create(**request, timeout=self.timeout_seconds),
                 timeout=self.timeout_seconds,
             )
-            if not result.text:
-                raise BrainError("AI_OUTPUT_INVALID", "AI returned no schema-valid Plan")
-            return Plan.model_validate_json(result.text)
+            output = result.output_text
+            self.last_response = {
+                "status": str(getattr(result, "status", "completed")),
+                "output_text": output[:100000] if isinstance(output, str) else None,
+            }
+            if getattr(result, "status", "completed") != "completed":
+                raise BrainError("AI_OUTPUT_INCOMPLETE", "Gemini did not complete the response")
+            if not isinstance(output, str) or not output.strip() or len(output) > 100000:
+                raise BrainError("AI_OUTPUT_INVALID", "Gemini returned no usable JSON Plan")
+            parsed = json.loads(output)
+            validate(parsed, request["response_format"]["schema"])
+            return Plan.model_validate(parsed)
         except BrainError:
             raise
-        except (ValidationError, ValueError):
+        except (ValidationError, SchemaError, ValueError, TypeError):
             raise BrainError(
-                "AI_OUTPUT_INVALID", "AI output does not match the Plan schema"
+                "AI_OUTPUT_INVALID", "Gemini output does not match the restricted Plan"
             ) from None
-        except (TimeoutError, asyncio.TimeoutError):
-            raise BrainError("AI_TIMEOUT", "Free AI call exceeded the configured timeout") from None
+        except TimeoutError:
+            raise BrainError("AI_TIMEOUT", "Gemini exceeded the configured timeout") from None
         except Exception as error:
-            code = "AI_QUOTA_EXCEEDED" if getattr(error, "code", None) == 429 else "AI_UNAVAILABLE"
-            raise BrainError(
-                code, "Free AI call failed; no substitute or paid fallback used"
-            ) from None
+            status = getattr(error, "code", None) or getattr(error, "status_code", None)
+            code = {
+                400: "AI_REQUEST_REJECTED",
+                401: "AI_AUTH_FAILED",
+                403: "AI_ACCESS_DENIED",
+                404: "AI_MODEL_UNAVAILABLE",
+                429: "AI_QUOTA_EXCEEDED",
+            }.get(status, "AI_UNAVAILABLE")
+            detail = f" (HTTP {status})" if isinstance(status, int) else ""
+            raise BrainError(code, f"Gemini request failed{detail}; no fallback was used") from None
 
     async def aclose(self) -> None:
-        if self._client is not None:
+        if self._owned and self._client is not None:
             await self._client.aio.aclose()

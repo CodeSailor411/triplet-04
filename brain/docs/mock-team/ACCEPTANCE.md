@@ -32,4 +32,4 @@ These are shared test assertions or variants within S01-S05, not additional prim
 
 All tests and Ruff pass on Windows, including meaningful full workflows. Save one trace per scenario with status, reason and evidence, plus at least one blocked trace. No skipped required behavior. Record fixture assumptions and partner commit/protocol versions.
 
-Run one separate synthetic live OpenRouter smoke check under free-tier access and real partner discovery/auth checks when endpoints/keys are supplied. Passing fixtures cannot be reported as completed live integration. Preview/schema gaps must be visible in the partner handover; readiness describes actual supported features.
+Run one separate synthetic live Gemini smoke check under free-tier access and real partner discovery/auth checks when endpoints/keys are supplied. Passing fixtures cannot be reported as completed live integration. Preview/schema gaps must be visible in the partner handover; readiness describes actual supported features.

@@ -54,10 +54,10 @@ PR base for member work: **codex/civis-elyes**. Elyes reviews and merges one at 
 
 Do not wait until 9 October to build the core: Elyes starts it in parallel on 7 October. Members use a tiny local fake PlanProvider for unit tests, so no live API, token or completed core is needed for initial progress. Full workflow checks depend on the common runtime; report that dependency, never hide it with skips or weakening assertions.
 
-## Prepared now, still to be implemented
+## Current implementation status
 
-Elyes's S03/S04, shared runtime, configured AI adapter, fake peers and MCP tools are implemented. S01/S02/S05 remain assigned to their owners. OpenRouter and the local debugging console were added on 9 October. The key authenticates, but synthetic inference returned HTTP 429; live planning is pending. See HANDOVER.md and progress/elyes.md for verified support. Full-release readiness remains false.
+Elyes's S03/S04, shared runtime, direct Gemini adapter, fake peers and MCP tools are implemented. S01/S02/S05 remain assigned to their owners. Gemini Flash-Lite and the developer console were verified on 9 October: the live shared action demo committed one simulated effect, while its refusal variant produced none. See [DEBUGGING.md](DEBUGGING.md), HANDOVER.md and progress/elyes.md. Full-release readiness remains false.
 
-Elyes implements one future case trigger: from brain/, `.\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base` (select S01-S05). That runner is assigned, not available yet.
+From brain/, run .\.venv\Scripts\python.exe scripts/run_case.py --scenario S03 --case base or select S04. The runner is implemented; other scenario choices become usable when their owners supply the required cases and implementations. The debug console's separate synthetic action demo exercises the common pipeline without implementing S01.
 
 Release requires all five scenario outcomes, meaningful refusal tests, redacted traces, one launch/trigger path, honest readiness and documented partner gaps. Live R3 water must stay blocked if required preview is unavailable. Alert-only power is a deliberate reduced mock outcome; it does not demonstrate live grid switching. The full eight-row incident table remains the broader roadmap.

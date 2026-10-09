@@ -28,12 +28,6 @@ print(f"OK Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version
 for name in ("fastapi", "uvicorn", "pydantic", "pydantic-settings", "mcp", "httpx", "httpx2"):
     print(f"OK {name} {version(name)}")
 settings = Settings()
-present = (
-    bool(settings.openrouter_api_key)
-    if settings.llm_mode == "openrouter"
-    else bool(settings.gemini_api_key)
-    if settings.llm_mode == "gemini"
-    else False
-)
+present = bool(settings.gemini_api_key) if settings.llm_mode == "gemini" else False
 print(f"AI mode: {settings.llm_mode}; key present: {present}")
 print("MCP protocol: 2026-07-28. Exact library pins are repo/Twin compatibility choices.")

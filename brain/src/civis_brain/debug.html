@@ -7,21 +7,16 @@
 <style nonce="__NONCE__">
 :root { color-scheme: light; }
 body { margin: 20px; max-width: 1100px; color: #111; background: white; font: 14px/1.5 Arial, sans-serif; }
-h1 { font-size: 22px; }
-h2 { font-size: 17px; margin: 0 0 10px; }
-section { margin: 24px 0; padding-top: 12px; border-top: 1px solid #ccc; }
-button { margin: 3px 4px 3px 0; padding: 4px 8px; cursor: pointer; }
-button:disabled { cursor: default; }
-button.active { font-weight: bold; }
+h1 { font-size: 22px; } h2 { font-size: 17px; } h3 { font-size: 14px; }
+section { margin: 24px 0; padding-top: 8px; border-top: 1px solid #ccc; }
+button, select { margin: 3px 5px 3px 0; padding: 4px 8px; max-width: 100%; }
+button { cursor: pointer; } button:disabled { cursor: default; }
 table { border-collapse: collapse; text-align: left; }
-th, td { padding: 6px 10px; border: 1px solid #ccc; }
+th, td { padding: 6px 10px; border: 1px solid #ccc; overflow-wrap: anywhere; }
 .table-wrap { overflow-x: auto; }
 pre { background: #f5f5f5; border: 1px solid #ddd; padding: 10px; max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-textarea { box-sizing: border-box; width: 100%; height: 180px; font: 13px Consolas, monospace; }
-.result-meta span { margin-right: 16px; }
-.decision { margin: 12px 0; }
-.status { font-weight: bold; }
-.tabs, details { margin: 12px 0; }
+textarea { box-sizing: border-box; width: 100%; height: 300px; font: 13px/1.4 Consolas, monospace; }
+details { margin: 10px 0; } summary { cursor: pointer; }
 .notice { border: 1px solid #999; padding: 8px; }
 [hidden] { display: none !important; }
 @media (max-width: 600px) { body { margin: 12px; } }
@@ -29,66 +24,189 @@ textarea { box-sizing: border-box; width: 100%; height: 180px; font: 13px Consol
 </head>
 <body>
 <h1>CIVIS Brain console</h1>
-<p>Local developer debugging. Partial mock: S03 and S04 implemented; S01, S02 and S05 pending.</p>
+<p>Mock peers only in this page. S03 Power and S04 Air Quality are implemented; the signal action demo exercises the shared core with a synthetic detector.</p>
 <div id="notice" class="notice" role="alert" hidden></div>
-<table aria-label="Service configuration">
-<tr><th>Python and modules</th><td><span id="python">Loading</span><br><span id="versions"></span></td></tr>
-<tr><th>Peers</th><td id="peer-mode">Loading</td></tr>
-<tr><th>AI provider</th><td><span id="ai-mode">Loading</span><br><span id="key-status"></span></td></tr>
-<tr><th>Model</th><td id="model">Loading</td></tr>
-<tr><th>Active run</th><td id="active-run">None</td></tr>
-</table>
-<section id="fixtures">
-<h2>Replay fixtures</h2>
-<p>Isolated runs with fake peers. No live AI calls or actuator effects.</p>
-<div>Power (S03): <button class="run" data-sid="S03" data-case="base">Base</button><button class="run" data-sid="S03" data-case="refusal">Refusal</button></div>
-<div>Air Quality (S04): <button class="run" data-sid="S04" data-case="base">Base</button><button class="run" data-sid="S04" data-case="refusal">Refusal</button></div>
+<div class="table-wrap"><table aria-label="Service configuration">
+<tr><th>Environment</th><td><span id="python">Loading</span><br><span id="versions"></span></td></tr>
+<tr><th>Active service peers</th><td id="peer-mode">Loading</td></tr>
+<tr><th>AI</th><td><span id="ai-mode">Loading</span>; <span id="key-status"></span><br><span id="model"></span></td></tr>
+<tr><th>Remaining debug AI calls</th><td id="budget">Loading</td></tr>
+</table></div>
+<section>
+<h2>1. Load and edit a request</h2>
+<label for="preset">Case:</label>
+<select id="preset" aria-label="Case"></select>
+<label for="provider-mode">Planning:</label>
+<select id="provider-mode"><option value="fixture">Recorded response (offline)</option><option value="gemini">Gemini API</option></select>
+<button id="load">Reload standard readings</button>
+<p>Power and Air Quality produce alerts without AI. The action demo uses readings of 35% then 95%, a mock threshold of 80%, and an R1 signal command. Refusal uses the same readings with mock Guardian approval denied.</p>
+<label for="request">POST /debug/run body:</label>
+<textarea id="request" spellcheck="false" aria-label="Scenario request JSON"></textarea>
+<p>Edit the readings in this JSON to test changes. Each reading keeps its run, tick, UTC timestamp, node, device, sensor, unit and original ID.</p>
+<button id="run">Run request</button><span id="run-status" role="status"></span>
 </section>
-<section id="inspection">
-<h2 id="result-title">Case result</h2>
-<p id="result-run">No case selected</p>
-<p id="empty">Run a fixture to inspect its readings and decisions.</p>
-<div id="result" hidden>
-<div class="result-meta" id="result-meta"></div>
-<div id="decisions"></div>
-<div class="tabs"><button class="active tab" data-view="readings">Readings</button><button class="tab" data-view="trace">Decision trace</button><button class="tab" data-view="json">Result JSON</button></div>
-<div class="table-wrap" id="readings-view"><table><thead><tr><th>Tick</th><th>Node</th><th>Sensor</th><th>Value</th><th>Unit</th><th>Reading ID</th></tr></thead><tbody id="readings"></tbody></table></div>
-<pre id="trace-view" hidden></pre>
-<pre id="json-view" hidden></pre>
-</div>
+<section id="results" hidden>
+<h2>2. Result</h2>
+<p id="result-summary"></p>
+<p id="acceptance"></p>
+<div class="table-wrap"><table><thead><tr><th>Tick</th><th>Status</th><th>Action</th><th>Reason / code</th></tr></thead><tbody id="decisions"></tbody></table></div>
+<details><summary>Submitted readings</summary><pre id="readings"></pre></details>
+<details><summary>Mock nodes, action manifest and policies</summary><pre id="configuration"></pre></details>
+<details><summary>Simulated Twin effects</summary><pre id="effects"></pre></details>
+<h2>3. Request and response trace</h2>
+<p>Requests are listed in execution order. Approval tokens are redacted. Gemini entries include the request, final output and locally validated Plan.</p>
+<div id="exchanges"></div>
+<details><summary>Decision events</summary><pre id="events"></pre></details>
+<details><summary>Complete result JSON</summary><pre id="result-json"></pre></details>
+<a href="/debug/export" download>Download this debug run as JSON</a>
 </section>
 <section>
-<h2>Evaluate a fixture batch</h2>
-<p>Paste a ReadingsBatch for fixture nodes AQ-01 or POW-01. Uses the active mock runtime.</p>
-<textarea id="batch" spellcheck="false" aria-label="Fixture batch JSON" placeholder="ReadingsBatch JSON"></textarea>
-<div><button id="evaluate">Evaluate batch</button></div>
-<pre id="custom-result" hidden></pre>
-</section>
-<section id="provider">
-<h2>AI connection test</h2>
-<p>One synthetic planning request. Validates the Plan; executes nothing. No paid fallback.</p>
-<button id="ai-smoke">Check AI connection</button>
+<h2>AI connection only</h2>
+<p>One synthetic Plan request, without peer calls. Use Run request above for the full action workflow.</p>
+<button id="ai-smoke">Check Gemini connection</button>
 <pre id="ai-result" hidden></pre>
 </section>
-<section id="service">
-<h2>Service events</h2>
-<p>Active MCP evaluations and AI test results. Refreshes every 5 seconds.</p>
+<section>
+<h2>Active service events</h2>
+<p id="active-run">No active run</p>
 <pre id="service-events">No service decisions yet.</pre>
 </section>
-<p>MCP protocol: 2026-07-28. Keys remain on the server.</p>
 <script nonce="__NONCE__">
-const $=id=>document.getElementById(id);let busy=false;
-function notice(message){$("notice").textContent=message;$("notice").hidden=!message}
-async function api(path,body){const response=await fetch(path,{method:body===undefined?"GET":"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:body===undefined?undefined:JSON.stringify(body)});let data=await response.json();if(!response.ok)throw Error(typeof data.detail==="string"?data.detail:"Request rejected; check the supplied JSON");return data}
-async function task(button,fn){if(busy)return;busy=true;button.disabled=true;notice("");try{await fn()}catch(e){notice(e.message)}finally{busy=false;button.disabled=false}}
-function showCase(data){$("empty").hidden=true;$("result").hidden=false;$("result-title").textContent=data.scenario+" / "+data.variant;$("result-run").textContent="Fixture only";$("result-meta").textContent="";for(const label of [data.effects+" actuator effects",data.provider_calls+" AI calls",data.batches.length+" ticks"]){const span=document.createElement("span");span.className="pill";span.textContent=label;$("result-meta").append(span)}
-$("decisions").textContent="";for(const batch of data.batches){for(const row of batch.decisions){const card=document.createElement("div");card.className="decision";const status=document.createElement("div");status.className="status";status.textContent=row.status+" / tick "+row.tick;const reason=document.createElement("div");reason.textContent=row.reason;const ids=document.createElement("div");ids.className="small";ids.textContent="Evidence: "+(row.source_reading_ids.join(", ")||"None");card.append(status,reason,ids);$("decisions").append(card)}}
-$("readings").textContent="";for(const batch of data.readings){for(const row of batch.readings){const tr=document.createElement("tr");for(const value of [row.tick,row.node_id,row.sensor,row.value===null?"Null":row.value,row.unit,row.reading_id]){const td=document.createElement("td");td.textContent=value;tr.append(td)}$("readings").append(tr)}}
-$("trace-view").textContent=JSON.stringify(data.events,null,2);$("json-view").textContent=JSON.stringify(data.batches,null,2)}
-async function refresh(){try{const data=await api("/debug/state");$("python").textContent="Python "+data.python;$("versions").textContent="FastAPI "+data.versions.fastapi+" / MCP "+data.versions.mcp;$("peer-mode").textContent=data.peer_mode==="fixture"?"Fake peers":"Live peers";$("ai-mode").textContent=data.llm_mode==="openrouter"?"OpenRouter":data.llm_mode==="gemini"?"Gemini":"Recorded";$("key-status").textContent=data.llm_mode==="fixture"?"No API key needed":data.key_configured?"Key configured locally":"Key missing";$("model").textContent=data.model;$("active-run").textContent=data.run_id||"No active run";$("service-events").textContent=data.events.length?JSON.stringify(data.events,null,2):"No service decisions yet.";if(Object.keys(data.last_ai).length){$("ai-result").hidden=false;$("ai-result").textContent=JSON.stringify(data.last_ai,null,2)}$("ai-smoke").disabled=busy||data.llm_mode==="fixture";$("evaluate").disabled=busy||data.peer_mode!=="fixture"}catch(e){notice("Cannot reach Brain: "+e.message)}}
-document.querySelectorAll(".run").forEach(button=>button.addEventListener("click",()=>task(button,async()=>showCase(await api("/debug/case/"+button.dataset.sid+"/"+button.dataset.case,{})))));
-document.querySelectorAll(".tab").forEach(button=>button.addEventListener("click",()=>{document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b===button));for(const view of ["readings","trace","json"])$(view+"-view").hidden=view!==button.dataset.view}));
-$("ai-smoke").addEventListener("click",()=>task($("ai-smoke"),async()=>{const data=await api("/debug/ai-smoke",{});$("ai-result").hidden=false;$("ai-result").textContent=JSON.stringify(data,null,2);await refresh()}));
-$("evaluate").addEventListener("click",()=>task($("evaluate"),async()=>{const data=await api("/debug/evaluate",JSON.parse($("batch").value));$("custom-result").hidden=false;$("custom-result").textContent=JSON.stringify(data,null,2);await refresh()}));
-refresh();setInterval(()=>{if(!busy)refresh()},5000);
-</script></body></html>
+const $ = id => document.getElementById(id);
+let busy = false;
+let cases = [];
+function json(value) { return JSON.stringify(value, null, 2); }
+function notice(message) { $("notice").textContent = message; $("notice").hidden = !message; }
+async function api(path, body) {
+  const response = await fetch(path, {
+    method: body === undefined ? "GET" : "POST", credentials: "same-origin",
+    headers: {"Content-Type": "application/json"},
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const detail = data.detail;
+    throw Error("HTTP " + response.status + ": " + (typeof detail === "string" ? detail : json(detail)));
+  }
+  return data;
+}
+async function task(button, action) {
+  if (busy) return;
+  busy = true;
+  button.disabled = true;
+  notice("");
+  $("run-status").textContent = "Running...";
+  try { await action(); }
+  catch (error) { notice(error.message); }
+  finally {
+    busy = false;
+    button.disabled = false;
+    $("run-status").textContent = "";
+    await refresh();
+  }
+}
+function loadRequest() {
+  const preset = cases.find(item => item.request.scenario + ":" + item.request.variant === $("preset").value);
+  if (!preset) return;
+  $("request").value = json({...preset.request, provider_mode: $("provider-mode").value});
+}
+function pre(parent, title, value) {
+  const label = document.createElement("h3");
+  label.textContent = title;
+  const content = document.createElement("pre");
+  content.textContent = typeof value === "string" ? value : json(value);
+  parent.append(label, content);
+}
+function showResult(result) {
+  $("results").hidden = false;
+  $("result-summary").textContent = result.scenario + " / " + result.variant + ": " +
+    result.provider_calls + " planning calls, " + result.effects + " simulated actuator effects.";
+  const check = result.acceptance;
+  $("acceptance").textContent = check.passed === null
+    ? "Custom readings: compare the decisions and effects below; preset acceptance is not applied."
+    : "Standard case acceptance: " + (check.passed ? "PASS" : "FAIL") +
+      ". Expected " + json(check.expected) + "; actual " + json(check.actual) + ".";
+  $("decisions").textContent = "";
+  for (const batch of result.batches) {
+    const rows = batch.decisions.length ? batch.decisions : [{status: "no incident", action: "", reason: "No action needed"}];
+    for (const decision of rows) {
+      const row = document.createElement("tr");
+      for (const value of [batch.tick, decision.status, decision.action || "", decision.reason + (decision.peer_code ? " / " + decision.peer_code : "")]) {
+        const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
+      }
+      $("decisions").append(row);
+    }
+  }
+  $("readings").textContent = json(result.readings);
+  $("configuration").textContent = json(result.mock_configuration);
+  $("effects").textContent = json(result.effect_details);
+  $("events").textContent = json(result.events);
+  $("result-json").textContent = json(result);
+  $("exchanges").textContent = "";
+  for (const entry of result.requests) {
+    const detail = document.createElement("details");
+    const label = document.createElement("summary");
+    label.textContent = entry.step + ". " + entry.target + "." + entry.operation + " (" + entry.elapsed_ms + " ms)";
+    detail.append(label);
+    pre(detail, "Request", entry.request);
+    if (entry.target === "gemini" && entry.request.input) {
+      try { pre(detail, "Gemini input, decoded", JSON.parse(entry.request.input)); } catch (_) {}
+    }
+    pre(detail, entry.error ? "Error" : "Response", entry.error || entry.response);
+    if (entry.provider_response && Object.keys(entry.provider_response).length) pre(detail, "Provider final output", entry.provider_response);
+    $("exchanges").append(detail);
+  }
+}
+async function refresh() {
+  try {
+    const state = await api("/debug/state");
+    $("python").textContent = "Python " + state.python;
+    $("versions").textContent = "FastAPI " + state.versions.fastapi + " / MCP " + state.versions.mcp;
+    $("peer-mode").textContent = state.peer_mode;
+    $("ai-mode").textContent = state.llm_mode;
+    $("key-status").textContent = state.key_configured ? "key configured" : "no live key selected";
+    $("model").textContent = state.model;
+    $("budget").textContent = state.debug_ai_calls_remaining;
+    $("active-run").textContent = state.run_id || "No active run";
+    $("service-events").textContent = json(state.events);
+    $("ai-smoke").disabled = busy || state.llm_mode !== "gemini" || state.debug_ai_calls_remaining === 0;
+    return state;
+  } catch (error) { notice(error.message); }
+}
+$("preset").addEventListener("change", loadRequest);
+$("load").addEventListener("click", loadRequest);
+$("provider-mode").addEventListener("change", () => {
+  try {
+    const body = JSON.parse($("request").value);
+    body.provider_mode = $("provider-mode").value;
+    $("request").value = json(body);
+  } catch (_) { notice("Fix the request JSON or reload the standard readings first."); }
+});
+$("run").addEventListener("click", () => task($("run"), async () => {
+  const result = await api("/debug/run", JSON.parse($("request").value));
+  showResult(result);
+}));
+$("ai-smoke").addEventListener("click", () => task($("ai-smoke"), async () => {
+  $("ai-result").textContent = json(await api("/debug/ai-smoke", {}));
+  $("ai-result").hidden = false;
+}));
+async function init() {
+  const state = await refresh();
+  try {
+    cases = (await api("/debug/templates")).templates;
+    for (const item of cases) {
+      const option = document.createElement("option");
+      option.value = item.request.scenario + ":" + item.request.variant;
+      option.textContent = item.label;
+      $("preset").append(option);
+    }
+    $("preset").value = "DEMO_R1:base";
+    $("provider-mode").value = state && state.llm_mode === "gemini" ? "gemini" : "fixture";
+    loadRequest();
+  } catch (error) { notice(error.message); }
+}
+init();
+setInterval(() => { if (!busy) refresh(); }, 5000);
+</script>
+</body>
+</html>

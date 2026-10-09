@@ -1,19 +1,17 @@
 """Local browser console. It never serves keys or bypasses MCP caller authorization."""
 
 import asyncio
-import json
 import secrets
 import sys
 from importlib.metadata import version
 from pathlib import Path
 
-from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, FixtureTwin
 from fastapi import HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from civis_brain.contracts import ReadingsBatch
+from civis_brain.debug_runs import DebugRunRequest, run_debug_case, templates
 from civis_brain.errors import BrainError
-from civis_brain.integration.runtime import build_runtime
 from civis_brain.planning.service import validate_plan
 
 
@@ -75,16 +73,13 @@ def attach_debug(app, runtime, settings):
                 "pending_scenarios": ["S01", "S02", "S05"],
                 "peer_mode": settings.peer_mode,
                 "llm_mode": settings.llm_mode,
-                "model": settings.openrouter_model
-                if settings.llm_mode == "openrouter"
-                else settings.gemini_model
+                "model": settings.gemini_model
                 if settings.llm_mode == "gemini"
                 else "Recorded responses",
-                "key_configured": bool(settings.openrouter_api_key)
-                if settings.llm_mode == "openrouter"
-                else bool(settings.gemini_api_key)
+                "key_configured": bool(settings.gemini_api_key)
                 if settings.llm_mode == "gemini"
                 else False,
+                "debug_ai_calls_remaining": max(0, settings.ai_max_calls_per_run - ai_calls),
                 "python": ".".join(map(str, sys.version_info[:3])),
                 "versions": {
                     name: version(name) for name in ("fastapi", "pydantic", "mcp", "httpx")
@@ -98,53 +93,55 @@ def attach_debug(app, runtime, settings):
             }
         )
 
+    @app.get("/debug/templates", include_in_schema=False)
+    async def case_templates(request: Request):
+        authorized(request)
+        return {"templates": templates(root)}
+
+    async def execute(payload):
+        nonlocal last_case, ai_calls
+        if payload.provider_mode == "gemini" and settings.llm_mode != "gemini":
+            raise HTTPException(409, "Set LLM_MODE=gemini locally before using live AI")
+        async with lock:
+            remaining = settings.ai_max_calls_per_run - ai_calls
+            if (
+                payload.provider_mode == "gemini"
+                and payload.scenario == "DEMO_R1"
+                and remaining <= 0
+            ):
+                raise HTTPException(429, "Debug AI budget exhausted for this server session")
+            try:
+                last_case = await run_debug_case(settings, payload, ai_budget=max(0, remaining))
+            except BrainError as error:
+                raise HTTPException(400, {"code": error.code, "message": error.message}) from None
+            if payload.provider_mode == "gemini":
+                ai_calls += last_case["provider_calls"]
+            return last_case
+
+    @app.post("/debug/run", include_in_schema=False)
+    async def run_case(request: Request, payload: DebugRunRequest):
+        authorized(request, write=True)
+        return await execute(payload)
+
     @app.post("/debug/case/{sid}/{variant}", include_in_schema=False)
     async def replay(request: Request, sid: str, variant: str):
-        nonlocal last_case
         authorized(request, write=True)
-        domains = {"S03": "power", "S04": "air_quality"}
-        if sid not in domains or variant not in {"base", "refusal"}:
+        if sid not in {"S03", "S04"} or variant not in {"base", "refusal"}:
             raise HTTPException(404, "Only delivered Power/Air cases are available")
-        async with lock:
-            case = json.loads(
-                (root / "mocks/cases" / domains[sid] / f"{variant}_case.json").read_text(
-                    encoding="utf-8"
-                )
-            )
-            twin, guardian, provider = (
-                FixtureTwin(case),
-                FixtureGuardian(case),
-                FixturePlanProvider(case),
-            )
-            run = build_runtime(
-                twin=twin,
-                guardian=guardian,
-                provider=provider,
-                policies={sid: case["policy"]},
-                features={
-                    "enabled_scenario_ids": [sid],
-                    "guardian_score_tool": "fixture_score",
-                    "guardian_token_tool": "fixture_approve",
-                },
-                artifact_dir=root / ".artifacts/debug" / f"{sid}-{variant}",
-            )
-            batches = []
-            for raw in case["batches"]:
-                batch = ReadingsBatch.model_validate(raw)
-                twin.advance(batch)
-                batches.append((await run.evaluate_tick(batch)).model_dump())
-            last_case = {
-                "scenario": sid,
-                "variant": variant,
-                "fixture_only": True,
-                "batches": batches,
-                "readings": case["batches"],
-                "effects": len(twin.effects),
-                "provider_calls": len(provider.calls),
-                "incidents": run.get_active_incidents(run.run_id)["incidents"],
-                "events": run.journal.events[-40:],
-            }
-            return last_case
+        return await execute(DebugRunRequest(scenario=sid, variant=variant))
+
+    @app.get("/debug/export", include_in_schema=False)
+    async def export(request: Request):
+        authorized(request)
+        if not last_case:
+            raise HTTPException(404, "Run a scenario first")
+        return JSONResponse(
+            last_case,
+            headers={
+                "Content-Disposition": 'attachment; filename="brain-debug-run.json"',
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.post("/debug/evaluate", include_in_schema=False)
     async def evaluate(request: Request, batch: ReadingsBatch):
@@ -180,6 +177,9 @@ def attach_debug(app, runtime, settings):
                     "synthetic": True,
                     "effects": 0,
                     "plan": plan.model_dump(),
+                    "request": runtime.provider.request(context)
+                    if hasattr(runtime.provider, "request")
+                    else {},
                 }
             except BrainError as error:
                 last_ai = {
