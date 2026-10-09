@@ -147,6 +147,12 @@ class ContainmentCfg(_Strict):
     held_commands_kept: int = Field(default=50, ge=1)         # how many held commands the quarantine lane remembers
 
 
+class LoggingCfg(_Strict):
+    enabled: bool = True
+    parts_dir: str = "run-logs"       # the Twin's own part files (not committed)
+    merged_dir: str = "../logs"       # the shared folder in the repo: one merged file per run
+
+
 class CanvasCfg(_Strict):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
@@ -233,6 +239,7 @@ class TwinConfig(_Strict):
     actuators: dict[str, ActuatorCfg]
     caps: CapsCfg
     containment: ContainmentCfg = ContainmentCfg()
+    logging: LoggingCfg = LoggingCfg()
     generator: GeneratorCfg
 
     @model_validator(mode="after")

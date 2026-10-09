@@ -21,6 +21,7 @@ def config():
     cfg = load_config()
     cfg.sse.heartbeat_seconds = 0.05          # fast heartbeats so the SSE test finishes quickly
     cfg.clock.autorun = False                 # the clock stands still, so tests control time
+    cfg.logging.enabled = False               # tests that check the run log switch it on with a temp folder
     return cfg
 
 

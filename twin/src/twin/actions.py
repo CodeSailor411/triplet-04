@@ -71,6 +71,7 @@ class ActuateResult(BaseModel):
     targets: list[str]
     params: dict[str, Any]
     action_id: str | None = None                  # only when committed
+    token_id: str | None = None                   # the token's id (never the token itself), once the token was read
     code: str | None = None                       # only when rejected
     message: str | None = None
     details: dict[str, Any] | None = None
@@ -109,6 +110,7 @@ class ActionBook:
         self.caps = compute_caps(config.generator, config.caps)
         self._lock = threading.Lock()
         self.containment = None            # set by the app: used to hold commands for quarantined nodes
+        self.recorder = None               # set by the app: the run log
         self._run = sim.run_number
         self._reset_state()
 
@@ -137,6 +139,16 @@ class ActionBook:
     # ------------------------------------------------------------------ actuate
     def actuate(self, caller: Identity, action: str, targets: list[str], params: dict[str, Any] | None,
                 token: str | None, idempotency_key: str) -> ActuateResult:
+        result = self._actuate(caller, action, targets, params, token, idempotency_key)
+        if self.recorder is not None and not result.replayed:           # a repeated key is not a new event
+            self.recorder.record("action", {"caller": caller.value, "action": result.action, "targets": result.targets,
+                                            "params": result.params, "idempotency_key": idempotency_key,
+                                            "status": result.status, "action_id": result.action_id, "code": result.code,
+                                            "token_id": result.token_id})
+        return result
+
+    def _actuate(self, caller: Identity, action: str, targets: list[str], params: dict[str, Any] | None,
+                 token: str | None, idempotency_key: str) -> ActuateResult:
         with self._lock:
             if self._run != self.sim.run_number:                            # a new run wipes all action state
                 self._run = self.sim.run_number
@@ -174,31 +186,33 @@ class ActionBook:
                  "Token was issued for a different action, targets or params than this request."),
             ):
                 if failed:
-                    return self._reject(code, action, targets, cleaned, why)
+                    return self._reject(code, action, targets, cleaned, why, token_id=claims.jti)
             floor = self.cfg.tokens.min_score.get(act.risk) if act.risk else None
             if floor is not None and claims.score < floor:
                 return self._reject("TOKEN_SCORE_TOO_LOW", action, targets, cleaned,
-                                    f"Score is too low for a {act.risk} action.", {"risk": act.risk})
+                                    f"Score is too low for a {act.risk} action.", {"risk": act.risk}, token_id=claims.jti)
 
             held = self.containment.quarantined_nodes(targets) if self.containment else []
             if held:
                 self.containment.hold_command(caller, action, targets, cleaned)
                 return self._reject("DEVICE_QUARANTINED", action, targets, cleaned,
                                     "A target node has a quarantined device. The command is held in the quarantine "
-                                    "lane and was not carried out. Guardian can release the device.", {"nodes": held})
+                                    "lane and was not carried out. Guardian can release the device.", {"nodes": held},
+                                    token_id=claims.jti)
             if act.preview_required and self.cfg.actions.preview_enforced:
                 return self._reject("PREVIEW_REQUIRED", action, targets, cleaned,
-                                    f"'{action}' must be previewed before it is committed.")
+                                    f"'{action}' must be previewed before it is committed.", token_id=claims.jti)
             violations = self._cap_violations(targets)
             if violations:
                 return self._reject("CAP_EXCEEDED", action, targets, cleaned,
                                     "This request touches more nodes than the blast-radius cap allows. "
-                                    "The whole request was refused.", {**violations[0], "violations": violations})
+                                    "The whole request was refused.", {**violations[0], "violations": violations},
+                                    token_id=claims.jti)
 
             self.seq += 1
             result = ActuateResult(status="committed", run_id=self.sim.run_id, tick=self.sim.tick,
                                    time=format_rfc3339(now), action=action, targets=targets, params=cleaned,
-                                   action_id=f"ac-{self.seq:05d}")
+                                   action_id=f"ac-{self.seq:05d}", token_id=claims.jti)
             for t in targets:
                 self.state[(t, action)] = cleaned
             self.committed[result.action_id] = result
@@ -255,7 +269,8 @@ class ActionBook:
         return out
 
     def _reject(self, code: str, action: str, targets: list[str], params: dict[str, Any], message: str,
-                details: dict[str, Any] | None = None) -> ActuateResult:
+                details: dict[str, Any] | None = None, token_id: str | None = None) -> ActuateResult:
         tick = self.sim.tick
         return ActuateResult(status="rejected", run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick),
-                             action=action, targets=targets, params=params, code=code, message=message, details=details)
+                             action=action, targets=targets, params=params, code=code, message=message, details=details,
+                             token_id=token_id)

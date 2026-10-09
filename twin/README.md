@@ -107,13 +107,31 @@ It only shows up for the scenario key (try `get_capabilities` with each key and 
 | List nodes, readings, actions, the clock | Yes | `example_client.py` tools above |
 | Make the Twin act through the trust gate | Yes, with test tokens | `token_tool.py` plus `actuate` |
 | See the city as a map or a timeline screen (R3) | **No**, comes 9 Oct | nothing to open in a browser yet |
-| Start a scenario with one command or button (R2) | **Partly** | `run_scenario` starts an attack. The log file per run comes 9 Oct, and there is no button yet |
-| A log file for every run (R2) | **No**, shared log format 9 Oct | the Twin writes no log files yet, only console output |
+| Start a scenario with one command or button (R2) | **Yes, one command** | `run_scenario` starts an attack. There is no button yet |
+| A log file for every run (R2) | **Yes, the Twin's part** | see "The run log" below. The final shared format is reviewed with the partners on 9 Oct, and the merged file only holds the other layers' events once they write their parts |
 | Mock Brain and mock Guardian that call the Twin on their own (R1) | **No**, 9 Oct | `example_client.py` is only a one-shot caller |
 | Faults and attacks | **Yes**, fake reading, stuck sensor, exact replay | `run_scenario` above. The recycled-values replay comes 28 Oct |
 | An actuator changing a sensor | **No**, 15 Oct | `actuate` stores the commanded value and nothing reacts |
 
 To see the nodes as a picture before the dashboard exists, the generator (see below) writes `topology.json` with every node's position.
+
+## The run log
+
+Every run leaves a log (R2). Two steps, so three layers never write into one file at the same time:
+
+1. While the Twin runs, it writes its **own part file**: `run-logs/<run_id>.twin.jsonl` (one JSON object per line, git-ignored). A second file, `run-logs/<run_id>.twin-private.jsonl`, holds the **true values** behind faked readings. It is never merged and never shared.
+2. A **merge** puts all the parts in time order into one file for the repo: `../logs/<run_id>.jsonl`. The Twin does this by itself when a scenario is stopped, on `reset`, and on Ctrl+C. You can also run it by hand, and add the partners' part files:
+
+```
+python -m twin.logmerge run-42-001
+python -m twin.logmerge run-42-001 --parts ../brain/run-logs/run-42-001.brain.jsonl ../guardian/run-logs/run-42-001.guardian.jsonl
+```
+
+Running it again is safe, the file is rebuilt from the parts every time. A new run (a new `run_id`) starts with `run_scenario` `reset`, and gets its own file.
+
+What the Twin writes: `scenario` (run started, scenario started or stopped), `reading` (only readings that a scenario fault touched, 109 per tick would be huge), `action` (what `actuate` answered, with the token's ID, never the token) and `containment` (isolate, quarantine, rollback, release). Every line has `run_id`, `event_id`, `timestamp` (simulated time), `tick`, `wall` (real clock, orders events inside one tick), `layer`, `event_type`, `caused_by`, `data`.
+
+Limits: normal readings are not logged, so a verdict that points at one will not find it in the log. A restart reuses the run id, so the part file continues (numbering carries on, the tick goes back to 0). The log is for reading afterwards, layers must not read it to decide anything.
 
 ## Test it
 
@@ -163,6 +181,7 @@ always gives the same city. Change the seed with `TWIN_SEED=7` or in `config/twi
 | Sensor model, simulated clock, readings on the live feed, `get_readings`, `get_clock` | Done 6 Oct |
 | `actuate` with the trust gate, idempotency, caps, `list_actions` | Done 6 Oct |
 | Scenario engine (fake reading, stuck sensor, exact replay) | **Done 7 Oct** |
+| Run log: part file, private file, merge (R2) | **Done 7 Oct**, format reviewed with partners 9 Oct |
 | Containment tools (isolate, quarantine, rollback, release) | **Done 7 Oct** |
 | Shared log format, timeline dashboard, mocks | 9 Oct |
 | TimescaleDB and Redis storage, Ed25519 token check | 14-15 Oct, 18 Oct |
