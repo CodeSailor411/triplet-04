@@ -21,10 +21,10 @@ The Twin learns who you are from the key. Keys come from the `.env` of whoever r
 | `get_clock` | `city_brain`, `guardian` | none | `run_id`, `tick`, simulated `time`, `tick_seconds`, `speed`, `running` |
 | `list_actions` | `city_brain`, `guardian` | none | each action: inputs with allowed values, `risk` (R1 to R3 or null), `preview_required`, `target_nodes`, `action_cap`; plus `token_mode`, `preview_enforced` |
 | `actuate` | `city_brain` | `action`, `targets`, `params`, `token`, `idempotency_key` | `status` committed or rejected, `action_id`, `code`, `message`, `details`, `replayed` |
-| `isolate_sensor` | `guardian` | `device_ids`, optional `reason` | `status` applied or rejected, `changed`, `unchanged`, `code`, `details` |
-| `quarantine_device` | `guardian` | `device_ids`, optional `reason` | same as `isolate_sensor` |
-| `rollback_reading` | `guardian` | `reading_ids` | `corrections`: each marked `corrected: true`, with `corrects` (the bad `reading_id`), `restored_from`, `value` |
-| `release_device` | `guardian` | `device_ids` | `released`, `not_contained` |
+| `isolate_sensor` | `guardian` | `device_ids`, optional `reason`, optional `caused_by` | `status` applied or rejected, `changed`, `unchanged`, `code`, `details` |
+| `quarantine_device` | `guardian` | `device_ids`, optional `reason`, optional `caused_by` | same as `isolate_sensor` |
+| `rollback_reading` | `guardian` | `reading_ids`, optional `caused_by` | `corrections`: each marked `corrected: true`, with `corrects` (the bad `reading_id`), `restored_from`, `value` |
+| `release_device` | `guardian` | `device_ids`, optional `caused_by` | `released`, `not_contained` |
 | `get_containment_state` | `city_brain`, `guardian` | none | devices cut off (`isolated` or `quarantined`), corrections, cap use per domain |
 | `get_quarantine_lane` | `guardian` | none | readings held off the feed, commands held because of quarantine |
 | `run_scenario` | `scenario` key only, hidden from others | `name`, optional `params` | what was started: `scenario_id`, `faults`. Names: `fake_reading`, `stuck_sensor`, `replay_exact`, `list`, `stop`, `reset` |
@@ -69,6 +69,7 @@ Messages we send are strict. Messages we receive: unknown extra fields are ignor
 
 ## Run log (R2)
 The Twin writes `run-logs/<run_id>.twin.jsonl` and merges into `logs/<run_id>.jsonl` (`python -m twin.logmerge <run_id>`). Fields: `run_id`, `event_id`, `timestamp`, `tick`, `wall`, `layer`, `event_type`, `caused_by`, `data`. Twin events: `scenario`, `reading` (faulted readings only), `action` (token ID, not the token), `containment`. No true value is ever in it. Draft, review 9 Oct.
+For the timeline arrows (`python -m twin.dashboard`): a verdict's `caused_by` holds the `reading_id` it judged. Guardian's approval event carries `data.token_id` (same as the token), the Brain's decision carries `data.idempotency_key` (same as its `actuate` call). Containment tools take optional `caused_by`: up to 10 event ids, only written to the log.
 
 ## Containment: the rules (Guardian only; `release_device`, `get_containment_state`, `get_quarantine_lane` are our additions)
 * Device = one sensor at one node (`device_id` from `list_nodes`). `isolate_sensor` removes the device's readings from the feed and `get_readings` from

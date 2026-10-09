@@ -133,6 +133,27 @@ What the Twin writes: `scenario` (run started, scenario started or stopped), `re
 
 Limits: normal readings are not logged, so a verdict that points at one will not find it in the log. A restart reuses the run id, so the part file continues (numbering carries on, the tick goes back to 0). The log is for reading afterwards, layers must not read it to decide anything.
 
+## The dashboard (R3)
+
+A live screen with a **city map** and a **timeline** of reading → verdict → decision → action. It only reads the run logs, it never calls the Twin.
+
+```
+python -m twin.dashboard --sample     # look at a made-up run first (needs no Twin and no partners)
+python -m twin.dashboard              # the real thing: reads the folders in config/twin.yaml (dashboard.sources)
+```
+
+Then open http://127.0.0.1:8080. It needs no internet (no CDN, no web fonts), so it works with the Wi-Fi off.
+
+What you see:
+- **City map.** Every node, coloured by domain. The ring is the trust state from Guardian's latest verdict (green Trusted, amber Degraded, red Untrusted, light grey "no verdict yet"). A dashed grey ring means a device is isolated, a dashed purple ring with Q means quarantined, a red triangle means an attack is running. Click a node for its sensors and latest events. "Neighbour links" draws the links between nodes (the selected node's links are always drawn).
+- **Timeline.** Four lanes (Twin readings, Guardian verdicts, Brain decisions, Twin actions) with simulated time. Arrows show what caused what. Click an event and its whole chain lights up. Many events on one tick are grouped into one numbered circle.
+- **Side panels.** Running scenarios, "Needs a person" (escalations from the Brain), partner failures.
+- **Table.** Every event, newest first. Click a row for its details.
+
+How the arrows work: the Twin cannot know who asked it to do something, so the others say it in their own events. Verdict: `caused_by` holds the `reading_id` it judged. Guardian's approval event carries the same `token_id` as the Twin's `action` event, and the Brain's decision carries the same `idempotency_key`. The containment tools take an optional `caused_by` (for example Guardian's verdict id). If a link is missing, that event simply has no arrow. Nothing is guessed.
+
+Limits: the trust cut-offs (0.8 and 0.5) are placeholders until Guardian publishes its own. The Guardian and Brain lanes stay empty until they write log parts in the same format (`--sample` shows how it looks when they do). The dashboard never reads `*-private.jsonl`. The node shapes are simple stand-ins, the node style spec is not applied yet. It was tested without a real browser (NiceGUI's simulated user, plus pictures of the drawings), so open it once in a browser and tell me what looks off.
+
 ## Test it
 
 ```
