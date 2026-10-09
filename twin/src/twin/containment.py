@@ -31,6 +31,7 @@ from .settings import TwinConfig
 from .sim import Simulation
 
 MAX_IDS_PER_REQUEST = 100
+_EVENT_REF = re.compile(r"^[A-Za-z0-9._:-]{1,80}$")
 
 _READING_ID = re.compile(r"^rd(\d{7})-(.+)$")
 
@@ -150,6 +151,7 @@ class ContainmentBook:
         self.caps = compute_caps(config.generator, config.caps)
         self._lock = threading.RLock()
         self.recorder = None                        # set by the app: the run log
+        self._cause: list[str] | None = None        # caused_by of the call being handled (all calls hold the lock)
         self._run = sim.run_number
         self._reset_state()
 
@@ -192,12 +194,14 @@ class ContainmentBook:
 
     # ------------------------------------------------------------------ isolate / quarantine
     def contain(self, tool: Literal["isolate_sensor", "quarantine_device"], device_ids: list[str],
-                reason: str | None = None) -> ContainResult:
+                reason: str | None = None, caused_by: list[str] | None = None) -> ContainResult:
         state: Literal["isolated", "quarantined"] = "isolated" if tool == "isolate_sensor" else "quarantined"
         with self._lock:
             self._sync()
             devs = self._check_devices(device_ids)
             self._check_reason(reason)
+            self._check_refs(caused_by)
+            self._cause = caused_by
             same = [d.device_id for d in devs if d.device_id in self.contained and self.contained[d.device_id].state == state]
             todo = [d for d in devs if d.device_id not in same]
             violations = self._violations("isolation", [d for d in todo if d.device_id not in self.contained])
@@ -217,10 +221,12 @@ class ContainmentBook:
             return res
 
     # ------------------------------------------------------------------ release
-    def release(self, device_ids: list[str]) -> ReleaseResult:
+    def release(self, device_ids: list[str], caused_by: list[str] | None = None) -> ReleaseResult:
         with self._lock:
             self._sync()
             devs = self._check_devices(device_ids)
+            self._check_refs(caused_by)
+            self._cause = caused_by
             tick = self.sim.tick
             released, nothing = [], []
             for d in devs:
@@ -243,9 +249,11 @@ class ContainmentBook:
                                  released=released, not_contained=nothing)
 
     # ------------------------------------------------------------------ rollback
-    def rollback(self, reading_ids: list[str]) -> RollbackResult:
+    def rollback(self, reading_ids: list[str], caused_by: list[str] | None = None) -> RollbackResult:
         with self._lock:
             self._sync()
+            self._check_refs(caused_by)
+            self._cause = caused_by
             if not isinstance(reading_ids, list) or not 1 <= len(reading_ids) <= 50:
                 raise BadRequest("INVALID_READING_IDS", "reading_ids must be a list of 1 to 50 reading ids.")
             if len(set(reading_ids)) != len(reading_ids):
@@ -343,6 +351,13 @@ class ContainmentBook:
         return [self.devices[i] for i in device_ids]
 
     @staticmethod
+    def _check_refs(refs: Any) -> None:
+        """`caused_by` is only a note for the run log: up to 10 short ids of earlier events (for example Guardian's verdict)."""
+        if refs is not None and (not isinstance(refs, list) or len(refs) > 10 or
+                                 not all(isinstance(r, str) and _EVENT_REF.match(r) for r in refs)):
+            raise BadRequest("INVALID_CAUSED_BY", "caused_by must be a list of at most 10 event ids (letters, digits, . _ : -).")
+
+    @staticmethod
     def _check_reason(reason: str | None) -> None:
         if reason is not None and (not isinstance(reason, str) or len(reason) > 200):
             raise BadRequest("INVALID_REASON", "reason must be text of at most 200 characters.")
@@ -393,7 +408,7 @@ class ContainmentBook:
 
     def _record(self, event_type: str, data: dict[str, Any]) -> None:
         if self.recorder is not None:
-            self.recorder.record(event_type, data)
+            self.recorder.record(event_type, data, caused_by=self._cause)       # the caller may say which event led to this
 
     def _contain_reject(self, tool: str, code: str, violations: list[dict[str, Any]]) -> ContainResult:
         tick = self.sim.tick
