@@ -1,0 +1,84 @@
+{
+  "scenario_id": "S02",
+  "fixture_only": true,
+  "assumptions": [
+    "Same synthetic topology and mock thresholds as base_case.json.",
+    "The fixture preview reports an unsafe result, so no actuation is allowed.",
+    "Preview and Guardian answers are fixture values and do not prove live support.",
+    "Guardian score scale and cut-offs follow the shared fixture shape; they are mock values, not confirmed by Houssem."
+  ],
+  "nodes": [
+    {"node_id": "tank-01", "domains": ["water"], "role": "tank",
+     "actuators": [], "neighbours": ["valve-01"]},
+    {"node_id": "valve-01", "domains": ["water"], "role": "valve",
+     "actuators": ["set_valve_position"], "neighbours": ["tank-01"]}
+  ],
+  "actions": [
+    {"action": "set_valve_position", "domain": "water", "risk": "R3",
+     "preview_required": true,
+     "params": [{"name": "position_pct", "type": "number", "choices": null,
+                 "min_value": 0, "max_value": 100, "unit": "percent"}],
+     "target_nodes": ["valve-01"], "action_cap": 1}
+  ],
+  "caps": {"water": 1},
+  "batches": [
+    {"run_id": "run-water-2", "tick": 10, "time": "2026-10-08T10:10:00Z",
+     "tick_seconds": 60.0, "count": 1,
+     "readings": [
+       {"run_id": "run-water-2", "reading_id": "w-r10", "tick": 10,
+        "timestamp": "2026-10-08T10:10:00Z", "node_id": "tank-01",
+        "device_id": "lvl-01", "sensor": "water_level", "channel": null,
+        "value": 172.0, "unit": "cm"}]},
+    {"run_id": "run-water-2", "tick": 11, "time": "2026-10-08T10:11:00Z",
+     "tick_seconds": 60.0, "count": 1,
+     "readings": [
+       {"run_id": "run-water-2", "reading_id": "w-r11", "tick": 11,
+        "timestamp": "2026-10-08T10:11:00Z", "node_id": "tank-01",
+        "device_id": "lvl-01", "sensor": "water_level", "channel": null,
+        "value": 178.0, "unit": "cm"}]}
+  ],
+  "policy": {
+    "fixture_only": true,
+    "scenario_id": "S02",
+    "sensor": "water_level",
+    "unit": "cm",
+    "threshold_min": 100.0,
+    "persistence_ticks": 2,
+    "allowed_actions": ["set_valve_position"],
+    "risk": "R3",
+    "requires_topology": true,
+    "requires_preview": true,
+    "safe_valve_choices": [
+      {"incident_node_id": "tank-01", "targets": ["valve-01"],
+       "params": {"position_pct": 30}}
+    ]
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {"reading": 60, "R1": 65, "R2": 80, "R3": 90},
+    "approve": true,
+    "token_lifetime_ticks": 3
+  },
+  "preview": {"available": true, "safe": false,
+              "reason": "fixture: preview shows an unsafe downstream effect"},
+  "ai_plan": {
+    "proposals": [
+      {"action": "set_valve_position", "targets": ["valve-01"],
+       "params": {"position_pct": 30}, "risk": "R3", "preview_required": true,
+       "source_reading_ids": ["w-r10", "w-r11"],
+       "reason": "Water level stayed above the mock threshold on two consecutive ticks and a supplied safe valve choice exists."}
+    ],
+    "alerts": []
+  },
+  "twin_outcome": {"status": "rejected", "code": "PREVIEW_NOT_SAFE",
+                   "details": "Never reached: the request is blocked before actuation."},
+  "expected": {
+    "decision_status": "blocked",
+    "final_statuses": ["blocked"],
+    "reason_contains": "preview",
+    "provider_calls": 1,
+    "actuate_calls": 0,
+    "effects": 0
+  }
+}

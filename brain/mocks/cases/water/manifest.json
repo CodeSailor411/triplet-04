@@ -1,0 +1,10 @@
+{
+  "scenario_id": "S02",
+  "fixture_only": true,
+  "files": [
+    {"file": "base_case.json",
+     "expected": "committed; one actuate call; one effect"},
+    {"file": "refusal_case.json",
+     "expected": "blocked; zero actuate calls; reason recorded"}
+  ]
+}
