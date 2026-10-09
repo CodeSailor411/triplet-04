@@ -1,5 +1,4 @@
-@'
-# Meriem progress: S02 high-water / flood candidate
+﻿# Meriem progress: S02 high-water / flood candidate
 
 Branch: `codex/civis-meriem`. Scenario: `S02`.
 Status: unit-complete and workflow-proven against the shared core with fixture peers; live partner integration not claimed.
@@ -55,4 +54,3 @@ Draft PR URL: not opened. `git push` returned 403 (account mariem-chaouachi has 
 Unit-ready status: yes
 Integration-ready status: yes with fixture peers
 Next step: get write access from Elyes, or use a fork or patch file, then open the PR into `codex/civis-elyes`.
-'@ | Set-Content -Path docs\mock-team\progress\meriem.md -Encoding utf8
