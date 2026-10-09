@@ -153,6 +153,19 @@ class LoggingCfg(_Strict):
     merged_dir: str = "../logs"       # the shared folder in the repo: one merged file per run
 
 
+class DashboardCfg(_Strict):
+    host: str = "127.0.0.1"
+    port: int = 8080
+    # Folders (or files) with run logs. Part files and merged files may both be listed: the same event is only shown once.
+    # The last two are GUESSES at where CIVIS and 9antra keep their part files. A folder that does not exist is ignored.
+    sources: list[str] = ["run-logs", "../logs", "../brain/run-logs", "../guardian/run-logs"]
+    refresh_seconds: float = Field(default=1.0, ge=0.2)
+    window_ticks: int = Field(default=60, ge=0)          # 0 = the whole run
+    # PLACEHOLDERS. Guardian will publish its own cut-offs (decision report: a verdict is a score only, no label).
+    trusted_from: float = Field(default=0.8, ge=0, le=1)
+    degraded_from: float = Field(default=0.5, ge=0, le=1)
+
+
 class CanvasCfg(_Strict):
     width: int = Field(gt=0)
     height: int = Field(gt=0)
@@ -240,6 +253,7 @@ class TwinConfig(_Strict):
     caps: CapsCfg
     containment: ContainmentCfg = ContainmentCfg()
     logging: LoggingCfg = LoggingCfg()
+    dashboard: DashboardCfg = DashboardCfg()
     generator: GeneratorCfg
 
     @model_validator(mode="after")

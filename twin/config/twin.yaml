@@ -130,6 +130,18 @@ logging:
   merged_dir: ../logs        # the repo's shared logs/ folder, one file per run
 
 # ---------------------------------------------------------------------------
+# Dashboard (R3): python -m twin.dashboard. It only reads run logs.
+# ---------------------------------------------------------------------------
+dashboard:
+  host: 127.0.0.1
+  port: 8080
+  sources: [run-logs, ../logs, ../brain/run-logs, ../guardian/run-logs]   # the last two are guesses, a missing folder is ignored
+  refresh_seconds: 1.0
+  window_ticks: 60            # how many ticks the timeline shows (0 = the whole run)
+  trusted_from: 0.8           # PLACEHOLDER cut-offs until Guardian publishes its own
+  degraded_from: 0.5
+
+# ---------------------------------------------------------------------------
 # Topology generator
 # ---------------------------------------------------------------------------
 generator:
