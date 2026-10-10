@@ -275,3 +275,35 @@ def test_the_example_config_and_gitignore_keep_the_part_files_out_of_the_repo():
     assert "run-logs/" in (root / ".gitignore").read_text().splitlines()
     cfg = load_config().logging
     assert cfg.enabled and cfg.parts_dir == "run-logs" and cfg.merged_dir == "../logs"
+
+
+# ------------------------------------------------------------------ caused_by on containment calls (so the timeline can draw verdict -> containment)
+def test_a_containment_call_can_say_which_event_caused_it_and_it_lands_in_the_log(tmp_path):
+    sim, _, cont, _, rl, _ = build(tmp_path)
+    cont.contain("isolate_sensor", ["AIR-01.pm25"], None, ["guardian-000007"])
+    cont.release(["AIR-01.pm25"], ["guardian-000008", "brain-000002"])
+    cont.rollback([_reading_id(100, next(d for d in sim.devices if d.device_id == WAT), None)], ["guardian-000009"])
+    cont.contain("isolate_sensor", ["AIR-02.pm25"])                                     # and a call without it carries none (not the old one)
+    got = [e["caused_by"] for e in lines(rl.part_path(sim.run_id)) if e["event_type"] == "containment"]
+    assert got == [["guardian-000007"], ["guardian-000008", "brain-000002"], ["guardian-000009"], []]
+
+
+@pytest.mark.parametrize("bad", ["guardian-000001", 5, ["a b"], ["x" * 81], [1], ["<script>"], ["ok"] * 11, [""]])
+def test_bad_caused_by_is_refused_before_anything_changes(tmp_path, bad):
+    from twin.actions import BadRequest
+    sim, _, cont, _, rl, _ = build(tmp_path)
+    for call in (lambda: cont.contain("isolate_sensor", ["AIR-01.pm25"], None, bad), lambda: cont.release(["AIR-01.pm25"], bad),
+                 lambda: cont.rollback([_reading_id(100, next(d for d in sim.devices if d.device_id == WAT), None)], bad)):
+        with pytest.raises(BadRequest) as e:
+            call()
+        assert e.value.code == "INVALID_CAUSED_BY"
+    assert cont.state().devices == [] and cont.state().corrections == []
+
+
+async def test_caused_by_works_through_the_real_tool(mcp_client):
+    async with mcp_client("guardian") as g:
+        ok = await g.call_tool("isolate_sensor", {"device_ids": ["AIR-05.pm25"], "caused_by": ["guardian-000001"]})
+        bad = await g.call_tool("isolate_sensor", {"device_ids": ["AIR-06.pm25"], "caused_by": ["not valid!"]})
+        await g.call_tool("release_device", {"device_ids": ["AIR-05.pm25"]})
+    assert not ok.is_error and ok.structured_content["status"] == "applied"
+    assert bad.is_error and "INVALID_CAUSED_BY" in bad.content[0].text

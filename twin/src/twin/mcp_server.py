@@ -137,35 +137,38 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
             raise ToolError(f"{e.code}: {e.message}") from None
 
     @mcp.tool()
-    def isolate_sensor(ctx: Context, device_ids: list[str], reason: str | None = None) -> ContainResult:
+    def isolate_sensor(ctx: Context, device_ids: list[str], reason: str | None = None,
+                       caused_by: list[str] | None = None) -> ContainResult:
         """Guardian only. Cut these devices' data off the main feed. Counts against the isolation cap (nodes per
         domain, shared with quarantine). Repeating it is harmless. A request that would break a cap is refused as a
-        whole: status "rejected", code CAP_EXCEEDED, with domain, cap, in_use, requested, remaining."""
+        whole: status "rejected", code CAP_EXCEEDED, with domain, cap, in_use, requested, remaining.
+        caused_by (optional): ids of earlier events, for example Guardian's verdict. Only written to the run log."""
         require(ctx, "isolate_sensor")
-        return contain_call(containment.contain, "isolate_sensor", device_ids, reason)
+        return contain_call(containment.contain, "isolate_sensor", device_ids, reason, caused_by)
 
     @mcp.tool()
-    def quarantine_device(ctx: Context, device_ids: list[str], reason: str | None = None) -> ContainResult:
+    def quarantine_device(ctx: Context, device_ids: list[str], reason: str | None = None,
+                          caused_by: list[str] | None = None) -> ContainResult:
         """Guardian only. Same cut as isolate_sensor, and commands to the device's node are held in a side lane
         instead of being carried out (answer DEVICE_QUARANTINED). The held data and commands can be read with
         get_quarantine_lane. Shares the isolation cap with isolate_sensor."""
         require(ctx, "quarantine_device")
-        return contain_call(containment.contain, "quarantine_device", device_ids, reason)
+        return contain_call(containment.contain, "quarantine_device", device_ids, reason, caused_by)
 
     @mcp.tool()
-    def rollback_reading(ctx: Context, reading_ids: list[str]) -> RollbackResult:
+    def rollback_reading(ctx: Context, reading_ids: list[str], caused_by: list[str] | None = None) -> RollbackResult:
         """Guardian only. Replace bad readings with the last trusted value the sensor REPORTED (never the Twin's
         true value). Each answer is marked corrected and names the reading it corrects. Own cap pool (nodes per
         domain). A reading that was already corrected is returned unchanged."""
         require(ctx, "rollback_reading")
-        return contain_call(containment.rollback, reading_ids)
+        return contain_call(containment.rollback, reading_ids, caused_by)
 
     @mcp.tool()
-    def release_device(ctx: Context, device_ids: list[str]) -> ReleaseResult:
+    def release_device(ctx: Context, device_ids: list[str], caused_by: list[str] | None = None) -> ReleaseResult:
         """Guardian only. Undo isolate, quarantine and rollback for these devices. Data flows again from the
         current tick and the cap slots are free again."""
         require(ctx, "release_device")
-        return contain_call(containment.release, device_ids)
+        return contain_call(containment.release, device_ids, caused_by)
 
     @mcp.tool()
     def get_containment_state(ctx: Context) -> ContainmentState:
