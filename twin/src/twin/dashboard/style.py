@@ -5,7 +5,9 @@ Colours and shapes follow `node-style-spec.md` (3 Oct 2026): dark map, domain co
 """
 
 # theme (node style spec, section 6)
-BG = "#0A0E17"            # background, also the fill inside every node
+BG = "#0A0E17"            # page background (node style spec)
+MAP_BG = "#04060B"        # the city map itself: darker than the page, also the fill inside every node on the map
+EDGE = "#E6ECF5"          # the white of the wireframe roads
 PANEL = "#121826"
 PANEL_2 = "#0F1522"       # the second band colour in the timeline
 LINE = "#1E2A3F"          # hairlines, borders

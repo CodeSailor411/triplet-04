@@ -14,7 +14,7 @@ from ..models import Layout, Node, Topology
 from .events import Event, RunState, node_status, short_label, summarize
 from .basemap import basemap
 from .nodes import glyph
-from .style import (ATTACK_COLOR, BG, DIM, LAND, LANE_OF_TYPE, LANES, LINE, PANEL, PANEL_2, RUN_STRIP_TYPES, TEXT)
+from .style import (ATTACK_COLOR, BG, DIM, LAND, MAP_BG, LANE_OF_TYPE, LANES, LINE, PANEL, PANEL_2, RUN_STRIP_TYPES, TEXT)
 
 NODE_W = 58             # width of a node on the 1920-pixel-wide map (about 32 px on a normal screen, the spec's minimum is 24)
 MIN_GAP = 87            # 1.5 x the node width (spec section 5). Nodes closer than this are pushed apart ON SCREEN ONLY, the city data is never changed
@@ -77,11 +77,11 @@ def city_scene(topology: Topology, layout: Layout, state: RunState, selected: st
                show_edges: bool = False, show_attacks: bool = True, hidden: set[str] | None = None) -> Scene:
     """The map. `hidden` = domains whose layer is switched off (their nodes fade to grey, an isolated node keeps its lock)."""
     w, h = topology.canvas.width, topology.canvas.height
-    out = [basemap(layout, w, h, layout.seed)]
+    xy = display_positions(topology)
+    out = [basemap([xy[n.node_id] for n in topology.nodes], w, h)]                  # one connected city drawn around the node positions
     all_domains = {d for n in topology.nodes for d in n.domains}
     active = all_domains - (hidden or set())
     by_id = {n.node_id: n for n in topology.nodes}
-    xy = display_positions(topology)
     for a, b in topology.edges:                                                  # connection lines: all on request, always for the selected node
         mine = selected in (a, b)
         if (show_edges or mine) and a in by_id and b in by_id:
@@ -104,19 +104,19 @@ def city_scene(topology: Topology, layout: Layout, state: RunState, selected: st
             g.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{NODE_W * 0.7:.1f}" fill="none" stroke="{ATTACK_COLOR}" stroke-width="4">'
                      f'<animate attributeName="r" values="{NODE_W * 0.62:.0f};{NODE_W * 0.95:.0f}" dur="1.6s" repeatCount="indefinite"/>'
                      f'<animate attributeName="opacity" values="0.9;0" dur="1.6s" repeatCount="indefinite"/></circle>')
-        g.append(glyph(cx, cy, NODE_W, n.domains, shape, active, unknown=(s["trust"] == "unknown" and not s["cut"])))
+        g.append(glyph(cx, cy, NODE_W, n.domains, shape, active, unknown=(s["trust"] == "unknown" and not s["cut"]), fill=MAP_BG))
         if s["cut"] == "quarantined":
-            g.append(f'<circle cx="{cx + NODE_W * 0.5:.1f}" cy="{cy + NODE_W * 0.45:.1f}" r="11" fill="{BG}" stroke="{TEXT}" stroke-width="2.5"/>'
+            g.append(f'<circle cx="{cx + NODE_W * 0.5:.1f}" cy="{cy + NODE_W * 0.45:.1f}" r="11" fill="{MAP_BG}" stroke="{TEXT}" stroke-width="2.5"/>'
                      f'<text x="{cx + NODE_W * 0.5:.1f}" y="{cy + NODE_W * 0.45 + 7:.1f}" font-size="18" font-weight="bold" fill="{TEXT}" text-anchor="middle">Q</text>')
         if attack:
             tx, ty = cx + NODE_W * 0.55, cy - NODE_W * 0.6
-            g.append(f'<polygon points="{tx:.1f},{ty - 15:.1f} {tx + 14:.1f},{ty + 11:.1f} {tx - 14:.1f},{ty + 11:.1f}" fill="{ATTACK_COLOR}" stroke="{BG}" stroke-width="2"/>'
-                     f'<text x="{tx:.1f}" y="{ty + 8:.1f}" font-size="17" font-weight="bold" fill="{BG}" text-anchor="middle">!</text>')
+            g.append(f'<polygon points="{tx:.1f},{ty - 15:.1f} {tx + 14:.1f},{ty + 11:.1f} {tx - 14:.1f},{ty + 11:.1f}" fill="{ATTACK_COLOR}" stroke="{MAP_BG}" stroke-width="2"/>'
+                     f'<text x="{tx:.1f}" y="{ty + 8:.1f}" font-size="17" font-weight="bold" fill="{MAP_BG}" text-anchor="middle">!</text>')
         g.append("</g>")
         out.append("".join(g))
         if selected == n.node_id or attack or s["cut"] or s["trust"] in ("degraded", "untrusted"):      # names only where something is going on
             ly = cy + NODE_W * 0.5 + 30
-            labels.append(f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="{BG}" stroke="{BG}" '
+            labels.append(f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="{MAP_BG}" stroke="{MAP_BG}" '
                           f'stroke-width="7" stroke-linejoin="round">{esc(n.node_id)}</text>'
                           f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="{TEXT}">{esc(n.node_id)}</text>')
     out.extend(labels)
@@ -259,7 +259,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
                 x1, x2 = x1 + (17 if x2 >= x1 else -17), x2 - (19 if x2 >= x1 else -19)       # stop at the edge of the glyphs
                 dx = max(30.0, abs(x2 - x1) / 2)
                 faded = bool(chain) and not (c in chain and e["event_id"] in chain)
-                out.append(f'<path d="M{x1},{y1} C{x1 + dx:.1f},{y1} {x2 - dx:.1f},{y2} {x2},{y2}" fill="none" stroke="{"#00D4FF" if chain and not faded else "#5B6B85"}" '
+                out.append(f'<path d="M{x1},{y1} C{x1 + dx:.1f},{y1} {x2 - dx:.1f},{y2} {x2},{y2}" fill="none" stroke="{TEXT if chain and not faded else "#5B6B85"}" '
                            f'stroke-width="{3.5 if chain and not faded else 2.5}" marker-end="url(#tl-arrow)" opacity="{0.15 if faded else 0.9}"/>')
 
     hits = []
@@ -291,7 +291,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
         lane = LANE_OF_TYPE[t]
         color = LANES[lane]["color"]
         sel = e["event_id"] == selected
-        halo = f'<circle cx="{x}" cy="{y}" r="24" fill="none" stroke="#00D4FF" stroke-width="4"/>' if sel else ""
+        halo = f'<circle cx="{x}" cy="{y}" r="24" fill="none" stroke="{TEXT}" stroke-width="4"/>' if sel else ""
         if e["event_id"] in clustered:
             # one glyph for the whole group, drawn once (for the first member)
             members = next(v for v in clusters.values() if e in v)

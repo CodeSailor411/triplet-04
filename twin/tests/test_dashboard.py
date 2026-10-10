@@ -1,6 +1,7 @@
 """The dashboard: reading logs, drawing, and the page itself (in NiceGUI's simulated browser, no real browser needed)."""
 import asyncio
 import json
+import re
 import os
 import xml.etree.ElementTree as ET
 
@@ -10,6 +11,7 @@ from nicegui.testing import user_simulation
 
 from twin.dashboard.events import (LogFollower, build_state, node_status, resolve_causes, short_label, summarize, trust_from_score)
 from twin.dashboard.page import Hub, build_page
+from twin.dashboard.basemap import street_graph
 from twin.dashboard.sample import write_sample
 from twin.dashboard.svg import MIN_GAP, Scene, chain_of, city_scene, display_positions, document, tick_clock, timeline_scene
 from twin.generator import fingerprint, generate
@@ -208,8 +210,8 @@ def test_city_map_is_valid_and_has_every_node(city):
     root = parse(sc)
     nodes = [g for g in root.iter("{http://www.w3.org/2000/svg}g") if g.get("data-node")]
     assert len(nodes) == 38 == len(sc.hits) and {g.get("data-node") for g in nodes} == {n.node_id for n in topo.nodes}
-    assert sc.content.count("<polygon points=\"46,24 35,43.05 13,43.05 2,24 13,4.95 35,4.95\" fill=\"#0A0E17\"") == 38      # one spec hexagon per node
-    assert sc.content.count("<polyline") >= 2 * len(layout.roads)                                                          # every road of the layout is drawn
+    assert sc.content.count("<polygon points=\"46,24 35,43.05 13,43.05 2,24 13,4.95 35,4.95\" fill=\"#04060B\"") == 38      # one spec hexagon per node, filled with the map colour
+    assert sc.content.count("<path d=\"M") >= 2 * (len(topo.nodes) - 1)                                                    # at least pale + dark line for each of the 37 roads that link 38 nodes
 
 
 def test_neighbour_links_only_on_request_but_always_for_the_selected_node(city):
@@ -414,18 +416,23 @@ async def test_clicking_a_table_row_shows_the_event_and_where_it_came_from(city,
         await user.should_see("Came from: guardian verdict, brain decision")
 
 
+def stat_value(user, key: str) -> str:
+    """The number shown in one of the stat blocks of the top bar (they are marked `stat-<key>`)."""
+    return next(iter(user.find(marker=f"stat-{key}").elements)).text
+
+
 async def test_page_follows_a_log_that_is_still_growing(city, tmp_path):
     f = tmp_path / "run-42-001.twin.jsonl"
     write_lines(f, [ev("twin", 1, 1, "scenario", {"phase": "run_started"})])
     hub = make_hub(city, [tmp_path])
     async with user_simulation(root=lambda: build_page(hub)) as user:
         await user.open("/")
-        await user.should_see("1 events")
+        assert stat_value(user, "events") == "1"
         with open(f, "a") as h:
             h.write(json.dumps(ev("brain", 1, 2, "escalation", {"reason": "Please check the pump"})) + "\n")
         await asyncio.sleep(0.8)                                                    # the page looks again every 0.2 s
         await user.should_see("Please check the pump")
-        await user.should_see("2 events")
+        assert stat_value(user, "events") == "2"
 
 
 async def test_a_log_from_another_city_gets_a_warning(city, tmp_path):
@@ -538,24 +545,44 @@ def test_hiding_a_layer_greys_its_nodes_only(city):
     assert water_off.content.count(f'stroke="{SWITCHED_OFF}" stroke-width="3"') == water_only
 
 
-def test_the_made_up_map_is_deterministic_valid_and_follows_the_layout(city):
+def test_the_map_is_one_connected_black_and_white_city(city):
     _, topo, layout = city
-    a, b = basemap(layout, 1920, 1080, 42), basemap(layout, 1920, 1080, 42)
-    assert a == b and a != basemap(layout, 1920, 1080, 7)
-    root = svg_ok(a)
-    assert a.count("<polyline") >= 2 * len(layout.roads)
-    for r in layout.roads:                                                                           # the real road coordinates are in the picture
-        assert " ".join(f"{x:g},{y:g}" for x, y in r.points) in a
-    assert all(z.name.upper() in a for z in layout.zones) and root is not None
+    pts = [display_positions(topo)[n.node_id] for n in topo.nodes]
+    a = basemap(pts, 1920, 1080)
+    assert a == basemap(pts, 1920, 1080)                                                             # no randomness: same positions, same picture
+    assert svg_ok(a) is not None
+    main, side = street_graph(pts)
+    parent = list(range(len(pts)))
+
+    def find(x):
+        while parent[x] != x:
+            x = parent[x]
+        return x
+    for i, j in main + side:
+        parent[find(i)] = find(j)
+    assert len({find(i) for i in range(len(pts))}) == 1                                              # every node is linked to every other: ONE city, not districts
+    assert len(main) == len(pts) - 1                                                                 # the main roads are exactly the shortest way to link everything
+    assert not set(main) & set(side)
+    assert a.count("<path") >= 1 + 2 * (len(main) + len(side))                                       # outline + pale line + dark line for every road
+    assert not any(z.name.upper() in a or z.name in a for z in layout.zones)                         # no district names on the map
+    assert "<text" not in a and "<ellipse" not in a                                                  # no labels, no park blobs
+    colours = set(re.findall(r'(?:fill|stroke)="(#[0-9A-Fa-f]{6})"', a))
+    assert colours <= {"#04060B", "#E6ECF5"}                                                         # the map has only the dark and the white, nothing else
 
 
-def test_a_zone_name_with_markup_cannot_break_the_map(city):
-    _, topo, layout = city
-    evil = layout.model_copy(deep=True)
-    evil.zones[0].name = '</text><script>alert(1)</script>'
-    out = basemap(evil, 1920, 1080)
-    svg_ok(out)
-    assert "<script>" not in out
+def test_every_node_sits_on_a_road_end_and_roads_do_not_cross_in_the_middle_of_nowhere(city):
+    _, topo, _ = city
+    pts = [display_positions(topo)[n.node_id] for n in topo.nodes]
+    main, side = street_graph(pts)
+    used = {i for e in main + side for i in e}
+    assert used == set(range(len(pts)))                                                              # every node has at least one road
+
+
+def test_street_graph_on_a_tiny_example():
+    pts = [(0.0, 0.0), (100.0, 0.0), (200.0, 0.0), (100.0, 100.0)]
+    main, side = street_graph(pts)
+    assert len(main) == 3 and set(main) <= {(0, 1), (1, 2), (1, 3), (0, 3), (2, 3)}
+    assert (0, 2) not in main + side                                                                 # node 1 sits on the line between 0 and 2, so no street skips it
 
 
 def test_the_legend_is_drawn_with_the_real_node_pictures():

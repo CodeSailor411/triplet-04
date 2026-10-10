@@ -25,8 +25,9 @@ def side_colors(domains: list[str], active: set[str] | None = None) -> list[str]
 
 
 def glyph(cx: float, cy: float, width: float, domains: list[str], state: str = "trusted", active: set[str] | None = None,
-          unknown: bool = False) -> str:
-    """One node. `width` = hexagon width on the canvas. `active` = domains whose layer is on (None = all)."""
+          unknown: bool = False, fill: str = BG) -> str:
+    """One node. `width` = hexagon width on the canvas. `active` = domains whose layer is on (None = all). `fill` = the colour inside the
+    hexagon (it must match whatever the node sits on: the map is darker than the page)."""
     s = width / HEX_WIDTH
     colors = side_colors(domains, active)
     dim = colors is None
@@ -40,7 +41,7 @@ def glyph(cx: float, cy: float, width: float, domains: list[str], state: str = "
     if not dim:                                                       # halo: two faint hexagon-shaped glows
         for k, op in ((1.4, 0.06), (1.2, 0.14)):
             g.append(f'<polygon points="{_PTS}" fill="{main}" fill-opacity="{op}" transform="translate(24 24) scale({k}) translate(-24 -24)"/>')
-    g.append(f'<polygon points="{_PTS}" fill="{BG}"/>')
+    g.append(f'<polygon points="{_PTS}" fill="{fill}"/>')
     if state == "degraded":                                           # sides 0 (top) and 3 (bottom) are not drawn
         for i in (1, 2, 4, 5):
             (x1, y1), (x2, y2) = SIDES[i]
@@ -57,7 +58,7 @@ def glyph(cx: float, cy: float, width: float, domains: list[str], state: str = "
                  f'<line x1="34" y1="14" x2="14" y2="34" stroke="{x_col}" stroke-width="3" stroke-linecap="round"/>')
     elif state == "isolated":
         g.append(f'<path d="M18 27 V18 A6 6 0 0 1 30 18 V27" fill="none" stroke="{TEXT}" stroke-width="2.5"/>'
-                 f'<rect x="14" y="25" width="20" height="13" rx="2" fill="{BG}" stroke="{TEXT}" stroke-width="2.5"/>'
+                 f'<rect x="14" y="25" width="20" height="13" rx="2" fill="{fill}" stroke="{TEXT}" stroke-width="2.5"/>'
                  f'<circle cx="24" cy="30.5" r="2.2" fill="{TEXT}"/><rect x="23.2" y="31.5" width="1.6" height="4" fill="{TEXT}"/>'
                  f'<path d="M1.5 9.5 V1.5 H9.5" fill="none" stroke="{TEXT}" stroke-width="2"/>'
                  f'<path d="M38.5 1.5 H46.5 V9.5" fill="none" stroke="{TEXT}" stroke-width="2"/>'

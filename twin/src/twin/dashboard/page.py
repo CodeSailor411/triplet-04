@@ -13,8 +13,8 @@ from nicegui import ui
 from ..models import Layout, Topology
 from ..settings import DashboardCfg
 from .events import Event, LogFollower, RunState, as_list, build_state, node_status, summarize
-from .nodes import glyph
-from .style import BG, DIM, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
+from .nodes import HEX, glyph
+from .style import BG, DIM, EDGE, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
 from .svg import Scene, city_scene, timeline_scene
 
 TABLE_ROWS = 400
@@ -77,7 +77,28 @@ def _age(st: RunState) -> tuple[str, bool]:
 
 CSS = f"""
 body, .q-page, .nicegui-content {{ background:{BG} !important; color:{TEXT}; }}
-.q-header {{ background:{PANEL} !important; border-bottom:1px solid {LINE}; }}
+.q-header {{ background:#070A12 !important; border-bottom:1px solid {LINE}; box-shadow:none !important; }}
+.tw-layer {{ color:{TEXT} !important; border-radius:6px; padding:0 10px; font-size:12px; letter-spacing:.03em; }}
+.tw-layer.off {{ color:{DIM} !important; opacity:.6; }}
+.tw-bar {{ height:60px; padding:0 22px; gap:18px; flex-wrap:nowrap; }}
+.tw-brand-name {{ text-transform:uppercase; font-size:13px; font-weight:700; letter-spacing:.22em; line-height:1.1; color:{TEXT}; }}
+.tw-brand-sub {{ font-size:11px; letter-spacing:.06em; color:{DIM}; line-height:1.2; }}
+.tw-divider {{ width:1px; height:28px; background:{LINE}; }}
+.tw-cap {{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:{DIM}; line-height:1; }}
+.tw-run .q-field__control {{ height:34px; min-height:34px; background:#0F1522; border:1px solid {LINE}; border-radius:8px; padding:0 10px; }}
+.tw-run .q-field__native, .tw-run .q-field__append {{ min-height:32px; font-size:13px; }}
+.tw-run .q-field__control:before, .tw-run .q-field__control:after {{ display:none; }}
+.tw-pill {{ display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 12px; border-radius:999px; border:1px solid {LINE};
+            background:#0F1522; color:{DIM}; font-size:12px; letter-spacing:.04em; white-space:nowrap; }}
+.tw-dot {{ width:8px; height:8px; border-radius:50%; background:{DIM}; }}
+.tw-pill.live {{ color:{TEXT}; border-color:#1F5A45; }}
+.tw-pill.live .tw-dot {{ background:#34D399; box-shadow:0 0 8px #34D399; animation:tw-pulse 1.6s ease-in-out infinite; }}
+@keyframes tw-pulse {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:.35; }} }}
+.tw-sample {{ height:28px; padding:0 12px; border-radius:999px; border:1px solid #FBBF24; color:#FBBF24; font-size:11px; letter-spacing:.14em;
+              display:inline-flex; align-items:center; white-space:nowrap; }}
+.tw-stat {{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; min-width:54px; }}
+.tw-stat-val {{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:16px; font-weight:600; line-height:1; color:{TEXT}; }}
+.tw-stat-val.bad {{ color:#FF5A5F; }}
 .q-card {{ background:{PANEL} !important; color:{TEXT}; border:1px solid {LINE}; box-shadow:none !important; border-radius:10px; }}
 .text-dim {{ color:{DIM}; }}
 .warnbar {{ background:#3A2A0B; color:#FBBF24; }}
@@ -113,7 +134,7 @@ def _dot(color: str, ring: bool = False, dashed: bool = False) -> None:
 def build_page(hub: Hub) -> None:
     ui.dark_mode(True)
     ui.add_css(CSS)
-    ui.colors(primary="#00D4FF")
+    ui.colors(primary=EDGE)                      # the page chrome is black and white. Cyan belongs to Water only
     S: dict[str, Any] = {"run": None, "node": None, "event": None, "window": hub.cfg.window_ticks, "follow": True, "end": None,
                          "edges": False, "attacks": True, "seen": None, "hidden": set()}
     scenes: dict[str, Scene] = {}
@@ -152,9 +173,14 @@ def build_page(hub: Hub) -> None:
     step_chips: list[Any] = []
 
     def style_layer(dom: str) -> None:
+        """White text always (dim grey when the layer is off). The layer's colour stays on the outline and a faint fill."""
         on = dom not in S["hidden"]
         col = DOMAIN_COLORS[dom]
-        layer_btns[dom].style(f"border:1px solid {col if on else LINE};color:{col if on else DIM};opacity:{1 if on else .55};padding:0 10px")
+        if on:
+            layer_btns[dom].classes(remove="off")
+        else:
+            layer_btns[dom].classes(add="off")
+        layer_btns[dom].style(f"border:1px solid {col if on else LINE}; background:{col + '1A' if on else 'transparent'}")
 
     def toggle_layer(dom: str) -> None:
         S["hidden"] ^= {dom}
@@ -176,9 +202,8 @@ def build_page(hub: Hub) -> None:
         if st is None:
             warn.set_text("")
             warn.set_visibility(False)
-            status_chip.set_text("no data")
-            tick_label.set_text("")
-            counts_label.set_text("")
+            set_status("no data", False)
+            set_stats(None)
             sample_chip.set_visibility(False)
             return
         mismatch = hub.city_mismatch(st)
@@ -186,12 +211,8 @@ def build_page(hub: Hub) -> None:
         warn.set_visibility(bool(mismatch))
         sample_chip.set_visibility(_is_sample(st))
         text, live = _age(st)
-        status_chip.set_text(text)
-        status_chip.props(f"icon={'fiber_manual_record' if live else 'pause_circle'} color={'green' if live else 'grey-7'} text-color=white")
-        tick_label.set_text(f"tick {st.tick}  {st.time[11:19] if len(st.time) >= 19 else ''}")
-        cut = sum(1 for d in st.devices.values() if d.cut)
-        bad = sum(1 for d in st.devices.values() if d.trust == "untrusted")
-        counts_label.set_text(f"{len(st.events)} events · {bad} untrusted · {cut} cut off · {len(st.escalations)} for a person")
+        set_status(text, live)
+        set_stats(st)
         per_lane = [0] * len(LANES)
         for e in st.events:
             k = LANE_OF_TYPE.get(e["event_type"])
@@ -279,7 +300,7 @@ def build_page(hub: Hub) -> None:
                     ui.label(f"tick {e['tick']} · {e['layer']} · {summarize(e)}").classes("text-xs cursor-pointer").on("click", lambda _, i=e["event_id"]: select_event(i))
 
     def event_card(st: RunState, e: Event) -> None:
-        with ui.card().classes("w-full border-l-4 border-sky-500"):
+        with ui.card().classes("w-full border-l-4 border-white"):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label(f"{e['layer']} · {e['event_type']}").classes("text-lg font-bold")
                 ui.button(icon="close", on_click=lambda: (S.update(event=None), redraw(force=True))).props("flat dense round")
@@ -291,15 +312,53 @@ def build_page(hub: Hub) -> None:
             ui.code(json.dumps(e.get("data"), indent=2, ensure_ascii=False)[:2500], language="json").classes("w-full text-xs")
 
     # -------------------------------------------------------------- header
-    with ui.header().classes("items-center text-white gap-4 px-4 py-2"):
-        ui.label("Triplet 04 · Twin · city and timeline").classes("text-lg font-bold")
-        run_select = ui.select([], label="Run", on_change=lambda e: (S.update(run=e.value, node=None, event=None), redraw(force=True))) \
-            .props("dense outlined dark options-dark").classes("w-48")
-        status_chip = ui.chip("", icon="radio_button_unchecked").props("dense")
-        sample_chip = ui.chip("SAMPLE DATA: the Guardian and Brain events are made up", color="amber").props("dense text-color=black")
+    def set_status(text: str, live: bool) -> None:
+        status_text.set_text(text)
+        if live:
+            status_pill.classes(add="live")
+        else:
+            status_pill.classes(remove="live")
+
+    def set_stats(st: RunState | None) -> None:
+        if st is None:
+            vals = {"tick": "-", "time": "-", "events": "-", "untrusted": "-", "cut": "-", "person": "-"}
+        else:
+            vals = {"tick": str(st.tick), "time": st.time[11:19] if len(st.time) >= 19 else "-", "events": str(len(st.events)),
+                    "untrusted": str(sum(1 for d in st.devices.values() if d.trust == "untrusted")),
+                    "cut": str(sum(1 for d in st.devices.values() if d.cut)), "person": str(len(st.escalations))}
+        for key, label in stat_vals.items():
+            label.set_text(vals[key])
+            bad = key in ("untrusted", "person") and vals[key] not in ("-", "0")
+            if bad:
+                label.classes(add="bad")
+            else:
+                label.classes(remove="bad")
+
+    mark = ("<svg viewBox='0 0 48 48' width='34' height='34'><polygon points='" + " ".join(f"{x:g},{y:g}" for x, y in HEX)
+            + f"' fill='none' stroke='{EDGE}' stroke-width='3' stroke-linejoin='round'/><circle cx='24' cy='24' r='4.5' fill='{EDGE}'/></svg>")
+    stat_vals: dict[str, Any] = {}
+    with ui.header().classes("items-center tw-bar"):
+        ui.html(mark, sanitize=False).classes("flex items-center")
+        with ui.column().classes("gap-1"):
+            ui.label("Triplet 04").classes("tw-brand-name")
+            ui.label("Twin · city map and timeline").classes("tw-brand-sub")
+        ui.element("div").classes("tw-divider")
+        with ui.column().classes("gap-1"):
+            ui.label("Run").classes("tw-cap")
+            run_select = ui.select([], on_change=lambda e: (S.update(run=e.value, node=None, event=None), redraw(force=True))) \
+                .props("dense borderless dark options-dark").classes("w-44 tw-run")
+        with ui.element("div").classes("tw-pill") as status_pill:
+            ui.element("div").classes("tw-dot")
+            status_text = ui.label("")
+        with ui.element("div").classes("tw-sample") as sample_chip:
+            ui.label("SAMPLE DATA")
+            ui.tooltip("The Twin events are real. The Guardian and Brain events are made up (each one is marked sample).")
         ui.space()
-        tick_label = ui.label("").classes("font-mono")
-        counts_label = ui.label("").classes("text-sm opacity-80")
+        for key, title in (("tick", "Tick"), ("time", "Sim time"), ("events", "Events"), ("untrusted", "Untrusted"),
+                           ("cut", "Cut off"), ("person", "Needs a person")):
+            with ui.element("div").classes("tw-stat"):
+                ui.label(title).classes("tw-cap")
+                stat_vals[key] = ui.label("-").classes("tw-stat-val").mark(f"stat-{key}")
 
     warn = ui.label("").classes("w-full warnbar px-4 py-2 text-sm")
     empty = ui.column().classes("w-full items-center p-8")
@@ -323,7 +382,7 @@ def build_page(hub: Hub) -> None:
                         ui.label("Layers").classes("text-dim text-sm")
                         doms = [d for d in DOMAIN_COLORS if any(d in n.domains for n in hub.topology.nodes)]
                         for dom in doms:
-                            layer_btns[dom] = ui.button(DOMAIN_NAMES[dom], on_click=lambda _, d=dom: toggle_layer(d)).props("flat dense no-caps size=sm")
+                            layer_btns[dom] = ui.button(DOMAIN_NAMES[dom], on_click=lambda _, d=dom: toggle_layer(d)).props("flat dense no-caps size=sm").classes("tw-layer")
                             style_layer(dom)
                     ui.space()
                     ui.switch("Connections", value=False, on_change=lambda e: (S.update(edges=e.value), redraw(force=True)))
