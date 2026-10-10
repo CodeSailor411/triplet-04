@@ -12,18 +12,19 @@ from typing import Any
 
 from ..models import Layout, Node, Topology
 from .events import Event, RunState, node_status, short_label, summarize
-from .style import (ATTACK_COLOR, DOMAIN_COLORS, ISOLATED_COLOR, LANE_OF_TYPE, LANES, QUARANTINE_COLOR, RUN_STRIP_TYPES,
-                    TRUST_COLORS)
+from .basemap import basemap
+from .nodes import glyph
+from .style import (ATTACK_COLOR, BG, DIM, LAND, LANE_OF_TYPE, LANES, LINE, PANEL, PANEL_2, RUN_STRIP_TYPES, TEXT)
 
-NODE_R = 22
-MIN_GAP = 72            # nodes closer than this (in map pixels) are pushed apart ON SCREEN ONLY so they do not draw on top of each other
+NODE_W = 58             # width of a node on the 1920-pixel-wide map (about 32 px on a normal screen, the spec's minimum is 24)
+MIN_GAP = 87            # 1.5 x the node width (spec section 5). Nodes closer than this are pushed apart ON SCREEN ONLY, the city data is never changed
 
 
 def display_positions(topology: Topology) -> dict[str, tuple[float, float]]:
     """Where to draw each node. The city data is never changed. A few nodes sit very close, so those are pushed apart a little."""
     pos = {n.node_id: [n.x, n.y] for n in topology.nodes}
     ids = list(pos)
-    for _ in range(20):
+    for _ in range(60):
         moved = False
         for i, a in enumerate(ids):
             for b in ids[i + 1:]:
@@ -65,73 +66,60 @@ class Scene:
 
 
 # ====================================================================== city map
-def _node_shape(n: Node, r: float, cx: float, cy: float) -> str:
-    colors = [DOMAIN_COLORS.get(d, "#94A3B8") for d in n.domains]
-    stroke = 'stroke="#FFFFFF" stroke-width="3"'
-    dot = f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r * 0.42:.1f}" fill="{colors[1]}" stroke="#FFFFFF" stroke-width="2.5"/>' if len(colors) > 1 else ""
-    if n.role == "dispatch_center":                                             # hexagon
-        pts = " ".join(f"{cx + r * 1.12 * math.cos(math.radians(60 * i)):.1f},{cy + r * 1.12 * math.sin(math.radians(60 * i)):.1f}" for i in range(6))
-        return f'<polygon points="{pts}" fill="{colors[0]}" {stroke}/>{dot}'
-    if n.role == "call_place":                                                  # rounded square
-        s = r * 0.92
-        return f'<rect x="{cx - s:.1f}" y="{cy - s:.1f}" width="{2 * s:.1f}" height="{2 * s:.1f}" rx="9" fill="{colors[0]}" {stroke}/>{dot}'
-    if len(colors) > 1:                                                         # shared node: two halves, one per domain
-        return (f'<path d="M{cx:.1f},{cy - r:.1f} A{r},{r} 0 0 0 {cx:.1f},{cy + r:.1f} Z" fill="{colors[0]}"/>'
-                f'<path d="M{cx:.1f},{cy - r:.1f} A{r},{r} 0 0 1 {cx:.1f},{cy + r:.1f} Z" fill="{colors[1]}"/>'
-                f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="none" {stroke}/>')
-    return f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r}" fill="{colors[0]}" {stroke}/>'
+def trust_state(s: dict[str, Any]) -> str:
+    """Which of the four node shapes: isolated (also for quarantined and partly cut nodes), untrusted, degraded, trusted."""
+    if s["cut"]:
+        return "isolated"
+    return s["trust"] if s["trust"] in ("degraded", "untrusted") else "trusted"
 
 
 def city_scene(topology: Topology, layout: Layout, state: RunState, selected: str | None = None,
-               show_edges: bool = False, show_attacks: bool = True) -> Scene:
+               show_edges: bool = False, show_attacks: bool = True, hidden: set[str] | None = None) -> Scene:
+    """The map. `hidden` = domains whose layer is switched off (their nodes fade to grey, an isolated node keeps its lock)."""
     w, h = topology.canvas.width, topology.canvas.height
-    out = [f'<rect width="{w}" height="{h}" fill="#F8FAFC"/>']
-    for z in layout.zones:
-        out.append(f'<rect x="{z.x:g}" y="{z.y:g}" width="{z.w:g}" height="{z.h:g}" rx="22" fill="#EEF2F7" stroke="#CBD5E1" stroke-width="3"/>'
-                   f'<text x="{z.x + 24:g}" y="{z.y + 44:g}" font-size="32" font-weight="bold" fill="#94A3B8">{esc(z.name.upper())}</text>')
-    widths = {"ring": 26, "main": 18, "secondary": 10}
-    for r in layout.roads:                                                       # a darker line under a lighter one looks like a road
-        pts = " ".join(f"{x:g},{y:g}" for x, y in r.points)
-        wd = widths.get(r.kind, 10)
-        out.append(f'<polyline points="{pts}" fill="none" stroke="#CBD5E1" stroke-width="{wd + 6}" stroke-linecap="round" stroke-linejoin="round"/>'
-                   f'<polyline points="{pts}" fill="none" stroke="#FFFFFF" stroke-width="{wd}" stroke-linecap="round" stroke-linejoin="round"/>')
+    out = [basemap(layout, w, h, layout.seed)]
+    all_domains = {d for n in topology.nodes for d in n.domains}
+    active = all_domains - (hidden or set())
     by_id = {n.node_id: n for n in topology.nodes}
     xy = display_positions(topology)
-    for a, b in topology.edges:                                                  # neighbour links: all of them on request, always for the selected node
+    for a, b in topology.edges:                                                  # connection lines: all on request, always for the selected node
         mine = selected in (a, b)
         if (show_edges or mine) and a in by_id and b in by_id:
-            out.append(f'<line x1="{xy[a][0]:.1f}" y1="{xy[a][1]:.1f}" x2="{xy[b][0]:.1f}" y2="{xy[b][1]:.1f}" '
-                       f'stroke="{"#0EA5E9" if mine else "#94A3B8"}" stroke-width="{5 if mine else 2}" stroke-dasharray="{"" if mine else "6 9"}" '
-                       f'opacity="{0.9 if mine else 0.45}"/>')
+            live = any(d in active for d in by_id[a].domains) and any(d in active for d in by_id[b].domains)
+            out.append(f'<line x1="{xy[a][0]:.1f}" y1="{xy[a][1]:.1f}" x2="{xy[b][0]:.1f}" y2="{xy[b][1]:.1f}" stroke="{TEXT if mine else LAND}" '
+                       f'stroke-width="{4 if mine else 2}" opacity="{0.9 if mine else (0.32 if live else 0.1)}"/>')
     hits = []
+    labels = []
     for n in topology.nodes:
         s = node_status(n, state)
-        (cx, cy), r = xy[n.node_id], NODE_R
+        cx, cy = xy[n.node_id]
         hits.append((n.node_id, cx, cy))
+        shape = trust_state(s)
+        attack = bool(s["attack"]) and show_attacks
         g = [f'<g data-node="{esc(n.node_id)}"><title>{esc(n.node_id)} ({esc(n.label)}), {esc(", ".join(n.domains))}, trust: {esc(s["trust"])}'
-             f'{", " + esc(s["cut"]) if s["cut"] else ""}{", ATTACK" if s["attack"] and show_attacks else ""}</title>']
+             f'{", " + esc(s["cut"]) if s["cut"] else ""}{", ATTACK" if attack else ""}</title>']
         if selected == n.node_id:
-            g.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r + 20}" fill="#0EA5E9" fill-opacity="0.18" stroke="#0EA5E9" stroke-width="5"/>')
-        ring, dash = TRUST_COLORS[s["trust"]], ""
-        if s["cut"] in ("isolated", "partly"):
-            ring, dash = ISOLATED_COLOR, ' stroke-dasharray="9 7"'
-        elif s["cut"] == "quarantined":
-            ring, dash = QUARANTINE_COLOR, ' stroke-dasharray="5 5"'
-        g.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r + 9}" fill="#FFFFFF" fill-opacity="0.85" stroke="{ring}" stroke-width="7"{dash}/>')
-        g.append(_node_shape(n, r, cx, cy))
-        if s["cut"] == "isolated":
-            g.append(f'<line x1="{cx - r - 6:.1f}" y1="{cy + r + 6:.1f}" x2="{cx + r + 6:.1f}" y2="{cy - r - 6:.1f}" stroke="{ISOLATED_COLOR}" stroke-width="6" stroke-linecap="round"/>')
+            g.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{NODE_W * 0.82:.1f}" fill="{TEXT}" fill-opacity="0.08" stroke="{TEXT}" stroke-width="3" stroke-dasharray="10 8"/>')
+        if attack:                                                               # a pulsing ring around a node that is being attacked
+            g.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{NODE_W * 0.7:.1f}" fill="none" stroke="{ATTACK_COLOR}" stroke-width="4">'
+                     f'<animate attributeName="r" values="{NODE_W * 0.62:.0f};{NODE_W * 0.95:.0f}" dur="1.6s" repeatCount="indefinite"/>'
+                     f'<animate attributeName="opacity" values="0.9;0" dur="1.6s" repeatCount="indefinite"/></circle>')
+        g.append(glyph(cx, cy, NODE_W, n.domains, shape, active, unknown=(s["trust"] == "unknown" and not s["cut"])))
         if s["cut"] == "quarantined":
-            g.append(f'<text x="{cx + r + 4:.1f}" y="{cy + r + 8:.1f}" font-size="22" font-weight="bold" fill="{QUARANTINE_COLOR}">Q</text>')
-        if s["attack"] and show_attacks:
-            tx, ty = cx + r + 8, cy - r - 8
-            g.append(f'<polygon points="{tx:.1f},{ty - 16:.1f} {tx + 15:.1f},{ty + 11:.1f} {tx - 15:.1f},{ty + 11:.1f}" fill="{ATTACK_COLOR}" stroke="#FFFFFF" stroke-width="2"/>'
-                     f'<text x="{tx:.1f}" y="{ty + 8:.1f}" font-size="18" font-weight="bold" fill="#FFFFFF" text-anchor="middle">!</text>')
-        ly = cy + r + 38
-        g.append(f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="#F8FAFC" stroke="#F8FAFC" '
-                 f'stroke-width="7" stroke-linejoin="round">{esc(n.node_id)}</text>'
-                 f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="#0F172A">{esc(n.node_id)}</text></g>')
+            g.append(f'<circle cx="{cx + NODE_W * 0.5:.1f}" cy="{cy + NODE_W * 0.45:.1f}" r="11" fill="{BG}" stroke="{TEXT}" stroke-width="2.5"/>'
+                     f'<text x="{cx + NODE_W * 0.5:.1f}" y="{cy + NODE_W * 0.45 + 7:.1f}" font-size="18" font-weight="bold" fill="{TEXT}" text-anchor="middle">Q</text>')
+        if attack:
+            tx, ty = cx + NODE_W * 0.55, cy - NODE_W * 0.6
+            g.append(f'<polygon points="{tx:.1f},{ty - 15:.1f} {tx + 14:.1f},{ty + 11:.1f} {tx - 14:.1f},{ty + 11:.1f}" fill="{ATTACK_COLOR}" stroke="{BG}" stroke-width="2"/>'
+                     f'<text x="{tx:.1f}" y="{ty + 8:.1f}" font-size="17" font-weight="bold" fill="{BG}" text-anchor="middle">!</text>')
+        g.append("</g>")
         out.append("".join(g))
+        if selected == n.node_id or attack or s["cut"] or s["trust"] in ("degraded", "untrusted"):      # names only where something is going on
+            ly = cy + NODE_W * 0.5 + 30
+            labels.append(f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="{BG}" stroke="{BG}" '
+                          f'stroke-width="7" stroke-linejoin="round">{esc(n.node_id)}</text>'
+                          f'<text x="{cx:.1f}" y="{ly:.1f}" font-size="24" font-weight="bold" text-anchor="middle" fill="{TEXT}">{esc(n.node_id)}</text>')
+    out.extend(labels)
     return Scene("".join(out), w, h, hits)
 
 
@@ -181,18 +169,18 @@ def _glyph(e: Event, x: float, y: float, color: str) -> str:
     t, d = e["event_type"], e.get("data") if isinstance(e.get("data"), dict) else {}
     if t == "containment":
         ok = d.get("status") == "applied"
-        return f'<polygon points="{x},{y - 15} {x + 15},{y} {x},{y + 15} {x - 15},{y}" fill="{color if ok else "#FEE2E2"}" stroke="{color if ok else "#DC2626"}" stroke-width="3"/>'
+        return f'<polygon points="{x},{y - 15} {x + 15},{y} {x},{y + 15} {x - 15},{y}" fill="{color if ok else "#3B1219"}" stroke="{color if ok else "#FF5A5F"}" stroke-width="3"/>'
     if t == "escalation":
-        return (f'<circle cx="{x}" cy="{y}" r="16" fill="#DC2626" stroke="#FFFFFF" stroke-width="2"/>'
-                f'<text x="{x}" y="{y + 7}" font-size="22" font-weight="bold" fill="#FFFFFF" text-anchor="middle">!</text>')
+        return (f'<circle cx="{x}" cy="{y}" r="16" fill="#FF5A5F" stroke="#0A0E17" stroke-width="2"/>'
+                f'<text x="{x}" y="{y + 7}" font-size="22" font-weight="bold" fill="#0A0E17" text-anchor="middle">!</text>')
     if t == "action":
         ok = d.get("status") == "committed"
-        return f'<circle cx="{x}" cy="{y}" r="13" fill="{color if ok else "#FEE2E2"}" stroke="{color if ok else "#DC2626"}" stroke-width="3.5"/>'
+        return f'<circle cx="{x}" cy="{y}" r="13" fill="{color if ok else "#3B1219"}" stroke="{color if ok else "#FF5A5F"}" stroke-width="3.5"/>'
     if t == "decision":
-        return f'<rect x="{x - 13}" y="{y - 13}" width="26" height="26" rx="6" fill="{color}" stroke="#FFFFFF" stroke-width="2"/>'
+        return f'<rect x="{x - 13}" y="{y - 13}" width="26" height="26" rx="6" fill="{color}" stroke="#0A0E17" stroke-width="2"/>'
     if t == "reading":                                             # the Twin only logs readings a fault touched
         return f'<circle cx="{x}" cy="{y}" r="12" fill="{color}" stroke="{ATTACK_COLOR}" stroke-width="3.5"/>'
-    return f'<circle cx="{x}" cy="{y}" r="12" fill="{color}" stroke="#FFFFFF" stroke-width="2"/>'
+    return f'<circle cx="{x}" cy="{y}" r="12" fill="{color}" stroke="#0A0E17" stroke-width="2"/>'
 
 
 def timeline_scene(state: RunState, selected: str | None = None, window_ticks: int = 60, end_tick: int | None = None,
@@ -213,27 +201,27 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
     clock, chain = tick_clock(state.events), chain_of(state, selected)
     dim = lambda eid: bool(chain) and eid not in chain               # noqa: E731
     out = ['<defs><marker id="tl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">'
-           '<path d="M0,0 L10,5 L0,10 z" fill="#64748B"/></marker></defs>', f'<rect width="{width}" height="{height}" fill="#FFFFFF"/>']
+           '<path d="M0,0 L10,5 L0,10 z" fill="#5B6B85"/></marker></defs>', f'<rect width="{width}" height="{height}" fill="{PANEL}"/>']
 
     # lanes: background bands, titles, gridlines
     ys = {}
     for i, lane in enumerate(LANES):
         y0 = top + strip + i * lane_h
         ys[i] = y0 + lane_h / 2
-        out.append(f'<rect x="0" y="{y0}" width="{width}" height="{lane_h}" fill="{"#F8FAFC" if i % 2 == 0 else "#FFFFFF"}"/>'
+        out.append(f'<rect x="0" y="{y0}" width="{width}" height="{lane_h}" fill="{PANEL if i % 2 == 0 else PANEL_2}"/>'
                    f'<rect x="0" y="{y0}" width="10" height="{lane_h}" fill="{lane["color"]}"/>'
-                   f'<text x="28" y="{ys[i] - 4}" font-size="28" font-weight="bold" fill="#0F172A">{esc(lane["title"])}</text>'
-                   f'<text x="28" y="{ys[i] + 26}" font-size="22" fill="#64748B">{esc(lane["who"])}</text>')
+                   f'<text x="28" y="{ys[i] - 4}" font-size="28" font-weight="bold" fill="{TEXT}">{esc(lane["title"])}</text>'
+                   f'<text x="28" y="{ys[i] + 26}" font-size="22" fill="{DIM}">{esc(lane["who"])}</text>')
     step = next((s for s in (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000) if span / s <= 9), 1000)
     first = (start // step) * step
-    out.append(f'<text x="{left - 20}" y="22" font-size="20" fill="#64748B" text-anchor="end">tick</text>')
+    out.append(f'<text x="{left - 20}" y="22" font-size="20" fill="{DIM}" text-anchor="end">tick</text>')
     for t in range(first, end + 1, step):
         if t < start:
             continue
         x = x_of(t)
-        out.append(f'<line x1="{x}" y1="{top - 8}" x2="{x}" y2="{top + strip + lane_h * len(LANES)}" stroke="#E2E8F0" stroke-width="2"/>'
-                   f'<text x="{x}" y="24" font-size="22" font-weight="bold" fill="#334155" text-anchor="middle">{t}</text>'
-                   f'<text x="{x}" y="48" font-size="18" fill="#94A3B8" text-anchor="middle">{esc(clock(t))}</text>')
+        out.append(f'<line x1="{x}" y1="{top - 8}" x2="{x}" y2="{top + strip + lane_h * len(LANES)}" stroke="{LINE}" stroke-width="2"/>'
+                   f'<text x="{x}" y="24" font-size="22" font-weight="bold" fill="#C9D3E3" text-anchor="middle">{t}</text>'
+                   f'<text x="{x}" y="48" font-size="18" fill="#5B6B85" text-anchor="middle">{esc(clock(t))}</text>')
 
     # which events are inside the window
     shown = [e for e in state.events if start <= e["tick"] <= end]
@@ -271,7 +259,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
                 x1, x2 = x1 + (17 if x2 >= x1 else -17), x2 - (19 if x2 >= x1 else -19)       # stop at the edge of the glyphs
                 dx = max(30.0, abs(x2 - x1) / 2)
                 faded = bool(chain) and not (c in chain and e["event_id"] in chain)
-                out.append(f'<path d="M{x1},{y1} C{x1 + dx:.1f},{y1} {x2 - dx:.1f},{y2} {x2},{y2}" fill="none" stroke="{"#0EA5E9" if chain and not faded else "#94A3B8"}" '
+                out.append(f'<path d="M{x1},{y1} C{x1 + dx:.1f},{y1} {x2 - dx:.1f},{y2} {x2},{y2}" fill="none" stroke="{"#00D4FF" if chain and not faded else "#5B6B85"}" '
                            f'stroke-width="{3.5 if chain and not faded else 2.5}" marker-end="url(#tl-arrow)" opacity="{0.15 if faded else 0.9}"/>')
 
     hits = []
@@ -286,7 +274,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
         if t in RUN_STRIP_TYPES:
             d = e.get("data") if isinstance(e.get("data"), dict) else {}
             phase = str(d.get("phase", ""))
-            col = "#DC2626" if t == "partner_failure" else "#334155"
+            col = "#FF5A5F" if t == "partner_failure" else "#C9D3E3"
             right_side = x > width - 330                                      # near the edge the text goes to the left
             tx, anchor = (x - 24, "end") if right_side else (x + 24, "start")
             if phase in ("run_started", "run_ended", "twin_started"):
@@ -303,7 +291,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
         lane = LANE_OF_TYPE[t]
         color = LANES[lane]["color"]
         sel = e["event_id"] == selected
-        halo = f'<circle cx="{x}" cy="{y}" r="24" fill="none" stroke="#0EA5E9" stroke-width="4"/>' if sel else ""
+        halo = f'<circle cx="{x}" cy="{y}" r="24" fill="none" stroke="#00D4FF" stroke-width="4"/>' if sel else ""
         if e["event_id"] in clustered:
             # one glyph for the whole group, drawn once (for the first member)
             members = next(v for v in clusters.values() if e in v)
@@ -317,9 +305,9 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
         label = ""
         row = label_row.get(lane, 0)
         label_row[lane] = 1 - row
-        label = (f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#334155" text-anchor="middle" stroke="#FFFFFF" stroke-width="5" '
+        label = (f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#C9D3E3" text-anchor="middle" stroke="#121826" stroke-width="5" '
                  f'stroke-linejoin="round">{esc(short_label(e))}</text>'
-                 f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#334155" text-anchor="middle">{esc(short_label(e))}</text>')
+                 f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#C9D3E3" text-anchor="middle">{esc(short_label(e))}</text>')
         out.append(f'<g opacity="{opa}">{halo}{_glyph(e, x, y, color)}{label}<title>{esc(title)}</title></g>')
         hits.append((e["event_id"], x, y))
 
@@ -327,7 +315,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
     layers_seen = {e["layer"] for e in state.events}
     for i, who, key in ((1, "guardian", "verdict"), (2, "brain", "decision")):
         if who not in layers_seen:
-            out.append(f'<text x="{left + plot / 2}" y="{ys[i] + 8}" font-size="24" fill="#94A3B8" text-anchor="middle">waiting for {who.title()} events '
+            out.append(f'<text x="{left + plot / 2}" y="{ys[i] + 8}" font-size="24" fill="#5B6B85" text-anchor="middle">waiting for {who.title()} events '
                        f'(no {key} in this run yet)</text>')
-    out.append(f'<text x="{left - 20}" y="{top + strip / 2 + 7}" font-size="22" fill="#64748B" text-anchor="end">Run</text>')
+    out.append(f'<text x="{left - 20}" y="{top + strip / 2 + 7}" font-size="22" fill="{DIM}" text-anchor="end">Run</text>')
     return Scene("".join(out), width, height, hits)

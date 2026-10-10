@@ -208,21 +208,22 @@ def test_city_map_is_valid_and_has_every_node(city):
     root = parse(sc)
     nodes = [g for g in root.iter("{http://www.w3.org/2000/svg}g") if g.get("data-node")]
     assert len(nodes) == 38 == len(sc.hits) and {g.get("data-node") for g in nodes} == {n.node_id for n in topo.nodes}
-    assert sc.content.count("<rect") >= len(layout.zones) + 1 and sc.content.count("<polyline") == 2 * len(layout.roads)
+    assert sc.content.count("<polygon points=\"46,24 35,43.05 13,43.05 2,24 13,4.95 35,4.95\" fill=\"#0A0E17\"") == 38      # one spec hexagon per node
+    assert sc.content.count("<polyline") >= 2 * len(layout.roads)                                                          # every road of the layout is drawn
 
 
 def test_neighbour_links_only_on_request_but_always_for_the_selected_node(city):
     _, topo, layout = city
     st = state_of(topo, [ev()])
-    dashed = lambda svg: svg.count('stroke-dasharray="6 9"')                       # noqa: E731
+    links = lambda svg: svg.count('stroke-width="2" opacity="0.32"')               # noqa: E731
     off = city_scene(topo, layout, st)
-    assert dashed(off.content) == 0
+    assert links(off.content) == 0
     on = city_scene(topo, layout, st, show_edges=True)
-    assert dashed(on.content) == len(topo.edges)
+    assert links(on.content) == len(topo.edges)
     sel = next(n for n in topo.nodes if n.neighbours)
     mine = sum(1 for a, b in topo.edges if sel.node_id in (a, b))
     s = city_scene(topo, layout, st, selected=sel.node_id)
-    assert s.content.count('stroke="#0EA5E9" stroke-width="5"') >= mine and "fill-opacity=\"0.18\"" in s.content
+    assert s.content.count('stroke-width="4" opacity="0.9"') == mine and 'fill-opacity="0.08"' in s.content
 
 
 def test_nodes_never_draw_on_top_of_each_other_and_the_city_data_is_untouched(city):
@@ -245,12 +246,12 @@ def test_node_pictures_show_trust_cut_off_and_attack(city):
            ev("twin", 4, 2, "containment", {"tool": "quarantine_device", "status": "applied", "changed": ["AIR-04.pm25"]}),
            ev("twin", 5, 2, "scenario", {"phase": "started", "scenario_id": "sc-1", "name": "fake_reading", "faults": [fault]})]
     sc = city_scene(topo, layout, state_of(topo, evs))
-    assert sc.content.count('stroke="#16A34A" stroke-width="7"') == 1               # AIR-01 trusted
-    assert sc.content.count('stroke="#DC2626" stroke-width="7"') == 1               # AIR-02 untrusted
-    assert "ATTACK" in sc.content and sc.content.count('<polygon points') >= 1      # the attack triangle
-    assert 'stroke="#7C3AED" stroke-width="7" stroke-dasharray="5 5"' in sc.content # quarantined
-    assert 'stroke="#475569" stroke-width="7" stroke-dasharray="9 7"' in sc.content # cut off
-    assert "ATTACK" not in city_scene(topo, layout, state_of(topo, evs), show_attacks=False).content
+    assert sc.content.count('<line x1="14" y1="14" x2="34" y2="34"') == 1           # AIR-02 untrusted: the X
+    assert sc.content.count('<rect x="14" y="25" width="20" height="13"') == 2      # AIR-03 isolated and AIR-04 quarantined: the padlock
+    assert sc.content.count(">Q</text>") == 1                                      # only the quarantined one has the Q badge
+    assert "ATTACK" in sc.content and "<animate" in sc.content                      # the attack: title, pulsing ring and triangle
+    quiet = city_scene(topo, layout, state_of(topo, evs), show_attacks=False).content
+    assert "ATTACK" not in quiet and "<animate" not in quiet
 
 
 def test_text_from_logs_can_never_break_out_of_the_svg(city):
@@ -370,7 +371,7 @@ async def test_page_shows_the_sample_story(city, sample_dir):
     async with user_simulation(root=lambda: build_page(hub)) as user:
         await user.open("/")
         for text in ("Triplet 04", "SAMPLE DATA", "run-42-001", "Needs a person", "A person must check the valve", "fake_reading on WAT-01.water_level",
-                     "Partner failures", "no verdict for AIR-02", "All events", "Timeline: reading"):
+                     "Partner failures", "no verdict for AIR-02", "All events", "Timeline"):
             await user.should_see(text)
 
 
@@ -378,7 +379,7 @@ async def test_page_with_no_logs_says_what_it_is_waiting_for(city, tmp_path):
     hub = make_hub(city, [tmp_path / "nothing-here"])
     async with user_simulation(root=lambda: build_page(hub)) as user:
         await user.open("/")
-        await user.should_see("Waiting for run logs")
+        await user.should_see("Waiting for a run")
         await user.should_see("python -m twin.dashboard --sample")
         await user.should_not_see("All events")
 
@@ -466,3 +467,108 @@ def test_the_launcher_builds_the_sample_and_starts_the_app(monkeypatch, tmp_path
     launcher.main(["--sample", "--port", "8123"])
     assert started["port"] == 8123 and started["reload"] is False and started["host"] == "127.0.0.1"
     assert (tmp_path / "run-42-001.twin.jsonl").exists() and (tmp_path / "run-42-001.guardian.jsonl").exists()
+
+
+# ====================================================================== the look (node style spec, dark theme, made-up map)
+from twin.dashboard.basemap import basemap                       # noqa: E402
+from twin.dashboard.nodes import HEX, SIDES, glyph, side_colors  # noqa: E402
+from twin.dashboard.page import legend_svg                       # noqa: E402
+from twin.dashboard.style import DOMAIN_COLORS, SHARED_CORE, SWITCHED_OFF, TEXT  # noqa: E402
+
+SPEC_HEX = "46,24 35,43.05 13,43.05 2,24 13,4.95 35,4.95"
+
+
+def svg_ok(fragment: str) -> ET.Element:
+    return ET.fromstring(f'<svg xmlns="http://www.w3.org/2000/svg">{fragment}</svg>')
+
+
+def test_the_hexagon_is_exactly_the_one_in_the_node_style_spec():
+    assert " ".join(f"{x:g},{y:g}" for x, y in HEX) == SPEC_HEX
+    assert SIDES[0] == ((13, 4.95), (35, 4.95)) and SIDES[3] == ((35, 43.05), (13, 43.05))        # side 0 = top, side 3 = bottom
+    g = glyph(100, 100, 44, ["water"], "trusted")
+    svg_ok(g)
+    assert f'<polygon points="{SPEC_HEX}" fill="none" stroke="{DOMAIN_COLORS["water"]}" stroke-width="3"' in g
+    assert '<circle cx="24" cy="24" r="4"' in g
+
+
+def test_the_four_trust_states_look_different_in_the_right_way():
+    tr, de, un, iso = (glyph(0, 0, 44, ["water"], st) for st in ("trusted", "degraded", "untrusted", "isolated"))
+    assert len({tr, de, un, iso}) == 4
+    assert de.count("<line") == 4 and 'x1="13" y1="4.95" x2="35" y2="4.95"' not in de and 'x1="35" y1="43.05" x2="13" y2="43.05"' not in de   # top and bottom missing
+    assert '<circle cx="24" cy="24" r="4"' in de                                                        # degraded keeps the dot
+    assert 'x1="14" y1="14" x2="34" y2="34"' in un and 'x1="34" y1="14" x2="14" y2="34"' in un and '<circle cx="24" cy="24" r="4"' not in un
+    assert 'd="M18 27 V18 A6 6 0 0 1 30 18 V27"' in iso and '<rect x="14" y="25" width="20" height="13"' in iso     # closed padlock, legs enter the body
+    assert iso.count('stroke-width="2"/>') == 4 and '<circle cx="24" cy="24" r="4"' not in iso          # four corner brackets, no core dot
+
+
+def test_shared_nodes_hand_out_their_sides_in_the_spec_order():
+    a, b, c = (DOMAIN_COLORS[d] for d in ("traffic", "water", "power"))
+    assert side_colors(["traffic"]) == [a] * 6
+    assert side_colors(["water", "traffic"]) == [a, a, a, b, b, b]                       # traffic comes before water in the fixed order
+    assert side_colors(["power", "water", "traffic"]) == [a, a, b, b, c, c]
+    assert side_colors(["traffic", "water"], active={"water"}) == [b] * 6              # a switched-off domain is ignored, never left dark
+    assert side_colors(["traffic"], active={"water"}) is None
+    shared = glyph(0, 0, 44, ["traffic", "water"], "trusted")
+    assert SHARED_CORE in shared and shared.count("<line") == 6 and f'<polygon points="{SPEC_HEX}" fill="none"' not in shared
+
+
+def test_a_switched_off_layer_is_grey_but_an_isolated_node_keeps_its_lock():
+    off = glyph(0, 0, 44, ["water"], "trusted", active={"power"})
+    assert SWITCHED_OFF in off and DOMAIN_COLORS["water"] not in off and "fill-opacity" not in off     # grey, no halo
+    iso = glyph(0, 0, 44, ["water"], "isolated", active={"power"})
+    assert iso.count(f'stroke="{TEXT}"') >= 5                                                       # the lock and brackets stay bright
+
+
+def test_the_map_is_quiet_names_only_where_something_is_going_on(city):
+    _, topo, layout = city
+    calm = city_scene(topo, layout, state_of(topo, [ev()])).content
+    assert "stroke-width=\"7\" stroke-linejoin=\"round\"" not in calm                          # no node-name labels at all
+    bad = [ev("guardian", 1, 1, "verdict", {"device_id": "AIR-02.pm25", "score": 0.1})]
+    loud = city_scene(topo, layout, state_of(topo, bad)).content
+    assert loud.count(">AIR-02</text>") == 2 and loud.count("stroke-width=\"7\" stroke-linejoin=\"round\"") == 1     # one label (a dark outline text plus the bright one)
+
+
+def test_hiding_a_layer_greys_its_nodes_only(city):
+    _, topo, layout = city
+    st = state_of(topo, [ev()])
+    all_on = city_scene(topo, layout, st)
+    water_off = city_scene(topo, layout, st, hidden={"water"})
+    assert SWITCHED_OFF not in all_on.content and SWITCHED_OFF in water_off.content
+    water_only = sum(1 for n in topo.nodes if n.domains == ["water"])
+    assert water_off.content.count(f'stroke="{SWITCHED_OFF}" stroke-width="3"') == water_only
+
+
+def test_the_made_up_map_is_deterministic_valid_and_follows_the_layout(city):
+    _, topo, layout = city
+    a, b = basemap(layout, 1920, 1080, 42), basemap(layout, 1920, 1080, 42)
+    assert a == b and a != basemap(layout, 1920, 1080, 7)
+    root = svg_ok(a)
+    assert a.count("<polyline") >= 2 * len(layout.roads)
+    for r in layout.roads:                                                                           # the real road coordinates are in the picture
+        assert " ".join(f"{x:g},{y:g}" for x, y in r.points) in a
+    assert all(z.name.upper() in a for z in layout.zones) and root is not None
+
+
+def test_a_zone_name_with_markup_cannot_break_the_map(city):
+    _, topo, layout = city
+    evil = layout.model_copy(deep=True)
+    evil.zones[0].name = '</text><script>alert(1)</script>'
+    out = basemap(evil, 1920, 1080)
+    svg_ok(out)
+    assert "<script>" not in out
+
+
+def test_the_legend_is_drawn_with_the_real_node_pictures():
+    root = ET.fromstring(legend_svg())
+    text = ET.tostring(root, encoding="unicode")
+    for word in ("Trusted", "Degraded", "Untrusted", "Isolated", "Shared node", "No verdict yet"):
+        assert word in text
+    assert text.count("polygon") >= 6                                                                # one hexagon per legend entry
+
+
+async def test_page_has_layer_buttons_step_chips_and_still_no_browser_needed(city, sample_dir):
+    hub = make_hub(city, [sample_dir])
+    async with user_simulation(root=lambda: build_page(hub)) as user:
+        await user.open("/")
+        for text in ("Layers", "Water", "Traffic", "Reading ·", "Verdict ·", "Decision ·", "Action ·", "Click a node for details"):
+            await user.should_see(text)
