@@ -1,0 +1,32 @@
+﻿{
+  "scenario_id": "S01",
+  "fixture_only": true,
+  "case_id": "base_case",
+  "assumptions": [
+    "Illustrative congestion readings use the configured percent unit.",
+    "Two distinct consecutive ticks exceed the illustrative threshold.",
+    "The signal-plan action is advertised and permitted by the fixture policy."
+  ],
+  "nodes": [],
+  "actions": [],
+  "batches": [],
+  "policy": {
+    "sensor": "congestion_index",
+    "unit": "percent",
+    "threshold_min": 80.0,
+    "persistence_ticks": 2,
+    "allowed_actions": ["set_signal_plan"],
+    "risk": "R1"
+  },
+  "guardian": {
+    "expected_decision": "approve_exact_action",
+    "token": "generated_in_test_memory"
+  },
+  "twin_outcome": {
+    "expected": "success"
+  },
+  "preview": {},
+  "ai_plan": {
+    "expected": "one_supported_signal_plan"
+  }
+}
