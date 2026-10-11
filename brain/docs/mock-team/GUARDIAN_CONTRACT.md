@@ -1,0 +1,51 @@
+# Brain and Guardian integration contract
+
+11 October 2026. This is the implemented Brain adapter contract for partner review, not confirmation of 9antra's unpublished API. The real Guardian is not in the repository yet.
+
+## Requests and responses
+
+MCP Streamable HTTP, pinned protocol 2026-07-28. Every private call uses the receiving service's Bearer credential. Brain uses a numeric evidence assessment and a separate exact-action authorization.
+
+| Operation | Brain sends | Brain expects after mapping |
+| --- | --- | --- |
+| Capabilities | {} | protocol_version, positive score_scale, thresholds with reading, R1, R2, R3 |
+| Assess evidence | run_id, tick, readings with original IDs, values and units | scores: exactly one {reading_id, score} per requested reading |
+| Authorize action | run_id, tick, time, action, targets, params, risk, source_reading_ids | approved: true and token, or approved: false and an optional code |
+| Containment callback to Brain | notify_containment({notice}) | accepted, duplicate indication when applicable |
+
+time is simulated UTC from Twin, not the computer clock. Scores are finite numbers in the advertised scale, never labels or booleans. A score does not authorize an action. Missing or malformed required fields block the action.
+
+See config/guardian-mapping.example.json. Replace the two placeholder tool names and field paths only after Houssem confirms his schemas. Request mappings rename top-level fields; response paths support nested objects. response_fields are required; optional_response_fields let a refusal omit a token. Use one mapping for approval and refusal. Configure GUARDIAN_SCORE_TOOL, GUARDIAN_TOKEN_TOOL, GUARDIAN_MAPPING_FILE and then GUARDIAN_CONTRACT_CONFIRMED=true. This setting records team confirmation, not a test result.
+
+## Credentials and permissions
+
+| Variable in Brain's ignored .env | Issuer and recipient |
+| --- | --- |
+| BRAIN_TWIN_CALLER_KEY | Elyes supplies to Dali if Twin calls Brain |
+| BRAIN_GUARDIAN_CALLER_KEY | Elyes supplies to Houssem for calls to Brain |
+| BRAIN_SCENARIO_KEY | Elyes supplies to the authorized scenario driver |
+| TWIN_BRAIN_KEY | Dali supplies; must match Twin's TWIN_KEY_CITY_BRAIN |
+| GUARDIAN_BRAIN_KEY | Houssem supplies for Brain calls to Guardian |
+
+Run python scripts/setup_peer_keys.py with Brain's virtual environment to generate only missing/default inbound credentials. Custom keys and the Gemini key are preserved; no secret values are printed. Exchange credentials privately. Do not put keys in this document, release notes, command arguments or Git.
+
+All three authorized callers may evaluate batches and read incidents/decisions. Only Guardian may notify containment. Brain never calls Guardian-only isolation, quarantine, rollback or release operations on Twin.
+
+## Tokens and duplicate execution
+
+Guardian owns the signing private key; Twin receives its public key and verifies the signature. Brain forwards the original token and checks exact action/targets/params, run, issuer/audience, token ID, normalized score and simulated validity. It never signs a real approval.
+
+Current Twin draft fields: iss, aud, jti, run_id, iat, exp, action, targets, params, score. The score is 0..1. Maximum lifetime is 60 simulated seconds. Unsigned mode is an explicit mock option; it is not cryptographic authentication. Ed25519 signatures are supported by Twin and tested using a test Guardian.
+
+The draft uses RFC3339 strings for iat and exp. This is a custom JWS payload, not strict RFC 7519 JWT claims: JWT requires numeric NumericDate values for these fields. Agree custom claims or migrate both peers together; do not change one side silently. References: [JWS compact serialization](https://www.rfc-editor.org/rfc/rfc7515.html#section-3.1), [JWT expiration](https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4), [JWT issued-at](https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.6).
+
+The same run/scenario/normalized command keeps the same idempotency key. Duplicate ticks return their saved result. Lost confirmation remains pending with the original key. A changed command needs a new key and new approval. State is in memory: use a fresh run after restart or reconcile uncertain outcomes first. Logs do not restore execution state.
+
+## Still requiring agreement and joint testing
+
+- Real Guardian discovery, verdicts, tokens, errors and callback wiring.
+- Pushed Guardian verdict stream: not implemented. Current Brain requests assessments.
+- Neighbour-first, later-reading and fresh-verdict retry sequence: not implemented. The mock bounds trust attempts to three per incident kind/location.
+- Total pending deadline and the ten-second reaction target: not verified. Current AI timeout is 60 real seconds.
+- Brain refuses execution if Twin advances during planning. Compatibility tests freeze Twin's clock; continuous-clock AI actuation still needs an agreed freshness/timing design.
+- Traffic needs an agreed congestion metric; Water needs safe topology and an advertised preview. Twin's published mock does not supply both.

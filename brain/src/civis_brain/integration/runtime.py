@@ -283,8 +283,11 @@ class BrainRuntime:
             or not 0 <= cutoff <= scale
         ):
             raise BrainError("TRUST_POLICY_UNAVAILABLE", "Reading trust cut-off is not configured")
-        attempts_key = tuple(sorted(incident.incident_id for incident in incidents))
-        attempt = self.trust_attempts.get(attempts_key, 0)
+        # Detector incident IDs can change every tick; retain limits per kind/location.
+        attempts_keys = {
+            (incident.kind, tuple(sorted(incident.node_ids))) for incident in incidents
+        }
+        attempt = max((self.trust_attempts.get(key, 0) for key in attempts_keys), default=0)
         if attempt >= 3:
             raise BrainError(
                 "TRUST_RETRIES_EXHAUSTED", "Three distinct-tick evidence attempts failed"
@@ -303,6 +306,9 @@ class BrainRuntime:
             raise BrainError("PEER_SCHEMA_INVALID", "Guardian did not return per-reading scores")
         scores = {}
         for row in rows:
+            if (not isinstance(row, dict) or not isinstance(row.get("reading_id"), str)
+                    or not row["reading_id"]):
+                raise BrainError("PEER_SCHEMA_INVALID", "Guardian verdict needs a reading ID and score")
             score = row.get("score")
             if (
                 row.get("reading_id") in scores
@@ -316,7 +322,8 @@ class BrainRuntime:
                 )
             scores[row.get("reading_id")] = score
         if set(scores) != set(ids) or any(score < cutoff for score in scores.values()):
-            self.trust_attempts[attempts_key] = attempt + 1
+            for key in attempts_keys:
+                self.trust_attempts[key] = self.trust_attempts.get(key, 0) + 1
             self.journal.append(
                 {
                     "event": "trust_refusal",
@@ -327,7 +334,8 @@ class BrainRuntime:
                 }
             )
             raise BrainError("TRUST_INSUFFICIENT", "Evidence has missing or insufficient trust")
-        self.trust_attempts.pop(attempts_key, None)
+        for key in attempts_keys:
+            self.trust_attempts.pop(key, None)
         return [self.ledger[source] for source in ids], scores, thresholds, scale
 
     def _token_binding(self, token, intent, clock, floor, scale):
@@ -337,7 +345,7 @@ class BrainRuntime:
         # JWS claims are checked here; signature verification and consumption belong to Twin.
         try:
             parts = token.split(".")
-            if len(parts) != 3:
+            if len(token) > 4096 or len(parts) != 3:
                 raise ValueError
             claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
             valid = (
@@ -349,6 +357,8 @@ class BrainRuntime:
                 and isinstance(claims["jti"], str)
                 and bool(claims["jti"])
                 and all(claims[field] == intent[field] for field in ("action", "targets", "params"))
+                and isinstance(claims["params"], dict)
+                and not any(isinstance(value, bool) for value in claims["params"].values())
                 and type(claims["score"]) in (int, float)
                 and math.isfinite(claims["score"])
                 and floor / scale <= claims["score"] <= 1
@@ -613,6 +623,16 @@ class BrainRuntime:
                 )
         return results
 
+    async def _check_execution_state(self, batch, capabilities, generation, proposal):
+        clock = await self._call(self.twin, "get_clock", {})
+        if any(clock.get(field) != getattr(batch, field) for field in ("run_id", "tick", "time")):
+            raise BrainError(
+                "CLOCK_CHANGED", "Twin advanced before execution; re-evaluate fresh evidence"
+            )
+        await self._sync_containment(batch, capabilities)
+        if self.generation != generation or not self._eligible(proposal.source_reading_ids):
+            raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
+
     async def _execute(
         self,
         batch,
@@ -687,7 +707,16 @@ class BrainRuntime:
                     proposal,
                     code="CONFIRMATION_UNAVAILABLE",
                 )
-            response = await self._call(self.twin, commit_tool, {"idempotency_key": key})
+            await self._check_execution_state(batch, capabilities, generation, proposal)
+            try:
+                response = await self._call(self.twin, commit_tool, {"idempotency_key": key})
+            except BrainError as error:
+                if error.code in {"PEER_TIMEOUT", "PEER_UNAVAILABLE"}:
+                    return self._decision(
+                        batch, sid, "pending", "Confirmation outcome is uncertain; preserve the original key",
+                        proposal.source_reading_ids, proposal, code=error.code,
+                    )
+                response = {"status": "rejected", "code": error.code, "details": error.details}
             return self._save_receipt(batch, sid, proposal, key, response)
         await self._sync_containment(batch, capabilities)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
@@ -730,14 +759,7 @@ class BrainRuntime:
                 },
             )
         token = self._token_binding(approval.get("token"), intent, batch, cutoff, scale)
-        clock = await self._call(self.twin, "get_clock", {})
-        if any(clock.get(field) != getattr(batch, field) for field in ("run_id", "tick", "time")):
-            raise BrainError(
-                "CLOCK_CHANGED", "Twin advanced before execution; re-evaluate fresh evidence"
-            )
-        await self._sync_containment(batch, capabilities)
-        if self.generation != generation or not self._eligible(proposal.source_reading_ids):
-            raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
+        await self._check_execution_state(batch, capabilities, generation, proposal)
         self.journal.append(
             {
                 "event": "actuate_requested",

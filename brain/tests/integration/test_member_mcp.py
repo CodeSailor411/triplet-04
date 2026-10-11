@@ -6,7 +6,7 @@ from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, Fixture
 
 from civis_brain.app import create_app
 from civis_brain.errors import BrainError
-from civis_brain.integration.mcp_peer import MCPPeer
+from civis_brain.integration.mcp_peer import MappedGuardianPeer, MCPPeer
 from civis_brain.integration.runtime import build_runtime
 from civis_brain.settings import Settings
 
@@ -57,3 +57,42 @@ async def test_submitted_workflow_over_three_actual_mcp_servers(domain, variant,
                 await MCPPeer(brain_url, "wrong-key").call_tool("evaluate_tick", {"batch": fetched})
             assert error.value.code == "UNAUTHENTICATED"
             assert len(twin.effects) == expected["effects"]
+
+
+@pytest.mark.parametrize("variant", ["base", "refusal"])
+async def test_guardian_mapping_through_real_mcp_includes_simulated_time(variant, tmp_path):
+    case = case_for("emergency", variant)
+    twin, guardian, provider = FixtureTwin(case), FixtureGuardian(case), FixturePlanProvider(case)
+    mapping = {
+        "capabilities": {
+            "tool": "get_capabilities", "request_fields": {},
+            "response_fields": {k: k for k in ("protocol_version", "score_scale", "thresholds")}},
+        "score": {
+            "tool": "fixture_score",
+            "request_fields": {k: k for k in ("run_id", "tick", "readings")},
+            "response_fields": {"scores": "scores"}},
+        "approval": {
+            "tool": "fixture_approve",
+            "request_fields": {k: k for k in (
+                "run_id", "tick", "time", "action", "targets", "params", "risk", "source_reading_ids")},
+            "response_fields": {"approved": "approved"},
+            "optional_response_fields": {"token": "token", "code": "code"}}
+    }
+    with serve(peer_app(guardian, "guardian-fixture-key")) as guardian_url:
+        mapped = MappedGuardianPeer(
+            MCPPeer(guardian_url, "guardian-fixture-key"), mapping, "assessment", "authorization")
+        runtime = build_runtime(
+            twin=twin, guardian=mapped, provider=provider,
+            policies={"S05": case["policy"]},
+            features={"enabled_scenario_ids": ["S05"], "guardian_contract_confirmed": True,
+                      "guardian_score_tool": "assessment", "guardian_token_tool": "authorization"},
+            artifact_dir=tmp_path)
+        settings = Settings(_env_file=None)
+        with serve(create_app(settings, runtime)) as brain_url:
+            caller = MCPPeer(brain_url, settings.brain_scenario_key)
+            for batch in case["batches"]:
+                result = await caller.call_tool("evaluate_tick", {"batch": batch})
+            assert [d["status"] for d in result["decisions"]] == case["expected"]["final_statuses"]
+            assert len(twin.effects) == case["expected"]["effects"]
+        approval = next(c for c in guardian.calls if c["name"] == "fixture_approve")
+        assert approval["arguments"]["time"] == case["batches"][-1]["time"]

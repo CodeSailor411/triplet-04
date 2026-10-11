@@ -1,6 +1,6 @@
 # CIVIS primary mock handover
 
-Updated 11 October 2026. Local integration branch: **codex/civis-elyes**. All five modules are integrated; no remote upload has been made. Main, member branches and partner code were not modified.
+Updated 11 October 2026. Local integration branch: **codex/civis-elyes**. All five modules are integrated; no remote upload has been made. Main and member branches were not modified. The published Twin source was imported unchanged into the local twin/ folder.
 
 ## What runs
 
@@ -14,7 +14,7 @@ All modules use the same normalization, registry, Gemini provider, manifest vali
 
 ## Verification and limits
 
-The [review report](INTEGRATION_REVIEW_2026-10-11.md) records individual defects and corrections. Verification passed: 264 automated tests, Ruff, all 55 applicable dependency pins, three-server authenticated MCP tests, and real Gemini planning for S01/S02/S05.
+The [review report](INTEGRATION_REVIEW_2026-10-11.md) records individual defects and corrections. Latest [handover audit](HANDOVER_AUDIT_2026-10-11.md): 280 automated tests, Ruff, all 55 applicable dependency pins, three-server authenticated MCP tests, and real Gemini planning for S01/S02/S05.
 
 Current Twin main at 9170ee2 was tested over real MCP using its actual code, synthetic readings and a test Guardian. Medical approval committed once; denial committed nothing. Water returned PREVIEW_UNAVAILABLE. Traffic's current speed/count readings produced an explicit missing-metric alert. Twin's actual log merger accepted Brain part files. This does not verify the real 9antra implementation.
 
@@ -51,9 +51,11 @@ An optional local Twin checkout can be tested with scripts/smoke_partner_twin.py
 
 ## Before partner release
 
-1. Elyes reviews this local build and authorizes publishing. Keep member PRs open remotely until then.
+1. Elyes requested publication after complete interoperability. That condition is not met; retain this local candidate until the gaps below are resolved. See the audit for a possible explicitly limited mock preview.
 2. Confirm Houssem's real Guardian schema, score scale/cut-offs, exact-token request including simulated time, keys and errors; run the joint smoke test.
 3. Resolve the missing Traffic metric/conversion and Water preview with Dali.
 4. Agree the architecture's real/simulated timeout numbers and pending/retry behavior. Current 60-second AI timeout does not guarantee the Phase 1 ten-second reaction target.
 5. The meeting mentions human escalation; the current user-approved scope explicitly excludes human review. Resolve that scope difference with the team before claiming full meeting compliance.
 6. After confirmation, publish the integration branch and follow the PR route into brain. Main is not the target of this local work.
+
+For exact credential directions, Guardian payloads, optional mapping fields and token standards, see [GUARDIAN_CONTRACT.md](GUARDIAN_CONTRACT.md).

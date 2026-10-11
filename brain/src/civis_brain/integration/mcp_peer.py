@@ -151,4 +151,13 @@ class MappedGuardianPeer:
             )
         wire = {request_fields[key]: value for key, value in arguments.items()}
         reply = await self.peer.call_tool(spec.get("tool", name), wire)
-        return {key: at_path(reply, path) for key, path in spec["response_fields"].items()}
+        result = {key: at_path(reply, path) for key, path in spec["response_fields"].items()}
+        # Approval and refusal have different optional fields. Keep missing mandatory
+        # fields fatal, but do not turn an ordinary denial into a schema failure.
+        for key, path in spec.get("optional_response_fields", {}).items():
+            try:
+                value = at_path(reply, path)
+            except BrainError:
+                continue
+            result[key] = value
+        return result
