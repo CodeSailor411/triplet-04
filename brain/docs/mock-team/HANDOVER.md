@@ -1,6 +1,6 @@
 # CIVIS primary mock handover
 
-Updated 11 October 2026. Local integration branch: **codex/civis-elyes**. All five modules are integrated; no remote upload has been made. Main and member branches were not modified. The published Twin source was imported unchanged into the local twin/ folder.
+Updated 11 October 2026. Integration branch: **codex/civis-elyes**. Checkpoint: **brain-mock-1**, authorized by Elyes as a limited mock. All five modules are integrated. Main and member branches were not modified. The published Twin source was imported unchanged into the local twin/ folder.
 
 ## What runs
 
@@ -49,13 +49,13 @@ An optional local Twin checkout can be tested with scripts/smoke_partner_twin.py
 - State is in memory: 2,000 readings, 100 tick responses and 1,000 explanations per run. Logs are audit evidence, not crash recovery. Restart with a fresh run ID or reconcile uncertain execution first.
 - Per-run JSONL follows the 9 October envelope; secrets/tokens/hidden truth are redacted. Disk failures retain in-memory outcomes and report LOG_WRITE_FAILED without misreporting a committed action.
 
-## Before partner release
+## Before full joint acceptance
 
-1. Elyes requested publication after complete interoperability. That condition is not met; retain this local candidate until the gaps below are resolved. See the audit for a possible explicitly limited mock preview.
+1. Elyes explicitly authorized publishing this limited mock while full interoperability remains unverified. Keep ready=false until the following joint checks pass.
 2. Confirm Houssem's real Guardian schema, score scale/cut-offs, exact-token request including simulated time, keys and errors; run the joint smoke test.
 3. Resolve the missing Traffic metric/conversion and Water preview with Dali.
 4. Agree the architecture's real/simulated timeout numbers and pending/retry behavior. Current 60-second AI timeout does not guarantee the Phase 1 ten-second reaction target.
 5. The meeting mentions human escalation; the current user-approved scope explicitly excludes human review. Resolve that scope difference with the team before claiming full meeting compliance.
-6. After confirmation, publish the integration branch and follow the PR route into brain. Main is not the target of this local work.
+6. Promotion into the brain layer branch follows the agreed PR route after partner review. This checkpoint does not merge into main.
 
 For exact credential directions, Guardian payloads, optional mapping fields and token standards, see [GUARDIAN_CONTRACT.md](GUARDIAN_CONTRACT.md).

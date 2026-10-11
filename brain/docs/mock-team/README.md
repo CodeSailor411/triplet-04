@@ -56,10 +56,10 @@ Do not wait until 9 October to build the core: Elyes starts it in parallel on 7 
 
 ## Current implementation status
 
-All five modules are integrated locally on codex/civis-elyes as of 11 October. No remote upload has been made. See the [individual review and tests](INTEGRATION_REVIEW_2026-10-11.md), [handover](HANDOVER.md) and [debug page guide](DEBUGGING.md).
+All five modules are integrated on codex/civis-elyes as of 11 October. Elyes authorized checkpoint brain-mock-1 as a limited mock for partner testing. See the [individual review and tests](INTEGRATION_REVIEW_2026-10-11.md), [handover](HANDOVER.md) and [debug page guide](DEBUGGING.md).
 
 The five base/refusal workflows, shared mixed-scenario runtime, MCP transport and real Gemini planning have been tested. Traffic/Water still have live Twin gaps, and the real Guardian contract remains unverified. Full partner readiness stays false.
 
 Run .\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base from brain/; S01-S05 and base/refusal are supported. The browser exposes those same five modules. The internal synthetic signal fixture is only a regression aid.
 
-Elyes must confirm the local review before publishing the integration branch. Partner acceptance and the agreed PR flow follow; do not merge directly into main.
+Elyes confirmed publication of this limited integration checkpoint. Partner acceptance and the agreed PR flow follow; do not merge directly into main.

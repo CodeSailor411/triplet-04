@@ -29,6 +29,6 @@ The Twin checks use synthetic readings, recorded plans, a test Guardian and a fr
 
 Brain and the available Twin are placed in their designated layer folders. Guardian remains an empty partner scaffold. Do not invent or label a stand-in as 9antra's deliverable.
 
-brain-mock-1 is the requested release name. Publication remains gated by the user's requirement for complete interoperability. Real Guardian, live Traffic/Water dependencies and continuous-clock execution are unresolved. A mock-only preview could be published with these limits if Elyes explicitly changes that release scope.
+Elyes explicitly authorized brain-mock-1 as a limited mock for partner testing after reviewing these results and gaps. Publish only codex/civis-elyes and its annotated checkpoint tag; leave main unchanged. Real Guardian, live Traffic/Water dependencies and continuous-clock execution remain unresolved, so ready=false is retained.
 
 See [Guardian contract](GUARDIAN_CONTRACT.md), [partner gaps](PARTNER_GAPS.md), and [handover](HANDOVER.md).

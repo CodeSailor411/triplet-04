@@ -24,6 +24,6 @@ Use distinct Bearer keys configured in ignored .env: BRAIN_TWIN_CALLER_KEY, BRAI
 
 **Logs:** run-logs/<run_id>.brain.jsonl, meeting envelope with event_id, timestamp, tick, wall, layer, event_type, caused_by and data; decisions include idempotency_key. Secrets and full tokens are redacted. In-memory state requires a new run after restart.
 
-See [review evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md) and [handover](docs/mock-team/HANDOVER.md). No remote release has been made.
+See [review evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md) and [handover](docs/mock-team/HANDOVER.md). Checkpoint: brain-mock-1, an explicitly limited mock; full joint readiness remains false.
 
 Latest checks and release limits: [handover audit](docs/mock-team/HANDOVER_AUDIT_2026-10-11.md). Guardian field mapping and credentials: [contract](docs/mock-team/GUARDIAN_CONTRACT.md).

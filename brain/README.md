@@ -1,6 +1,6 @@
 # CIVIS Brain primary mock
 
-All five scenario modules are integrated locally on **codex/civis-elyes** as of 11 October 2026. The three member submissions retain their merge history. Nothing from this integration has been pushed. Full partner readiness remains false because the real Guardian contract, Traffic metric and Water preview still need partner work.
+Checkpoint **brain-mock-1**, 11 October 2026, on **codex/civis-elyes**: all five scenario modules are integrated. The three member submissions retain their merge history. This is an explicitly limited mock for partner testing. Full partner readiness remains false because the real Guardian contract, Traffic metric and Water preview still need partner work.
 
 | Scenario | Original owner | Reduced mock response |
 | --- | --- | --- |
@@ -22,6 +22,7 @@ cd brain
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
 .\.venv\Scripts\python.exe scripts/doctor.py
+.\.venv\Scripts\python.exe scripts/setup_peer_keys.py
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
@@ -37,4 +38,4 @@ Change S01 to S02-S05 and base to refusal as needed. Power and Air produce alert
 
 Health: /health. MCP: /mcp, protocol 2026-07-28. Caller keys are required for evaluation and read tools. Gemini and peer secrets stay in ignored .env. Logs use ignored run-logs/<run_id>.brain.jsonl; debug traces use .artifacts/. See [debugging](docs/mock-team/DEBUGGING.md) for controls and [partner gaps](docs/mock-team/PARTNER_GAPS.md) before a joint run.
 
-Member PRs target codex/civis-elyes. Main and layer branches remain separate. Do not push or open the release PR until Elyes confirms this local review.
+Member PRs target codex/civis-elyes. Main and layer branches remain separate. Elyes authorized this limited checkpoint. Promotion into the brain layer branch still follows the agreed PR review flow; main is unchanged.

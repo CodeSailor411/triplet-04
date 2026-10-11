@@ -4,8 +4,8 @@ The repository tag identifies a complete repository snapshot. Each layer's runna
 
 | Layer | Location | Checkpoint | Status |
 | --- | --- | --- | --- |
-| Twin, Trinity | twin/ | twin-mock-1, commit 9170ee2404face946a346711e1739d0c405052c1 | Published by Trinity; copied unchanged from the tag into this local integration branch |
-| Brain, CIVIS | brain/ | brain-mock-1 requested | Local candidate; release held for joint interoperability gaps |
+| Twin, Trinity | twin/ | twin-mock-1, commit 9170ee2404face946a346711e1739d0c405052c1 | Published by Trinity; copied unchanged from the tag into this integration branch |
+| Brain, CIVIS | brain/ | brain-mock-1 | Limited checkpoint authorized by Elyes; joint interoperability gaps documented |
 | Guardian, 9antra | guardian/ | Not supplied | Scaffold only; no partner mock to import |
 
 brain/mocks/ contains CIVIS test stand-ins and synthetic cases. These are not Houssem's implementation. Twin's own mocks/ contains its example clients/test token tooling.
