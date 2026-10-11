@@ -1,4 +1,4 @@
-﻿{
+{
   "scenario_id": "S01",
   "fixture_only": true,
   "case_id": "base_case",
@@ -19,8 +19,7 @@
     "risk": "R1"
   },
   "guardian": {
-    "expected_decision": "approve_exact_action",
-    "token": "generated_in_test_memory"
+    "expected_decision": "approve_exact_action"
   },
   "twin_outcome": {
     "expected": "success"
