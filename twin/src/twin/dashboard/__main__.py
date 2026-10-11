@@ -10,7 +10,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import app, ui
 
 from ..generator import fingerprint, generate
 from ..settings import load_config
@@ -33,6 +33,7 @@ def main(argv: list[str] | None = None) -> None:
         write_sample(tmp)
         sources = [str(tmp)]
         print(f"Sample run written to {tmp}")
+    app.add_static_files("/tw-fonts", str(Path(__file__).parent / "fonts"))     # Lato, served by the dashboard itself: no internet needed
     hub = Hub(cfg.dashboard, topology, layout, sources=sources, fingerprint=fingerprint(topology))
     ui.run(lambda: build_page(hub), host=a.host or cfg.dashboard.host, port=a.port or cfg.dashboard.port,
            title="Triplet 04 · Twin dashboard", reload=False, show=False, favicon="🏙️")

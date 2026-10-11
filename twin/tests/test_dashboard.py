@@ -11,7 +11,8 @@ from nicegui.testing import user_simulation
 
 from twin.dashboard.events import (LogFollower, build_state, node_status, resolve_causes, short_label, summarize, trust_from_score)
 from twin.dashboard.page import Hub, build_page
-from twin.dashboard.basemap import street_graph
+from twin.dashboard.basemap import _hull, outskirts, street_graph
+from twin.dashboard.style import EDGE, MAP_BG
 from twin.dashboard.sample import write_sample
 from twin.dashboard.svg import MIN_GAP, Scene, chain_of, city_scene, display_positions, document, tick_clock, timeline_scene
 from twin.generator import fingerprint, generate
@@ -210,7 +211,7 @@ def test_city_map_is_valid_and_has_every_node(city):
     root = parse(sc)
     nodes = [g for g in root.iter("{http://www.w3.org/2000/svg}g") if g.get("data-node")]
     assert len(nodes) == 38 == len(sc.hits) and {g.get("data-node") for g in nodes} == {n.node_id for n in topo.nodes}
-    assert sc.content.count("<polygon points=\"46,24 35,43.05 13,43.05 2,24 13,4.95 35,4.95\" fill=\"#04060B\"") == 38      # one spec hexagon per node, filled with the map colour
+    assert sc.content.count(f"<polygon points=\"46,24 35,43.05 13,43.05 2,24 13,4.95 35,4.95\" fill=\"{MAP_BG}\"") == 38      # one spec hexagon per node, filled with the map colour
     assert sc.content.count("<path d=\"M") >= 2 * (len(topo.nodes) - 1)                                                    # at least pale + dark line for each of the 37 roads that link 38 nodes
 
 
@@ -501,11 +502,16 @@ def test_the_hexagon_is_exactly_the_one_in_the_node_style_spec():
 def test_the_four_trust_states_look_different_in_the_right_way():
     tr, de, un, iso = (glyph(0, 0, 44, ["water"], st) for st in ("trusted", "degraded", "untrusted", "isolated"))
     assert len({tr, de, un, iso}) == 4
-    assert de.count("<line") == 4 and 'x1="13" y1="4.95" x2="35" y2="4.95"' not in de and 'x1="35" y1="43.05" x2="13" y2="43.05"' not in de   # top and bottom missing
+    assert _outline_lines(de) == 4 and not re.search(r'<line x1="13" y1="4.95" x2="35" y2="4.95"[^>]*stroke-width="3"', de) and not re.search(r'<line x1="35" y1="43.05" x2="13" y2="43.05"[^>]*stroke-width="3"', de)   # top and bottom missing
     assert '<circle cx="24" cy="24" r="4"' in de                                                        # degraded keeps the dot
     assert 'x1="14" y1="14" x2="34" y2="34"' in un and 'x1="34" y1="14" x2="14" y2="34"' in un and '<circle cx="24" cy="24" r="4"' not in un
     assert 'd="M18 27 V18 A6 6 0 0 1 30 18 V27"' in iso and '<rect x="14" y="25" width="20" height="13"' in iso     # closed padlock, legs enter the body
     assert iso.count('stroke-width="2"/>') == 4 and '<circle cx="24" cy="24" r="4"' not in iso          # four corner brackets, no core dot
+
+
+def _outline_lines(svg: str) -> int:
+    """The 3 px lines that make the hexagon outline. (The 9 px lines are the glow around it, they are not counted.)"""
+    return len(re.findall(r'<line [^>]*stroke-width="3"', svg))
 
 
 def test_shared_nodes_hand_out_their_sides_in_the_spec_order():
@@ -516,7 +522,7 @@ def test_shared_nodes_hand_out_their_sides_in_the_spec_order():
     assert side_colors(["traffic", "water"], active={"water"}) == [b] * 6              # a switched-off domain is ignored, never left dark
     assert side_colors(["traffic"], active={"water"}) is None
     shared = glyph(0, 0, 44, ["traffic", "water"], "trusted")
-    assert SHARED_CORE in shared and shared.count("<line") == 6 and f'<polygon points="{SPEC_HEX}" fill="none"' not in shared
+    assert SHARED_CORE in shared and _outline_lines(shared) == 6 and f'<polygon points="{SPEC_HEX}" fill="none"' not in shared
 
 
 def test_a_switched_off_layer_is_grey_but_an_isolated_node_keeps_its_lock():
@@ -563,11 +569,73 @@ def test_the_map_is_one_connected_black_and_white_city(city):
     assert len({find(i) for i in range(len(pts))}) == 1                                              # every node is linked to every other: ONE city, not districts
     assert len(main) == len(pts) - 1                                                                 # the main roads are exactly the shortest way to link everything
     assert not set(main) & set(side)
-    assert a.count("<path") >= 1 + 2 * (len(main) + len(side))                                       # outline + pale line + dark line for every road
+    assert a.count("<path") >= 1 + 2 * (len(main) + len(side))                                       # frame ticks + pale line + dark line for every road
     assert not any(z.name.upper() in a or z.name in a for z in layout.zones)                         # no district names on the map
     assert "<text" not in a and "<ellipse" not in a                                                  # no labels, no park blobs
     colours = set(re.findall(r'(?:fill|stroke)="(#[0-9A-Fa-f]{6})"', a))
-    assert colours <= {"#04060B", "#E6ECF5"}                                                         # the map has only the dark and the white, nothing else
+    assert colours <= {MAP_BG, EDGE}                                                         # the map has only the dark and the white, nothing else
+
+
+def _inside(point, polygon) -> bool:
+    """Ray casting: draw a line from the point to the right and count how many polygon edges it crosses (odd = inside)."""
+    x, y = point
+    inside = False
+    for (x1, y1), (x2, y2) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
+
+
+def test_the_map_is_a_cut_out_section_streets_leave_the_frame_and_are_clipped_to_it(city):
+    _, topo, _ = city
+    pts = [display_positions(topo)[n.node_id] for n in topo.nodes]
+    a = basemap(pts, 1920, 1080)
+    assert "<polygon" not in a and "stroke-dasharray=\"18" not in a                                  # no city limit line any more
+    clip = re.search(r'<clipPath id="([^"]+)"><rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"', a)
+    assert clip and f'clip-path="url(#{clip.group(1)})"' in a                                        # the roads are clipped to the inside of the frame
+    x, y, w, h = (float(clip.group(i)) for i in (2, 3, 4, 5))
+    assert (x, y) == (14, 14) and x + w == 1920 - 14 and y + h == 1080 - 14
+    far = outskirts(pts)
+    assert far and all(i in range(len(pts)) for i, _ in far)
+    outside = [e for _, e in far if not (0 <= e[0] <= 1920 and 0 <= e[1] <= 1080)]
+    assert len(outside) == len(far)                                                                  # every outskirt street ends far outside the picture: the frame cuts it off
+    on_hull = {pts.index(p) for p in _hull(pts)}
+    assert on_hull <= {i for i, _ in far}                                                            # every node on the outer edge of the city has one
+    frame = re.findall(r'<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"', a)
+    assert len(frame) >= 3                                                                           # glow + outer + inner frame line (the clip rect is separate)
+    assert all(float(fx) + float(fw) <= 1920 and float(fy) + float(fh) <= 1080 for fx, fy, fw, fh in frame)
+
+
+def test_the_map_has_a_soft_glow_but_still_only_two_colours(city):
+    _, topo, _ = city
+    pts = [display_positions(topo)[n.node_id] for n in topo.nodes]
+    a = basemap(pts, 1920, 1080)
+    assert a.count('stroke-opacity="0.035"') == a.count('stroke-opacity="0.06"') >= len(pts) - 1     # two glow lines under every road
+    assert set(re.findall(r'(?:fill|stroke)="(#[0-9A-Fa-f]{6})"', a)) <= {MAP_BG, EDGE}
+
+
+def test_every_node_has_a_glow_in_its_own_colours():
+    one = glyph(0, 0, 44, ["power"], "trusted")
+    assert one.count("fill-opacity") == 4 and DOMAIN_COLORS["power"] in one                         # four soft halos
+    shared = glyph(0, 0, 44, ["power", "emergency"], "trusted")
+    assert DOMAIN_COLORS["power"] in shared and DOMAIN_COLORS["emergency"] in shared
+    assert shared.count('stroke-opacity="0.35"') == 6                                                # a bloom line on each of the six sides
+    off = glyph(0, 0, 44, ["power"], "trusted", active={"water"})
+    assert "fill-opacity" not in off                                                                 # a switched-off layer does not glow
+
+
+def test_the_frame_does_not_touch_any_node(city):
+    _, topo, _ = city
+    pts = [display_positions(topo)[n.node_id] for n in topo.nodes]
+    assert min(x for x, _ in pts) - 29 > 14 and min(y for _, y in pts) - 29 > 14                    # the inner frame line is at 14 px
+    assert max(x for x, _ in pts) + 29 < 1920 - 14 and max(y for _, y in pts) + 29 < 1080 - 14
+
+
+async def test_the_attacks_switch_says_how_many_attacks_are_running_and_the_sample_ends_in_the_middle_of_an_attack(city, sample_dir):
+    hub = make_hub(city, [sample_dir])
+    async with user_simulation(root=lambda: build_page(hub)) as user:
+        await user.open("/")
+        await user.should_see("Attacks · 1 running")
 
 
 def test_every_node_sits_on_a_road_end_and_roads_do_not_cross_in_the_middle_of_nowhere(city):
@@ -599,3 +667,55 @@ async def test_page_has_layer_buttons_step_chips_and_still_no_browser_needed(cit
         await user.open("/")
         for text in ("Layers", "Water", "Traffic", "Reading ·", "Verdict ·", "Decision ·", "Action ·", "Click a node for details"):
             await user.should_see(text)
+
+
+def _slider_next_to(switch):
+    return next(c for c in switch.parent_slot.children if isinstance(c, ui.slider))
+
+
+def _follow_switch(user):
+    return next(e for e in user.find(kind=ui.switch).elements if e.text == "Follow live")
+
+
+async def test_follow_live_off_gives_the_slider_real_numbers_not_text(city, sample_dir):
+    """Regression: slider.props("max=30") stored the TEXT '30'. The slider in the browser crashed when touched."""
+    hub = make_hub(city, [sample_dir])
+    async with user_simulation(root=lambda: build_page(hub)) as user:
+        await user.open("/")
+        sw = _follow_switch(user)
+        sl = _slider_next_to(sw)
+        sw.set_value(False)
+        await asyncio.sleep(0.5)
+        assert sl.visible and sl.value == 30                                                         # the knob starts at the last tick
+        assert isinstance(sl.props["min"], int) and isinstance(sl.props["max"], int)                 # numbers, never text
+        assert (sl.props["min"], sl.props["max"]) == (0, 30)
+
+
+async def test_moving_the_slider_scrubs_the_timeline_and_the_map_and_going_live_resets_it(city, sample_dir):
+    hub = make_hub(city, [sample_dir])
+    async with user_simulation(root=lambda: build_page(hub)) as user:
+        await user.open("/")
+        sw = _follow_switch(user)
+        sl = _slider_next_to(sw)
+        images = {tuple(i.props["size"]): i for i in user.find(kind=ui.interactive_image).elements}
+        city_img, timeline_img = images[(1920, 1080)], images[(1800, 660)]
+        assert "ATTACK" in city_img.content                                                          # live: the attack is on the map
+        await user.should_not_see("Map as of")
+        sw.set_value(False)
+        await asyncio.sleep(0.3)
+        fire(sl, "change", 5)                                                                        # before the attack (it starts at tick 8)
+        await asyncio.sleep(0.3)
+        assert "ATTACK" not in city_img.content                                                      # the attack had not started yet
+        await user.should_see("Map as of tick 5 (not live)")
+        fire(sl, "change", 12)
+        await asyncio.sleep(0.3)
+        assert "ATTACK" in city_img.content                                                          # attack running at tick 12
+        fire(sl, "change", "garbage")                                                                # a bad value from the browser must not break anything
+        fire(sl, "change", None)
+        fire(sl, "change", 999)                                                                      # too big: held at the last tick
+        await asyncio.sleep(0.3)
+        await user.should_see("Triplet 04")
+        sw.set_value(True)
+        await asyncio.sleep(0.3)
+        assert not sl.visible
+        assert "ATTACK" in city_img.content
