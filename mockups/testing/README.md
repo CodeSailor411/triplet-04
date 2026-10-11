@@ -1,15 +1,16 @@
-# Triplet mock checkpoints
+# CIVIS and Trinity mock packages
 
-The repository tag identifies a complete repository snapshot. Each layer's runnable source stays in its designated root folder; do not duplicate it under this testing index.
+These are the two tagged mocks available for partner testing. Each ZIP contains only its layer folder, with the original source, configuration examples, dependencies, tests and launch instructions.
 
-| Layer | Location | Checkpoint | Status |
+| Team | Package | Source tag | Source commit |
 | --- | --- | --- | --- |
-| Twin, Trinity | twin/ | twin-mock-1, commit 9170ee2404face946a346711e1739d0c405052c1 | Published by Trinity; copied unchanged from the tag into this integration branch |
-| Brain, CIVIS | brain/ | brain-mock-1 | Limited checkpoint authorized by Elyes; joint interoperability gaps documented |
-| Guardian, 9antra | guardian/ | Not supplied | Scaffold only; no partner mock to import |
+| CIVIS, Brain | [brain-mock-1.zip](brain-mock-1.zip) | [brain-mock-1](https://github.com/CodeSailor411/triplet-04/tree/brain-mock-1) | f3cc67e3f66fd19d5d3dbc957b98f4b742a08b65 |
+| Trinity, Twin | [twin-mock-1.zip](twin-mock-1.zip) | [twin-mock-1](https://github.com/CodeSailor411/triplet-04/tree/twin-mock-1) | 9170ee2404face946a346711e1739d0c405052c1 |
 
-brain/mocks/ contains CIVIS test stand-ins and synthetic cases. These are not Houssem's implementation. Twin's own mocks/ contains its example clients/test token tooling.
+Download both ZIP files and extract them into the same empty folder. This creates sibling brain/ and twin/ folders. Follow each extracted README.md for installation and startup; each layer uses its own Python environment and local .env.
 
-From brain/, use .\.venv\Scripts\python.exe -m civis_brain for the local console and MCP endpoint. Follow [the Brain handover](../../brain/docs/mock-team/HANDOVER.md) and [audit](../../brain/docs/mock-team/HANDOVER_AUDIT_2026-10-11.md). The opt-in scripts/smoke_partner_twin.py --twin-root ..\twin requires Twin's declared dependencies as well.
+Every packaged file matches its source tag byte for byte. [SHA256SUMS.txt](SHA256SUMS.txt) records the package checksums. No local secrets, virtual environments or runtime logs are included.
 
-Publish immutable checkpoint tags only after naming the tested scope and unresolved dependencies. A tag records a snapshot, so later fixes should receive a new tag such as brain-mock-2; do not move a tag that partners may already use. Do not tag main or merge unrelated changes to produce a layer release.
+Brain is the approved limited mock. Its remaining integration gaps are documented inside brain/docs/mock-team/HANDOVER.md. The packages do not certify a complete three-layer integration.
+
+Later checkpoints should use new names such as brain-mock-2 and twin-mock-2, preserving these snapshots.
