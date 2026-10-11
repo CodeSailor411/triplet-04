@@ -1,0 +1,31 @@
+﻿{
+  "scenario_id": "S01",
+  "fixture_only": true,
+  "case_id": "refusal_case",
+  "assumptions": [
+    "Illustrative congestion readings exceed the configured threshold.",
+    "The required exact-action authorization is missing.",
+    "The signal-plan action must not be executed without authorization."
+  ],
+  "nodes": [],
+  "actions": [],
+  "batches": [],
+  "policy": {
+    "sensor": "congestion_index",
+    "unit": "percent",
+    "threshold_min": 80.0,
+    "persistence_ticks": 2,
+    "allowed_actions": ["set_signal_plan"],
+    "risk": "R1"
+  },
+  "guardian": {
+    "expected_decision": "refuse_missing_exact_action_authorization"
+  },
+  "twin_outcome": {
+    "expected": "not_called"
+  },
+  "preview": {},
+  "ai_plan": {
+    "expected": "no_executable_action"
+  }
+}

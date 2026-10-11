@@ -1,42 +1,55 @@
-# Yassine progress: S01 persistent traffic congestion
+﻿# Yassine — S01 progress
 
-Branch: `codex/civis-yassine`. Scenario: `S01`. Status: assigned, not implemented.
-Owner paths: scenario `traffic/`, its tests/cases/config and this progress file.
+## Current status
 
-## Steps
+Unit-complete / integration-pending.
 
-- [ ] Windows setup and shared contract understood
-- [ ] Base/refusal fixtures validated
-- [ ] Detector and meaningful unit tests
-- [ ] Constrained response and planning tests
-- [ ] Shared-core success/refusal workflow proof
-- [ ] Diff reviewed, PR opened and Elyes requested
+## Step 4 — constrained planning and local scenario tests
 
-## Functions implemented
+* Traffic detection and planning tests pass locally.
+* Traffic scenario test suite: 9 passed.
+* Full test suite: 24 passed.
+* Ruff: all checks passed.
+* These results do not prove shared-core workflow integration.
 
-Record exact function names and behavior. Do not mark a scaffold stub complete.
+## Step 5 — shared-core workflow
 
-## Fixture assumptions
+Status: BLOCKED by shared runtime implementation.
 
-List synthetic thresholds, nodes/actions and any preview/approval assumptions.
+Missing shared functions owned by Elyes:
 
-## Test results
+* `civis_brain.integration.runtime.build_runtime(...)`
+* `BrainRuntime.evaluate_tick(batch)`
 
-Record command, date, passed/failed count and remaining failures. Bootstrap success does not prove delivery.
+Both currently raise `NotImplementedError` in `src/civis_brain/integration/runtime.py`.
 
-## Workflow evidence
+Missing scenario test:
 
-Base result and peer effect count:
-Refusal result and peer effect count:
-Integration status: pending shared core.
+* `tests/scenarios/traffic/test_workflow.py`
 
-## Dependencies and questions for Elyes
+Required next work:
 
-List the exact unavailable shared function/schema/tool and what it blocks. Do not bypass it.
+* Reuse shared `FixtureTwin`, `FixtureGuardian` and `FixturePlanProvider`.
+* Follow the frozen features schema in `CONTRACT.md` and `SCENARIOS.md`.
+* Prove supported success and refusal through the shared runtime.
+* Assert final decisions, exact peer call counts and exact actuator effect counts.
+* Cover applicable persistence, duplicate tick, run change, null, wrong unit, unavailable metric, unknown evidence/action and missing approval variants.
+* Do not catch `NotImplementedError` as a passing test.
+* Do not implement or modify Elyes-owned shared runtime or peer fixtures.
 
-## PR and next action
+## Fixture limitations
 
-Draft PR URL:
-Unit-ready status:
-Integration-ready status:
-Next step and deadline:
+* `base_case.json` and `refusal_case.json` currently have empty `nodes`, `actions` and `batches`.
+* Align the fixtures with `SCENARIOS.md` before attempting workflow proof.
+* Define expected peer call counts and actuator effect counts from the shared contract.
+* Do not invent unresolved peer wire schemas or put tokens in fixture files.
+
+## Integration and live-support limitations
+
+* Fixture behavior is not proof of live Guardian or Twin support.
+* No live API calls or secrets in automated tests.
+* Keep the PR draft and mark integration pending until the shared workflow is implemented and proven.
+
+## Next action
+
+Notify Elyes that `build_runtime` and `BrainRuntime.evaluate_tick` are unimplemented, and request the shared runtime/fixture harness before completing Step 5 workflow proof.

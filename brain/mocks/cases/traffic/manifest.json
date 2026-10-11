@@ -1,0 +1,19 @@
+﻿{
+  "scenario_id": "S01",
+  "scenario": "traffic",
+  "fixture_only": true,
+  "description": "Illustrative traffic congestion detection and signal-plan planning fixtures",
+  "config": "config/scenarios/traffic.json",
+  "cases": [
+    {
+      "id": "base_case",
+      "file": "base_case.json",
+      "expected_outcome": "supported"
+    },
+    {
+      "id": "refusal_case",
+      "file": "refusal_case.json",
+      "expected_outcome": "refused"
+    }
+  ]
+}
