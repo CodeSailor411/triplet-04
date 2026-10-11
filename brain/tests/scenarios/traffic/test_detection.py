@@ -10,7 +10,12 @@ POLICY = {
 }
 
 
-def reading(tick: int, value: float, run_id: str = "run-1", unit: str = "percent"):
+def reading(
+    tick: int,
+    value: float | None,
+    run_id: str = "run-1",
+    unit: str = "percent",
+) -> Reading:
     return Reading(
         run_id=run_id,
         reading_id=f"reading-{run_id}-{tick}",
@@ -85,3 +90,43 @@ def test_wrong_unit_is_unsupported():
     assert result.observations[0].usable is False
     assert result.observations[0].reason == "unsupported_unit"
     assert result.incidents == []
+
+
+def test_null_value_does_not_trigger_congestion():
+    scenario, state = TrafficScenario(), {}
+
+    result = scenario.detect(
+        batch(reading(1, None)), nodes(), POLICY, state
+    )
+
+    assert result.observations[0].usable is False
+    assert result.observations[0].reason == "missing_value"
+    assert result.incidents == []
+
+    next_result = scenario.detect(
+        batch(reading(2, 90.0)), nodes(), POLICY, state
+    )
+    assert next_result.incidents == []
+
+
+def test_duplicate_tick_does_not_advance_persistence():
+    scenario, state = TrafficScenario(), {}
+
+    first = batch(reading(1, 85.0))
+    repeated = batch(reading(1, 95.0))
+
+    first_result = scenario.detect(first, nodes(), POLICY, state)
+    repeated_result = scenario.detect(repeated, nodes(), POLICY, state)
+
+    assert first_result.incidents == []
+    assert repeated_result.incidents == []
+
+    next_result = scenario.detect(
+        batch(reading(2, 90.0)), nodes(), POLICY, state
+    )
+
+    assert len(next_result.incidents) == 1
+    assert next_result.incidents[0].source_reading_ids == [
+        "reading-run-1-1",
+        "reading-run-1-2",
+    ]
