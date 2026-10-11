@@ -1,0 +1,173 @@
+{
+  "scenario_id": "S05",
+  "fixture_only": true,
+  "assumptions": [
+    "All node IDs, reading IDs, timestamps, and values are synthetic.",
+    "The fixture-only event threshold is 1.0 calls/min, copied from the illustrative S05 policy; it is not a triplet-approved safety threshold.",
+    "EMG-CARRIER-01 advertises dispatch and has one available ambulance unit.",
+    "The synthetic dispatch manifest permits one ambulance to EMG-INCIDENT-01, has an action cap of one, and does not require preview; this makes no claim about live partner support.",
+    "Guardian approval is represented by a fixture boolean. Any test token is generated in memory by the shared fake Guardian; no token or real Guardian wire schema is included."
+  ],
+  "nodes": [
+    {
+      "node_id": "EMG-INCIDENT-01",
+      "domains": ["emergency"],
+      "role": "incident_location",
+      "actuators": [],
+      "neighbours": ["EMG-CARRIER-01"]
+    },
+    {
+      "node_id": "EMG-CARRIER-01",
+      "domains": ["emergency"],
+      "role": "dispatch_carrier",
+      "actuators": ["dispatch"],
+      "neighbours": ["EMG-INCIDENT-01"]
+    }
+  ],
+  "actions": [
+    {
+      "action": "dispatch",
+      "domain": "emergency",
+      "risk": "R2",
+      "preview_required": false,
+      "params": [
+        {
+          "name": "unit_type",
+          "type": "string",
+          "choices": ["ambulance"],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "destination",
+          "type": "string",
+          "choices": ["EMG-INCIDENT-01"],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "units",
+          "type": "integer",
+          "choices": [1],
+          "min_value": 1,
+          "max_value": 1,
+          "unit": "units"
+        }
+      ],
+      "target_nodes": ["EMG-CARRIER-01"],
+      "action_cap": 1
+    }
+  ],
+  "batches": [
+    {
+      "run_id": "fixture-s05-base",
+      "tick": 1,
+      "time": "2026-10-09T09:00:00Z",
+      "tick_seconds": 60.0,
+      "count": 2,
+      "readings": [
+        {
+          "run_id": "fixture-s05-base",
+          "reading_id": "s05-base-calls-01",
+          "tick": 1,
+          "timestamp": "2026-10-09T09:00:00Z",
+          "node_id": "EMG-INCIDENT-01",
+          "device_id": "EMG-INCIDENT-01.emergency_calls",
+          "sensor": "emergency_calls",
+          "channel": "medical",
+          "value": 2.0,
+          "unit": "calls/min"
+        },
+        {
+          "run_id": "fixture-s05-base",
+          "reading_id": "s05-base-units-01",
+          "tick": 1,
+          "timestamp": "2026-10-09T09:00:00Z",
+          "node_id": "EMG-CARRIER-01",
+          "device_id": "EMG-CARRIER-01.units_free",
+          "sensor": "units_free",
+          "channel": null,
+          "value": 1.0,
+          "unit": "units"
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "status": "illustrative fixture policy, not triplet-approved safety thresholds",
+    "fixture_only": true,
+    "scenario_id": "S05",
+    "sensor": "emergency_calls",
+    "channel": "medical",
+    "threshold_min": 1.0,
+    "persistence_ticks": 1,
+    "allowed_actions": ["dispatch"],
+    "unit_type": "ambulance",
+    "risk": "R2",
+    "unit": "calls/min",
+    "availability_sensor": "units_free",
+    "availability_unit": "units"
+  },
+  "guardian": {
+    "approve": true
+  },
+  "preview": {
+    "available": false,
+    "safe": false,
+    "reason": "The synthetic dispatch manifest does not require preview; live preview support is not asserted."
+  },
+  "ai_plan": {
+    "proposals": [
+      {
+        "action": "dispatch",
+        "targets": ["EMG-CARRIER-01"],
+        "params": {
+          "unit_type": "ambulance",
+          "destination": "EMG-INCIDENT-01",
+          "units": 1
+        },
+        "risk": "R2",
+        "preview_required": false,
+        "source_reading_ids": ["s05-base-calls-01", "s05-base-units-01"],
+        "reason": "Synthetic medical-channel event with one available ambulance; no patient details inferred."
+      }
+    ],
+    "alerts": []
+  },
+  "twin_outcome": {
+    "status": "committed"
+  },
+  "expected": {
+    "decision": {
+      "decision_id": "fixture-s05-base-dispatch",
+      "run_id": "fixture-s05-base",
+      "tick": 1,
+      "status": "committed",
+      "reason": "Synthetic medical-channel event with available ambulance evidence and fixture exact-action approval.",
+      "source_reading_ids": ["s05-base-calls-01", "s05-base-units-01"],
+      "action": "dispatch",
+      "targets": ["EMG-CARRIER-01"],
+      "params": {
+        "unit_type": "ambulance",
+        "destination": "EMG-INCIDENT-01",
+        "units": 1
+      },
+      "peer_code": null
+    },
+    "allowed_call_order": [
+      "Guardian evidence assessment",
+      "provider.generate",
+      "Guardian exact-action approval",
+      "Twin dispatch"
+    ],
+    "call_counts": {
+      "guardian.fixture_score": 1,
+      "provider.generate": 1,
+      "guardian.fixture_approve": 1,
+      "twin.actuation_request": 1
+    },
+    "actuator_effect_count": 1
+  }
+}
