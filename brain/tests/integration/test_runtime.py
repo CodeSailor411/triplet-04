@@ -3,7 +3,6 @@ import asyncio
 import pytest
 
 from civis_brain.contracts import ContainmentNotice, ReadingsBatch
-from civis_brain.integration.runtime import build_runtime
 
 from .helpers import harness, make_case, next_batch
 
@@ -181,17 +180,17 @@ async def test_containment_invalidates_queued_action():
     assert not runtime._eligible(["r1"])
 
 
-async def test_missing_member_is_blocked():
+async def test_unimplemented_scenario_is_blocked():
+    class UnimplementedScenario:
+        scenario_id = "S01"
+
+        def detect(self, *args):
+            raise NotImplementedError
+
     case = make_case()
     runtime, twin, guardian, provider = harness(case)
-    actual = build_runtime(
-        twin=twin,
-        guardian=guardian,
-        provider=provider,
-        policies=runtime.policies,
-        features=runtime.features,
-    )
-    result = await actual.evaluate_tick(ReadingsBatch.model_validate(case["batches"][0]))
+    runtime.scenarios = (UnimplementedScenario(),)
+    result = await runtime.evaluate_tick(ReadingsBatch.model_validate(case["batches"][0]))
     assert result.decisions[0].peer_code == "SCENARIO_NOT_IMPLEMENTED"
     assert not twin.effects and not provider.calls
 

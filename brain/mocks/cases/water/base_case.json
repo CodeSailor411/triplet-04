@@ -4,7 +4,7 @@
   "assumptions": [
     "Synthetic topology: valve-01 is declared a safe valve choice for tank-01 (fixture only).",
     "threshold_min 100 cm and persistence 2 ticks are mock values, not hydraulic safety limits.",
-    "Valve parameter name position_pct, its bounds and the value 30 are fixture values.",
+    "Valve parameter name position, its bounds and the value 30 are fixture values.",
     "Preview, Guardian approval and Twin commit are fixture answers and do not prove live support.",
     "Fixture inner field values for guardian are test-only; the token is generated in memory by the shared fake Guardian.",
     "Guardian score scale and cut-offs follow the shared fixture shape; they are mock values, not confirmed by Houssem."
@@ -18,8 +18,8 @@
   "actions": [
     {"action": "set_valve_position", "domain": "water", "risk": "R3",
      "preview_required": true,
-     "params": [{"name": "position_pct", "type": "number", "choices": null,
-                 "min_value": 0, "max_value": 100, "unit": "percent"}],
+     "params": [{"name": "position", "type": "number", "choices": null,
+                 "min_value": 0, "max_value": 100, "unit": "%"}],
      "target_nodes": ["valve-01"], "action_cap": 1}
   ],
   "caps": {"water": 1},
@@ -52,7 +52,7 @@
     "requires_preview": true,
     "safe_valve_choices": [
       {"incident_node_id": "tank-01", "targets": ["valve-01"],
-       "params": {"position_pct": 30}}
+       "params": {"position": 30}}
     ]
   },
   "guardian": {
@@ -60,14 +60,14 @@
     "score_scale": 100,
     "thresholds": {"reading": 60, "R1": 65, "R2": 80, "R3": 90},
     "approve": true,
-    "token_lifetime_ticks": 3
+    "token_lifetime_seconds": 60
   },
   "preview": {"available": true, "safe": true,
               "reason": "fixture-only safe preview for the declared synthetic topology"},
   "ai_plan": {
     "proposals": [
       {"action": "set_valve_position", "targets": ["valve-01"],
-       "params": {"position_pct": 30}, "risk": "R3", "preview_required": true,
+       "params": {"position": 30}, "risk": "R3", "preview_required": true,
        "source_reading_ids": ["w-r10", "w-r11"],
        "reason": "Water level stayed above the mock threshold on two consecutive ticks and a supplied safe valve choice exists."}
     ],
@@ -76,11 +76,20 @@
   "twin_outcome": {"status": "committed"},
   "expected": {
     "decision_status": "committed",
-    "final_statuses": ["committed"],
+    "final_statuses": [
+      "committed"
+    ],
     "action": "set_valve_position",
-    "targets": ["valve-01"],
-    "params": {"position_pct": 30},
-    "source_reading_ids": ["w-r10", "w-r11"],
+    "targets": [
+      "valve-01"
+    ],
+    "params": {
+      "position": 30
+    },
+    "source_reading_ids": [
+      "w-r10",
+      "w-r11"
+    ],
     "provider_calls": 1,
     "actuate_calls": 1,
     "effects": 1

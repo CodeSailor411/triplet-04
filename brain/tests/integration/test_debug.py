@@ -23,7 +23,7 @@ def test_home_debug_session_and_real_case_replay():
         assert result["batches"][-1]["decisions"][0]["status"] == "alert"
         assert (
             client.post(
-                "/debug/case/S01/base", json={}, headers={"Origin": "http://localhost"}
+                "/debug/case/S06/base", json={}, headers={"Origin": "http://localhost"}
             ).status_code
             == 404
         )

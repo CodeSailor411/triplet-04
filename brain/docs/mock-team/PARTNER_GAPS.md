@@ -1,21 +1,20 @@
-# Questions Elyes must close before the joint smoke test
+# Partner integration gaps
 
-Review basis: final meeting report, CIVIS checkpoint, cap proposal supplied in chat, and actual remote branches fetched on 7 October 2026. The remote implementation is useful evidence but is not automatically a new triplet agreement.
+Updated 11 October 2026 from the 9 October meeting and actual Twin main at 9170ee2. Local five-scenario tests pass; full partner readiness remains false. See [review evidence](INTEGRATION_REVIEW_2026-10-11.md).
 
-| Item | Actual evidence | Required leader decision |
+| Item | Verified state | Next action |
 | --- | --- | --- |
-| Guardian interface | `guardian` is still a scaffold in this checkout; tool names/score scale are unavailable | Obtain Houssem's endpoint, Brain caller key, score/approval tools and schemas, cut-offs, token sample, errors, and protocol version. Freeze the adapter mapping. |
-| Action format | Current Twin uses string `action` plus separate `params`, not the older nested action object | Confirm this wire format; keep any internal proposal translation inside Elyes's adapter. |
-| Dispatch location | Twin uses `destination`; targets are dispatch carriers | Confirm name and semantics. Fetch carrier IDs and allowed unit types from discovery. |
-| Preview | Twin flags valve/grid preview required but does not provide/enforce preview yet; plans 15-17 Oct | Request a minimal mock preview or agree an explicit mock exception with partners. Until confirmed, live high-risk requests remain blocked. Fixtures can test both safe preview and missing preview. |
-| Two-step commit | Final report has a working default; Twin plans it for 8 Oct, off by default | Discover feature support. Test both immediate commit and pending/commit; never assume a second call always exists. |
-| Cap discovery | Current `get_capabilities` reports tools, not numeric caps; `list_actions` exposes an action cap | Use the manifest for current action limits and ask Trinity to expose the complete agreed cap map. Do not infer all-domain shared-node limits from one action row. |
-| Containment lifecycle | Earlier message says reset-only; `twin-containment` already adds Guardian-only `release_device` | Treat release as a discovered optional feature. Brain must not invoke it. Confirm notify/recovery payload with Guardian. |
-| Rollback cap | Earlier message says uncapped; current branch adds a separate rollback pool marked not confirmed | Ask Trinity and 9antra to settle this. CIVIS must not hardcode either rule or claim confirmation. |
-| Cap confirmation | Twin config comments say confirmed on 5 Oct; supplied message asks for confirmation | Verify with 9antra. A code comment alone is not proof of partner approval. |
-| Traffic metric | Current branch has speeds/counts, congestion index scheduled 8 Oct | Use an explicit congestion fixture for tests. Until the metric is available, return unsupported rather than inventing a conversion. |
-| Emergency feed | Numeric channels exist; full transcripts planned later | The mock can detect channel events. Detailed injuries, victims and prompt-injection transcripts use clearly synthetic fixtures only. |
-| Power/Water response | No public safe hydraulic/topology model or power thresholds | Keep defaults conservative. Demonstrate positive valve preview only with a declared safe fixture. Live low-load/high-level readings alone cannot justify a topology-changing command. |
-| Shared log | Final report assigns a draft to Trinity and review by all on 9 Oct | Map CIVIS JSONL to that draft; preserve evidence/status/code, and keep secrets out. |
+| Guardian | Real 9antra service was unavailable; tests used explicit stand-ins | Houssem supplies endpoint/key, assessment and approval tools/schemas, score scale/cut-offs, token mode and errors. Confirm simulated time in the approval request and freeze mapping. |
+| Traffic metric | Twin publishes cars/min and km/h, no congestion_index | Dali and CIVIS agree a percent metric or detector conversion. Brain currently warns and does not invent congestion from speed/count. |
+| Water preview | Twin marks valve preview required but has no preview tool | Obtain a preview interface. Keep live R3 blocked; do not make a silent exception. |
+| Dispatch | destination was chosen in the meeting; targets are carriers | Implemented and tested against actual Twin using a test Guardian. Real Guardian approval remains unverified. |
+| Token clock | Meeting agrees 60 simulated seconds; Twin uses RFC3339 iat/exp and normalized score | Implemented locally. Confirm signature mode and actual Guardian claims. Fixture score floors are illustrative; meeting floors remain placeholders. |
+| Two-step actions | Brain supports advertised pending/commit. Inspected Twin has no commit_action tool despite meeting wording | Confirm availability/date and pending deadline. No unsupported call or premature success. |
+| Timing and retries | Current AI timeout 60 real seconds, peer timeout 5 seconds; distinct-tick trust attempts are bounded | Agree architecture numbers, neighbour-first sequence and total deadline. Ten-second reaction compliance is not proven. |
+| Cap discovery | Action manifests expose domain caps; shared targets require every touched domain's cap | Publish complete agreed limits. Missing caps block. Brain never implements Guardian's containment pools. |
+| Containment | Brain polls get_containment_state and accepts Guardian-only notices | Confirm real callback wiring. Release permits fresh evidence; old corrected/quarantined evidence stays invalid. |
+| Shared logs | Meeting envelope implemented; current Twin merger accepts Brain files | Agree any new event-type timeline lanes and how partner files are collected per run. |
+| Human escalation | Meeting mentions it; user explicitly excluded it from this mock | Resolve scope with the team. Current implementation has no human-review workflow. |
+| Future domains/GPS | Telecom/Waste and GPS conventions are later work | Unknown added fields do not break parsing; no new scenario or distance calculation was invented. |
 
-The API examples and test-only thresholds in this scaffold are development choices. They are not signed-off triplet safety settings. The free AI API must not choose or relax those settings.
+Brain never calls Guardian-only containment/release/rollback tools. Power remains alert-only and Water needs supplied safe topology. Approved policy and real evidence are required before fixture thresholds can be used with live peers.

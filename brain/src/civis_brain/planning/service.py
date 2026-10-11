@@ -19,6 +19,8 @@ def validate_command(
     if not set(targets).issubset(set(action.target_nodes) & node_ids):
         raise BrainError("INVALID_TARGETS", "A target does not carry the advertised actuator")
     specs = {item["name"]: item for item in action.params}
+    if len(specs) != len(action.params):
+        raise BrainError("PEER_SCHEMA_INVALID", "Duplicate parameter name in manifest")
     if set(params) != set(specs):
         raise BrainError("INVALID_PARAMS", "Parameter names must exactly match the manifest")
     normalized = {}
@@ -124,6 +126,8 @@ def validate_plan(context: PlanningContext, plan: Plan) -> Plan:
                     and reading.channel == "ambulance"
                     and reading.unit == "units"
                     and reading.value is not None
+                    and reading.tick == context.batch.tick
+                    and reading.value.is_integer()
                     and reading.reading_id in source_ids
                 ]
                 if not available or min(reading.value for reading in available) < 1:

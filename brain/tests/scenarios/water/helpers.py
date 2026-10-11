@@ -14,7 +14,7 @@ from civis_brain.contracts import (
 CHOICE = {
     "incident_node_id": "tank-01",
     "targets": ["valve-01"],
-    "params": {"position_pct": 30},
+    "params": {"position": 30},
 }
 EVIDENCE_IDS = ["w-run-1-10", "w-run-1-11"]
 
@@ -35,7 +35,7 @@ def make_proposal(**overrides) -> ActionProposal:
     data = {
         "action": "set_valve_position",
         "targets": ["valve-01"],
-        "params": {"position_pct": 30},
+        "params": {"position": 30},
         "risk": "R3",
         "preview_required": True,
         "source_reading_ids": list(EVIDENCE_IDS),
@@ -52,8 +52,8 @@ def make_action_info(**overrides) -> ActionInfo:
         "risk": "R3",
         "preview_required": True,
         "params": [
-            {"name": "position_pct", "type": "number", "choices": None,
-             "min_value": 0, "max_value": 100, "unit": "percent"}
+            {"name": "position", "type": "number", "choices": None,
+             "min_value": 0, "max_value": 100, "unit": "%"}
         ],
         "target_nodes": ["valve-01"],
         "action_cap": 1,
@@ -90,7 +90,9 @@ def make_context(incidents=None, actions=None) -> PlanningContext:
     return PlanningContext(
         batch=batch,
         incidents=[make_incident()] if incidents is None else incidents,
-        nodes=[Node(node_id="tank-01", domains=["water"], role="tank")],
+        nodes=[Node(node_id="tank-01", domains=["water"], role="tank"),
+               Node(node_id="valve-01", domains=["water"], role="valve",
+                    actuators=["set_valve_position"])],
         actions=[make_action_info()] if actions is None else actions,
-        evidence_readings=[reading],
+        evidence_readings=[reading.model_copy(update={"reading_id": EVIDENCE_IDS[0], "tick": 10}), reading],
     )

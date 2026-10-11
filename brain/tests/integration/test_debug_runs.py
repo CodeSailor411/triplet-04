@@ -14,7 +14,7 @@ from civis_brain.planning.gemini import GeminiPlanProvider
 from civis_brain.settings import Settings
 
 
-@pytest.mark.parametrize("scenario", ["S03", "S04", "DEMO_R1"])
+@pytest.mark.parametrize("scenario", ["S01", "S02", "S03", "S04", "S05", "DEMO_R1"])
 @pytest.mark.parametrize("variant", ["base", "refusal"])
 async def test_standard_debug_cases_run_through_actual_core(scenario, variant):
     result = await run_debug_case(
@@ -125,8 +125,8 @@ def test_request_editor_routes_and_redacted_export():
         client.get("/")
         assert client.get("/debug/export").status_code == 404
         rows = client.get("/debug/templates").json()["templates"]
-        assert len(rows) == 6
-        body = next(row["request"] for row in rows if row["request"]["scenario"] == "DEMO_R1")
+        assert len(rows) == 10
+        body = next(row["request"] for row in rows if row["request"]["scenario"] == "S01")
         assert client.post("/debug/run", json=body).status_code == 403
         response = client.post("/debug/run", json=body, headers={"Origin": "http://localhost"})
         assert response.json()["acceptance"]["passed"] is True
@@ -134,7 +134,7 @@ def test_request_editor_routes_and_redacted_export():
         assert exported.json() == response.json()
         assert "attachment" in exported.headers["content-disposition"]
         assert "eyJ" not in exported.text
-        body["scenario"] = "S01"
+        body["scenario"] = "S06"
         assert (
             client.post("/debug/run", json=body, headers={"Origin": "http://localhost"}).status_code
             == 422

@@ -11,17 +11,27 @@
   "nodes": [
     {
       "node_id": "EMG-INCIDENT-01",
-      "domains": ["emergency"],
+      "domains": [
+        "emergency"
+      ],
       "role": "incident_location",
       "actuators": [],
-      "neighbours": ["EMG-CARRIER-01"]
+      "neighbours": [
+        "EMG-CARRIER-01"
+      ]
     },
     {
       "node_id": "EMG-CARRIER-01",
-      "domains": ["emergency"],
+      "domains": [
+        "emergency"
+      ],
       "role": "dispatch_carrier",
-      "actuators": ["dispatch"],
-      "neighbours": ["EMG-INCIDENT-01"]
+      "actuators": [
+        "dispatch"
+      ],
+      "neighbours": [
+        "EMG-INCIDENT-01"
+      ]
     }
   ],
   "actions": [
@@ -33,16 +43,18 @@
       "params": [
         {
           "name": "unit_type",
-          "type": "string",
-          "choices": ["ambulance"],
+          "type": "choice",
+          "choices": [
+            "ambulance"
+          ],
           "min_value": null,
           "max_value": null,
           "unit": null
         },
         {
           "name": "destination",
-          "type": "string",
-          "choices": ["EMG-INCIDENT-01"],
+          "type": "node",
+          "choices": [],
           "min_value": null,
           "max_value": null,
           "unit": null
@@ -50,13 +62,15 @@
         {
           "name": "units",
           "type": "integer",
-          "choices": [1],
+          "choices": [],
           "min_value": 1,
           "max_value": 1,
           "unit": "units"
         }
       ],
-      "target_nodes": ["EMG-CARRIER-01"],
+      "target_nodes": [
+        "EMG-CARRIER-01"
+      ],
       "action_cap": 1
     }
   ],
@@ -88,7 +102,7 @@
           "node_id": "EMG-CARRIER-01",
           "device_id": "EMG-CARRIER-01.units_free",
           "sensor": "units_free",
-          "channel": null,
+          "channel": "ambulance",
           "value": 1.0,
           "unit": "units"
         }
@@ -103,7 +117,9 @@
     "channel": "medical",
     "threshold_min": 1.0,
     "persistence_ticks": 1,
-    "allowed_actions": ["dispatch"],
+    "allowed_actions": [
+      "dispatch"
+    ],
     "unit_type": "ambulance",
     "risk": "R2",
     "unit": "calls/min",
@@ -111,7 +127,16 @@
     "availability_unit": "units"
   },
   "guardian": {
-    "approve": true
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_seconds": 60
   },
   "preview": {
     "available": false,
@@ -122,7 +147,9 @@
     "proposals": [
       {
         "action": "dispatch",
-        "targets": ["EMG-CARRIER-01"],
+        "targets": [
+          "EMG-CARRIER-01"
+        ],
         "params": {
           "unit_type": "ambulance",
           "destination": "EMG-INCIDENT-01",
@@ -130,7 +157,10 @@
         },
         "risk": "R2",
         "preview_required": false,
-        "source_reading_ids": ["s05-base-calls-01", "s05-base-units-01"],
+        "source_reading_ids": [
+          "s05-base-calls-01",
+          "s05-base-units-01"
+        ],
         "reason": "Synthetic medical-channel event with one available ambulance; no patient details inferred."
       }
     ],
@@ -140,34 +170,28 @@
     "status": "committed"
   },
   "expected": {
-    "decision": {
-      "decision_id": "fixture-s05-base-dispatch",
-      "run_id": "fixture-s05-base",
-      "tick": 1,
-      "status": "committed",
-      "reason": "Synthetic medical-channel event with available ambulance evidence and fixture exact-action approval.",
-      "source_reading_ids": ["s05-base-calls-01", "s05-base-units-01"],
-      "action": "dispatch",
-      "targets": ["EMG-CARRIER-01"],
-      "params": {
-        "unit_type": "ambulance",
-        "destination": "EMG-INCIDENT-01",
-        "units": 1
-      },
-      "peer_code": null
-    },
-    "allowed_call_order": [
-      "Guardian evidence assessment",
-      "provider.generate",
-      "Guardian exact-action approval",
-      "Twin dispatch"
+    "final_statuses": [
+      "committed"
     ],
-    "call_counts": {
-      "guardian.fixture_score": 1,
-      "provider.generate": 1,
-      "guardian.fixture_approve": 1,
-      "twin.actuation_request": 1
+    "action": "dispatch",
+    "targets": [
+      "EMG-CARRIER-01"
+    ],
+    "params": {
+      "unit_type": "ambulance",
+      "destination": "EMG-INCIDENT-01",
+      "units": 1
     },
-    "actuator_effect_count": 1
+    "source_reading_ids": [
+      "s05-base-calls-01",
+      "s05-base-units-01"
+    ],
+    "provider_calls": 1,
+    "actuate_calls": 1,
+    "effects": 1,
+    "peer_code": null
+  },
+  "caps": {
+    "emergency": 1
   }
 }

@@ -1,4 +1,4 @@
-﻿"""S02 workflow proof through the real shared core. Fixture peers, no network or key."""
+"""S02 workflow proof through the real shared core. Fixture peers, no network or key."""
 
 import json
 from pathlib import Path
@@ -127,7 +127,7 @@ async def test_normal_water_does_nothing(tmp_path):
     [
         {"source_reading_ids": ["fake-1"]},
         {"targets": ["valve-99"]},
-        {"params": {"position_pct": 90}},
+        {"params": {"position": 90}},
     ],
 )
 async def test_unsupported_ai_proposal_never_reaches_twin(change, tmp_path):

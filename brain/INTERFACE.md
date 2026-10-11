@@ -1,17 +1,27 @@
-# CIVIS primary mock: interface development card
+# CIVIS Brain mock interface
 
-Status: transport scaffold only; workflows are assigned and not implemented. The complete frozen development contract is [here](docs/mock-team/CONTRACT.md). Proposed tool names/callback payloads still need partner confirmation.
+Revision: 11 October 2026. Python 3.12; FastAPI; MCP Streamable HTTP, protocol 2026-07-28. Start from brain/ with .\.venv\Scripts\python.exe -m civis_brain. MCP endpoint: http://127.0.0.1:8001/mcp. Local developer console: http://127.0.0.1:8001/.
 
-- Python 3.12, FastAPI, official MCP SDK 2.3.0; protocol `2026-07-28`.
-- MCP Streamable HTTP: `http://<brain-host>:8001/mcp`; health: `GET /health`.
-- Every workflow call requires `Authorization: Bearer <caller-layer-key>`; Twin, Guardian and scenario keys are separate. Health/capability discovery is open.
-- `get_capabilities` reports negotiated protocol, caller identity, readiness and implemented/planned tools. No key is returned.
-- Planned: `evaluate_tick(batch)`, `get_active_incidents(run_id)`, `explain_decision(decision_id)`, `notify_containment(notice)` (Guardian only). They currently return `NOT_IMPLEMENTED`.
-- Input readings follow current Twin's run/tick/time/reading/node/device/sensor/channel/value/unit batch. Domains come from node discovery; missing values remain null.
-- Brain generates validated proposals and asks Guardian for exact-action approval before requesting Twin execution. It never isolates, quarantines, releases or rolls back devices itself.
-- Current Twin wire action is a string with separate `params`; dispatch carriers are `targets` and the location is `params.destination`. Endpoint/schema adapters remain configurable.
-- Missing token, unsupported required preview, unusable evidence, malformed AI output and cap refusal never permit an action. Scores alone are not tokens.
-- Reduced scope: S01 congestion, S02 high water, S03 power alert/blocked, S04 air pollution, S05 medical emergency. Five modules share one runtime; secondary responses are deferred.
-- Mock fixtures provide repeatable no-network tests; real Gemini and partner connectivity are separate smoke checks. Logs redact tokens and keys.
+| MCP tool | Arguments | Caller/result |
+| --- | --- | --- |
+| get_capabilities | {} | Public discovery, implemented tools and readiness |
+| evaluate_tick | {batch: ReadingsBatch} | Twin, Guardian or scenario caller; returns DecisionBatch |
+| get_active_incidents | {run_id: string} | Authenticated caller; active candidates for that run |
+| explain_decision | {decision_id: string} | Authenticated caller; saved decision or found=false |
+| notify_containment | {notice: ContainmentNotice} | Guardian only; invalidates affected evidence |
 
-Known gaps and questions for partners: [PARTNER_GAPS.md](docs/mock-team/PARTNER_GAPS.md). Handover target: 9 October 2026, before 10 October.
+Use distinct Bearer keys configured in ignored .env: BRAIN_TWIN_CALLER_KEY, BRAIN_GUARDIAN_CALLER_KEY and BRAIN_SCENARIO_KEY. Local development defaults are not partner credentials.
+
+**Batch:** run_id, tick, time (RFC3339 UTC), tick_seconds, count, readings. Each reading keeps run_id, reading_id, tick, timestamp, node_id, device_id, sensor, channel, value and unit. Null remains null. Membership comes from list_nodes. Extra future fields are tolerated; malformed required fields are rejected.
+
+**Flow:** a driver gets Twin readings and calls evaluate_tick. Brain discovers nodes/actions/clock/containment, detects candidates, obtains Guardian evidence assessments, asks Gemini for an actionable Plan, validates it, previews R3, requests exact approval, rechecks containment/clock and calls Twin actuate. Twin alone executes. Current Twin does not automatically send batches.
+
+**Responses:** alert, blocked, pending, committed or rejected, with evidence IDs and reasons/codes. Pending is not a completed action. explain_decision is a read tool; it does not rerun anything.
+
+**Local presets:** Traffic percent -> R1 signal; Water cm -> R3 valve with supported topology/preview; Power kW/V -> alert; Air Quality ug/m3 -> alert; Medical calls/min plus ambulance units -> R2 dispatch. All are synthetic test readings. CLI scripts/run_case.py supports S01-S05 base/refusal. BRAIN_FIXTURE_CASE selects the fixture discovery/profile for the long-lived MCP service, e.g. mocks/cases/traffic/base_case.json; restart after changing it. Debug replays load their own case without altering that service.
+
+**Live boundaries:** real Guardian mapping is unverified; current Twin lacks Traffic congestion_index and Water preview. Illustrative policy is blocked with live peers. Timeouts/retry/pending deadlines still need team agreement. ready=false describes those partner gaps, not missing local scenario modules.
+
+**Logs:** run-logs/<run_id>.brain.jsonl, meeting envelope with event_id, timestamp, tick, wall, layer, event_type, caused_by and data; decisions include idempotency_key. Secrets and full tokens are redacted. In-memory state requires a new run after restart.
+
+See [review evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md) and [handover](docs/mock-team/HANDOVER.md). No remote release has been made.

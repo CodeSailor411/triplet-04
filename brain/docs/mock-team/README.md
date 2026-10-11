@@ -56,8 +56,10 @@ Do not wait until 9 October to build the core: Elyes starts it in parallel on 7 
 
 ## Current implementation status
 
-Elyes's S03/S04, shared runtime, direct Gemini adapter, fake peers and MCP tools are implemented. S01/S02/S05 remain assigned to their owners. Gemini Flash-Lite and the developer console were verified on 9 October: the live shared action demo committed one simulated effect, while its refusal variant produced none. See [DEBUGGING.md](DEBUGGING.md), HANDOVER.md and progress/elyes.md. Full-release readiness remains false.
+All five modules are integrated locally on codex/civis-elyes as of 11 October. No remote upload has been made. See the [individual review and tests](INTEGRATION_REVIEW_2026-10-11.md), [handover](HANDOVER.md) and [debug page guide](DEBUGGING.md).
 
-From brain/, run .\.venv\Scripts\python.exe scripts/run_case.py --scenario S03 --case base or select S04. The runner is implemented; other scenario choices become usable when their owners supply the required cases and implementations. The debug console's separate synthetic action demo exercises the common pipeline without implementing S01.
+The five base/refusal workflows, shared mixed-scenario runtime, MCP transport and real Gemini planning have been tested. Traffic/Water still have live Twin gaps, and the real Guardian contract remains unverified. Full partner readiness stays false.
 
-Release requires all five scenario outcomes, meaningful refusal tests, redacted traces, one launch/trigger path, honest readiness and documented partner gaps. Live R3 water must stay blocked if required preview is unavailable. Alert-only power is a deliberate reduced mock outcome; it does not demonstrate live grid switching. The full eight-row incident table remains the broader roadmap.
+Run .\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base from brain/; S01-S05 and base/refusal are supported. The browser exposes those same five modules. The internal synthetic signal fixture is only a regression aid.
+
+Elyes must confirm the local review before publishing the integration branch. Partner acceptance and the agreed PR flow follow; do not merge directly into main.

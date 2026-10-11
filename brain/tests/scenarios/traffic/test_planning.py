@@ -73,8 +73,8 @@ def make_context(include_incident: bool = True) -> PlanningContext:
                 preview_required=True,
                 params=[
                     {
-                        "name": "plan_id",
-                        "type": "string",
+                        "name": "plan",
+                        "type": "choice",
                         "choices": ["plan-a", "plan-b"],
                     }
                 ],
@@ -82,7 +82,7 @@ def make_context(include_incident: bool = True) -> PlanningContext:
                 action_cap=1,
             )
         ],
-        evidence_readings=[previous],
+        evidence_readings=[previous, current],
     )
 
 
@@ -104,7 +104,7 @@ def valid_plan() -> Plan:
             ActionProposal(
                 action="set_signal_plan",
                 targets=["traffic-1"],
-                params={"plan_id": "plan-a"},
+                params={"plan": "plan-a"},
                 risk="R1",
                 preview_required=True,
                 source_reading_ids=["reading-1", "reading-2"],

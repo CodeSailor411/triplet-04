@@ -11,7 +11,7 @@ from civis_brain.scenarios.water.planner import plan_response, rejection_reason
 CHOICE = {
     "incident_node_id": "tank-01",
     "targets": ["valve-01"],
-    "params": {"position_pct": 30},
+    "params": {"position": 30},
 }
 
 
@@ -24,12 +24,12 @@ def make_info() -> ActionInfo:
             "preview_required": True,
             "params": [
                 {
-                    "name": "position_pct",
+                    "name": "position",
                     "type": "number",
                     "choices": None,
                     "min_value": 0,
                     "max_value": 100,
-                    "unit": "percent",
+                    "unit": "%",
                 }
             ],
             "target_nodes": ["valve-01"],
@@ -56,7 +56,7 @@ def make_proposal(**changes) -> ActionProposal:
     data = {
         "action": "set_valve_position",
         "targets": ["valve-01"],
-        "params": {"position_pct": 30},
+        "params": {"position": 30},
         "risk": "R3",
         "preview_required": True,
         "source_reading_ids": ["w-r10", "w-r11"],
@@ -77,7 +77,9 @@ class FakeProvider:
 
 
 def make_context(incidents) -> PlanningContext:
-    return PlanningContext.model_construct(incidents=incidents, actions=[make_info()])
+    from tests.scenarios.water.helpers import make_context as full_context
+
+    return full_context(incidents=incidents, actions=[make_info()])
 
 
 def run(context, provider):
@@ -112,7 +114,7 @@ def test_unsupported_valve_target_is_rejected():
 
 def test_wrong_param_value_is_rejected():
     reason = rejection_reason(
-        make_proposal(params={"position_pct": 90}), make_incident(), make_info(), [CHOICE]
+        make_proposal(params={"position": 90}), make_incident(), make_info(), [CHOICE]
     )
     assert reason == "targets or params are not a supported valve choice"
 
@@ -154,7 +156,7 @@ def test_bad_proposals_are_dropped_with_an_alert():
         [
             make_proposal(source_reading_ids=["fake-1"]),
             make_proposal(targets=["valve-99"]),
-            make_proposal(params={"position_pct": 90}),
+            make_proposal(params={"position": 90}),
         ]
     )
     plan = run(make_context([make_incident()]), provider)

@@ -8,7 +8,7 @@ POLICY = {
     "persistence_ticks": 2,
     "safe_valve_choices": [
         {"incident_node_id": "tank-01", "targets": ["valve-01"],
-         "params": {"position_pct": 30}}
+         "params": {"position": 30}}
     ],
 }
 NODES = [Node(node_id="tank-01", domains=["water"], role="tank")]

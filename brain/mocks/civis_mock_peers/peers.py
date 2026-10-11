@@ -3,10 +3,12 @@
 import base64
 import copy
 import json
+from datetime import timedelta
 from typing import Any
 
 from civis_brain.contracts import ActionInfo, ActionProposal, Node, Plan, PlanningContext
 from civis_brain.errors import BrainError
+from civis_brain.inputs.service import utc_time
 from civis_brain.integration.journal import Journal
 from civis_brain.planning.service import check_caps, validate_command
 
@@ -58,7 +60,8 @@ class FixtureTwin:
     async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         self.calls.append({"name": name, "arguments": self.journal.redact(arguments)})
         if name == "get_capabilities":
-            tools = ["get_capabilities", "get_clock", "list_nodes", "list_actions", "actuate"]
+            tools = ["get_capabilities", "get_clock", "list_nodes", "list_actions", "actuate",
+                     "get_containment_state"]
             if self.case.get("preview", {}).get("available") is True:
                 tools.append("fixture_preview")
             if self.case.get("twin_outcome", {}).get("commit_available") is True:
@@ -68,6 +71,10 @@ class FixtureTwin:
                 "tools_you_can_call": tools,
                 "action_caps": self.case.get("caps", {}),
             }
+        if name == "get_containment_state":
+            return {"run_id": self.clock["run_id"], "tick": self.clock["tick"],
+                    "time": self.clock["time"], "devices": self.case.get("contained_devices", []),
+                    "corrections": self.case.get("corrections", []), "pools": []}
         if name == "get_clock":
             return {key: self.clock[key] for key in ("run_id", "tick", "time", "tick_seconds")}
         if name == "list_nodes":
@@ -109,10 +116,12 @@ class FixtureTwin:
             raise BrainError("TOKEN_INVALID", "Fixture approval has the wrong issuer or audience")
         if claims.get("run_id") != self.clock["run_id"]:
             raise BrainError("TOKEN_RUN_MISMATCH", "Fixture approval belongs to another run")
-        if not isinstance(claims.get("exp"), int) or not isinstance(claims.get("iat"), int):
-            raise BrainError("TOKEN_INVALID", "Fixture approval has no tick validity")
-        if not claims["iat"] <= self.clock["tick"] < claims["exp"]:
-            raise BrainError("TOKEN_EXPIRED", "Fixture approval is outside its tick lifetime")
+        try:
+            start, expiry = utc_time(claims["iat"]), utc_time(claims["exp"])
+        except (KeyError, ValueError, TypeError):
+            raise BrainError("TOKEN_INVALID", "Approval needs simulated UTC validity") from None
+        if not start <= utc_time(self.clock["time"]) < expiry:
+            raise BrainError("TOKEN_EXPIRED", "Approval is outside its simulated-time lifetime")
         if any(claims.get(field) != intent[field] for field in intent):
             raise BrainError(
                 "TOKEN_ACTION_MISMATCH", "Fixture approval binds another exact command"
@@ -184,10 +193,12 @@ class FixtureGuardian:
                 iss="guardian",
                 aud="twin",
                 jti=f"fixture-{self.sequence}",
-                iat=arguments["tick"],
-                exp=arguments["tick"] + config["token_lifetime_ticks"],
-                score=config["score"],
-                score_scale=config["score_scale"],
+                iat=arguments["time"],
+                exp=(utc_time(arguments["time"]) + timedelta(
+                    seconds=config.get("token_lifetime_seconds", 60)
+                )).isoformat().replace("+00:00", "Z"),
+                score=config["score"] / config["score_scale"],
+                score_scale="0..1",
             )
             claims.update(config.get("claim_overrides", {}))
             token = encode_claims(claims)

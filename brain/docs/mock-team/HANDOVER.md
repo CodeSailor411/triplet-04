@@ -1,76 +1,59 @@
-# Elyes implementation handover
+# CIVIS primary mock handover
 
-Updated 9 October 2026. Integration branch: codex/civis-elyes.
+Updated 11 October 2026. Local integration branch: **codex/civis-elyes**. All five modules are integrated; no remote upload has been made. Main, member branches and partner code were not modified.
 
-## Completed
+## What runs
 
-- S03: explicit mock overload candidate or an uncertainty warning; low load never asserts an outage. Default power thresholds remain disabled. No grid action.
-- S04: PM2.5 candidate after two distinct consecutive ticks, with original historical evidence. Null, wrong unit/channel, duplicate tick and run reset are handled. No AQ actuator or inferred dispatch.
-- Shared normalization, five-entry registry, separate run/scenario state, bounded evidence/decision cache, incident/explanation views and redacted JSONL.
-- Reusable network-free Twin/Guardian/provider fixtures, four own scenario cases and one runner.
-- Deterministic parameter/carrier/evidence/risk/topology checks, Guardian score and exact-command approval, required preview, all touched-domain caps, idempotency, refusal detail and optional pending confirmation.
-- Direct Gemini Flash-Lite (gemini-3.5-flash-lite), using stateless Interactions and manifest-constrained JSON Plans. Selected evidence, a 60-second timeout, bounded output, no automatic retries and a per-run budget constrain calls. OpenRouter has been removed.
-- Plain developer debug page at http://127.0.0.1:8001/: editable JSON requests, six presets, chronological model/peer requests and responses, decisions, simulated effects and a JSON export. Four presets exercise S03/S04; two exercise the shared action pipeline with a separate synthetic detector. Loopback checks, HttpOnly session cookie, same-origin POST and CSP protect the console. Set BRAIN_DEBUG_ENABLED=false to disable it.
-- Authenticated MCP tools and Guardian-only evidence invalidation. Local HTTP/MCP smoke verified actual SDK negotiation, authorization, discovery and workflow.
+- Traffic: persistent congestion in percent, R1 signal command, complete source evidence and exact authorization.
+- Water: high-water candidate in cm, supplied safe valve choice, R3 preview before approval and actuation.
+- Power: explicit evidence/uncertainty alert. No invented outage or grid switching.
+- Air Quality: sustained PM2.5 in ug/m3, alert only.
+- Medical: calls/min on medical channel, whole ambulance units on ambulance channel, R2 dispatch with carrier targets and separate destination.
 
-The final five-scenario release is incomplete. Health/capabilities correctly return ready=false.
+All modules use the same normalization, registry, Gemini provider, manifest validator, Guardian approval and Twin execution path. The developer page offers ten presets: base/refusal for each of the five scenarios. See [DEBUGGING.md](DEBUGGING.md).
 
-## Your next actions
+## Verification and limits
 
-1. Review Yassine, Meriem and Maram's PRs into codex/civis-elyes. No CIVIS member PR was open during this implementation check.
-2. Ask Houssem for the actual Guardian tools, request/response schemas, numeric score scale, cut-offs, JWS claims and caller key. Configure the explicit adapter mapping after agreement.
-3. Ask Dali for complete shared-domain cap discovery and the required water preview interface. Confirm pending/commit and the shared log format.
-4. Your Gemini key is configured in ignored brain/.env with restricted Windows file access. Live Flash-Lite planning passed: the shared action demo committed one simulated effect, and its Guardian-refusal variant committed none. Follow [DEBUGGING.md](DEBUGGING.md) to inspect or edit requests. Power/Air cases require no AI call.
-5. After member merges and live checks, complete the five-row acceptance matrix. Maram opens the release PR into brain; Elyes reviews it. Do not merge directly into main.
+The [review report](INTEGRATION_REVIEW_2026-10-11.md) records individual defects and corrections. Verification passed: 264 automated tests, Ruff, all 55 applicable dependency pins, three-server authenticated MCP tests, and real Gemini planning for S01/S02/S05.
 
-Containment lifecycle and overlapping requested-node counts remain partner discussion items. Brain does not settle them or call isolation, quarantine, release or rollback.
+Current Twin main at 9170ee2 was tested over real MCP using its actual code, synthetic readings and a test Guardian. Medical approval committed once; denial committed nothing. Water returned PREVIEW_UNAVAILABLE. Traffic's current speed/count readings produced an explicit missing-metric alert. Twin's actual log merger accepted Brain part files. This does not verify the real 9antra implementation.
 
-## Commands
+Python is 3.12.13. The lock was not upgraded. Public /health and get_capabilities retain ready=false for full partner readiness even though all five local modules are implemented.
 
-From your working folder:
+## Start and demonstrate
+
+From brain/:
 
 ~~~powershell
-Set-Location -LiteralPath 'C:\Users\thabe\Desktop\New folder (15)\triplet-04'
-git branch --show-current
-powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
-cd brain
 .\.venv\Scripts\python.exe -m pytest -q
 .\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
-.\.venv\Scripts\python.exe scripts/run_case.py --scenario S03 --case base
-.\.venv\Scripts\python.exe scripts/run_case.py --scenario S03 --case refusal
-.\.venv\Scripts\python.exe scripts/run_case.py --scenario S04 --case base
-.\.venv\Scripts\python.exe scripts/run_case.py --scenario S04 --case refusal
-.\.venv\Scripts\python.exe scripts/smoke_mcp.py
+.\.venv\Scripts\python.exe scripts/doctor.py
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
-Use another PowerShell terminal for checks while the service runs. smoke_mcp.py starts and closes its own temporary local server; it does not inspect a running partner endpoint.
+Open http://127.0.0.1:8001/. Start with Recorded response. Traffic, Water and Medical base cases each commit one simulated effect. Their refusal cases commit none. Power/Air cases produce alerts. Select Gemini API to inspect a real model request with the same fake partner workflow.
 
-Live AI only, after your local key is configured:
+Offline CLI: .\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base. All S01-S05 base/refusal cases work. scripts/smoke_mcp.py tests transport with temporary local servers.
 
-~~~powershell
-cd brain
-.\.venv\Scripts\python.exe scripts/smoke_gemini.py
-~~~
+An optional local Twin checkout can be tested with scripts/smoke_partner_twin.py --twin-root <path-to-twin-folder>. Install that Twin's declared dependencies separately and supply --extra-deps if needed; do not add Twin-only packages to Brain's lock. The check freezes Twin's clock and uses explicit synthetic test policy in temporary servers.
 
-This sends one explicitly synthetic planning request. It calls no peer and executes no command. Missing key, quota or failure is reported honestly.
+## Operating boundaries
 
-## Service modes and current limits
+- Committed defaults use fixture peers and recorded responses. Local .env may select Gemini; the debug page always creates fresh fake peers. Three live AI calls are allowed per server session; restart the service to reset this local budget.
+- Live partner mode requires approved policy, real endpoints/keys and confirmed Guardian mapping. Fixture-only policy cannot authorize live actions.
+- The Brain's caller supplies a ReadingsBatch through evaluate_tick. Twin does not currently push batches automatically; a driver must fetch get_readings and call Brain.
+- Tokens bind the exact command, use RFC3339 simulated UTC iat/exp, normalized score 0..1 and a maximum 60 simulated seconds. Twin is responsible for cryptographic verification and execution. Brain never creates real approvals.
+- Brain polls get_containment_state before detection and execution, and accepts Guardian-only invalidation callbacks. Release permits new evidence; invalidated readings stay invalid. Brain never contains or releases devices.
+- Every touched domain needs an advertised cap. Refusals retain detail and cause no partial effect. Unchanged rejected commands are not resubmitted; uncertain outcomes retain the original idempotency key.
+- Optional pending confirmation works only when advertised and configured. No premature commit is recorded. A pending deadline and the meeting's full retry sequence are not yet implemented.
+- State is in memory: 2,000 readings, 100 tick responses and 1,000 explanations per run. Logs are audit evidence, not crash recovery. Restart with a fresh run ID or reconcile uncertain execution first.
+- Per-run JSONL follows the 9 October envelope; secrets/tokens/hidden truth are redacted. Disk failures retain in-memory outcomes and report LOG_WRITE_FAILED without misreporting a committed action.
 
-- Committed defaults are PEER_MODE=fixture and LLM_MODE=fixture. Your local .env selects Gemini while peers remain fixtures. Debug runs always use fresh fake Guardian/Twin instances. The browser shares a budget of three live AI calls per server session across scenario runs and the separate API connection check. Offline runs do not consume that budget.
-- Installed Python is 3.12.13. All 55 applicable locked packages match; FastAPI/Pydantic/MCP/Uvicorn shared pins match Trinity's inspected requirements. The final decision report specifies Python/FastAPI and MCP protocol 2026-07-28, not exact package pins. See VERSIONS.md.
-- Desktop and 390 px mobile browser checks passed with no JavaScript errors or horizontal overflow. Live success/refusal and all four offline S03/S04 cases passed. Editing the demo's high reading from 95 to 20 produced no incident, no AI call and no effect.
-- Fixture service inputs use the supplied simulated clock, not a claim about Twin's live clock.
-- PEER_MODE=live uses configured MCP URLs/keys and discovered schemas. Set GUARDIAN_CONTRACT_CONFIRMED=true only after confirming the explicit GUARDIAN_MAPPING_FILE.
-- Fixture-only thresholds cannot authorize live workflows. Approved live policy and real evidence are required.
-- TWIN_PREVIEW_TOOL and TWIN_COMMIT_TOOL have no assumed default. Required preview absent means blocked; unconfirmed execution remains pending.
-- list_actions.action_cap supplies its own domain cap. A shared carrier also requires caps for its other domains; missing limits block.
-- Twin must verify/consume the Guardian token. Brain checks exact JWS claims; it does not sign approvals or verify Twin's cryptographic implementation.
-- Runtime retains 2,000 readings, 100 tick responses and 1,000 explanations per run. Duplicate accepted ticks do not repeat work. A changed accepted tick is blocked.
-- Low-trust evidence gets at most three distinct-tick attempts, with no repeated same-tick score calls. There is no autonomous sleep/retry loop.
-- An unchanged command keeps its run/scenario/action/targets/params idempotency key. Rejected receipts are not retried unchanged. Uncertain sends use the original key on a fresh evaluation.
-- State and receipts are in memory. JSONL is an audit trace, not restart recovery. A restart requires a fresh run or explicit partner reconciliation before resuming uncertain physical operations.
-- Containment invalidates queued evidence; release accepts new evidence and never restores old evidence. Already committed Twin effects are not undone.
-- JSONL is a CIVIS mock format pending Trinity's final shared-log agreement. Do not describe the local transport test as completed live partner integration.
+## Before partner release
 
-The synthetic action demo is shared-runtime evidence, not completion of Yassine's S01. Live Gemini success does not establish live Guardian/Twin integration. Local verification: 104 tests, Ruff, dependency checks and the actual local MCP transport smoke passed. No package upgrades were needed.
+1. Elyes reviews this local build and authorizes publishing. Keep member PRs open remotely until then.
+2. Confirm Houssem's real Guardian schema, score scale/cut-offs, exact-token request including simulated time, keys and errors; run the joint smoke test.
+3. Resolve the missing Traffic metric/conversion and Water preview with Dali.
+4. Agree the architecture's real/simulated timeout numbers and pending/retry behavior. Current 60-second AI timeout does not guarantee the Phase 1 ten-second reaction target.
+5. The meeting mentions human escalation; the current user-approved scope explicitly excludes human review. Resolve that scope difference with the team before claiming full meeting compliance.
+6. After confirmation, publish the integration branch and follow the PR route into brain. Main is not the target of this local work.

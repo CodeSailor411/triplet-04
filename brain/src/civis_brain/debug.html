@@ -24,7 +24,7 @@ details { margin: 10px 0; } summary { cursor: pointer; }
 </head>
 <body>
 <h1>CIVIS Brain console</h1>
-<p>Mock peers only in this page. S03 Power and S04 Air Quality are implemented; the signal action demo exercises the shared core with a synthetic detector.</p>
+<p>Mock peers only in this page. Traffic, Water, Power, Air Quality and Medical emergency are implemented.</p>
 <div id="notice" class="notice" role="alert" hidden></div>
 <div class="table-wrap"><table aria-label="Service configuration">
 <tr><th>Environment</th><td><span id="python">Loading</span><br><span id="versions"></span></td></tr>
@@ -39,7 +39,7 @@ details { margin: 10px 0; } summary { cursor: pointer; }
 <label for="provider-mode">Planning:</label>
 <select id="provider-mode"><option value="fixture">Recorded response (offline)</option><option value="gemini">Gemini API</option></select>
 <button id="load">Reload standard readings</button>
-<p>Power and Air Quality produce alerts without AI. The action demo uses readings of 35% then 95%, a mock threshold of 80%, and an R1 signal command. Refusal uses the same readings with mock Guardian approval denied.</p>
+<p>Traffic tests an R1 signal request after two high percent readings; its refusal denies approval. Water tests an R3 valve request with a safe-preview fixture; its refusal has an unsafe preview. Medical tests R2 ambulance dispatch; its refusal denies approval. Power and Air Quality produce alerts without AI.</p>
 <label for="request">POST /debug/run body:</label>
 <textarea id="request" spellcheck="false" aria-label="Scenario request JSON"></textarea>
 <p>Edit the readings in this JSON to test changes. Each reading keeps its run, tick, UTC timestamp, node, device, sensor, unit and original ID.</p>
@@ -200,7 +200,7 @@ async function init() {
       option.textContent = item.label;
       $("preset").append(option);
     }
-    $("preset").value = "DEMO_R1:base";
+    $("preset").value = "S05:base";
     $("provider-mode").value = state && state.llm_mode === "gemini" ? "gemini" : "fixture";
     loadRequest();
   } catch (error) { notice(error.message); }

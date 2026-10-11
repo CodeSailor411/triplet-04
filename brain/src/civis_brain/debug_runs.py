@@ -20,7 +20,7 @@ from civis_brain.scenarios.registry import SCENARIOS
 
 class DebugRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scenario: Literal["S03", "S04", "DEMO_R1"]
+    scenario: Literal["S01", "S02", "S03", "S04", "S05", "DEMO_R1"]
     variant: Literal["base", "refusal"] = "base"
     provider_mode: Literal["fixture", "gemini"] = "fixture"
     batches: list[ReadingsBatch] | None = Field(default=None, min_length=1, max_length=20)
@@ -35,7 +35,7 @@ def load_case(root: Path, scenario: str, variant: str) -> dict:
             case["guardian"]["approve"] = False
             case["expected"].update(final_statuses=["blocked"], effects=0, actuate_calls=0)
         return case
-    domain = {"S03": "power", "S04": "air_quality"}[scenario]
+    domain = {"S01": "traffic", "S02": "water", "S03": "power", "S04": "air_quality", "S05": "emergency"}[scenario]
     return json.loads(
         (root / "mocks/cases" / domain / f"{variant}_case.json").read_text(encoding="utf-8")
     )
@@ -44,9 +44,11 @@ def load_case(root: Path, scenario: str, variant: str) -> dict:
 def templates(root: Path) -> list[dict]:
     result = []
     for scenario, label in [
+        ("S01", "Traffic"),
+        ("S02", "Water"),
         ("S03", "Power"),
         ("S04", "Air Quality"),
-        ("DEMO_R1", "Shared action demo (synthetic detector)"),
+        ("S05", "Medical emergency"),
     ]:
         for variant in ("base", "refusal"):
             case = load_case(root, scenario, variant)
@@ -158,7 +160,9 @@ async def run_debug_case(settings, request: DebugRunRequest, *, live_provider=No
             "enabled_scenario_ids": [sid],
             "guardian_score_tool": "fixture_score",
             "guardian_token_tool": "fixture_approve",
-            "peer_timeout_seconds": 5,
+            "peer_timeout_seconds": settings.peer_timeout_seconds,
+            "preview_tool": "fixture_preview",
+            "commit_tool": "fixture_commit",
             "ai_timeout_seconds": settings.ai_timeout_seconds,
             "ai_max_calls_per_run": ai_budget,
         },
@@ -180,8 +184,12 @@ async def run_debug_case(settings, request: DebugRunRequest, *, live_provider=No
         checks = {
             key: actual.get(key) == expected
             for key, expected in case["expected"].items()
-            if key != "reason_contains"
+            if key in actual
         }
+        for key in ("action", "targets", "params", "source_reading_ids", "peer_code"):
+            if key in case["expected"]:
+                checks[key] = (len(results[-1]["decisions"]) == 1
+                               and results[-1]["decisions"][0].get(key) == case["expected"][key])
         if case["expected"].get("reason_contains"):
             checks["reason_contains"] = any(
                 case["expected"]["reason_contains"] in row["reason"]

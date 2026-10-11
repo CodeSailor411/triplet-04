@@ -27,8 +27,10 @@ def configured_runtime(settings):
         "ai_max_calls_per_run": settings.ai_max_calls_per_run,
         "ai_timeout_seconds": settings.ai_timeout_seconds,
         "peer_timeout_seconds": settings.peer_timeout_seconds,
+        "run_log_dir": str(root / "run-logs"),
     }
     if settings.peer_mode == "fixture":
+        policies[case["scenario_id"]] = case["policy"]
         if not any(row["node_id"] == "POW-01" for row in case["nodes"]):
             case["nodes"].append(
                 {

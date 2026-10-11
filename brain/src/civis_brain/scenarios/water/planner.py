@@ -7,6 +7,8 @@ from civis_brain.contracts import (
     Plan,
     PlanningContext,
 )
+from civis_brain.errors import BrainError
+from civis_brain.planning.service import validate_command
 from civis_brain.ports import PlanProvider
 
 ACTION = "set_valve_position"
@@ -24,28 +26,15 @@ def find_manifest(context: PlanningContext) -> ActionInfo | None:
     return None
 
 
-def _within_bounds(spec: dict, value) -> bool:
-    low, high = spec.get("min_value"), spec.get("max_value")
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return spec.get("type") != "number"
-    if low is not None and value < low:
+def manifest_allows(info: ActionInfo, choice: dict, nodes: list) -> bool:
+    """Use the shared manifest validator before spending a provider call."""
+    if info.risk != RISK or not info.preview_required:
         return False
-    return not (high is not None and value > high)
-
-
-def manifest_allows(info: ActionInfo, choice: dict) -> bool:
-    """A configured valve choice is usable only if the manifest supports it."""
-    specs = {p.get("name"): p for p in info.params}
-    targets = choice.get("targets") or []
-    params = choice.get("params") or {}
-    if not targets or not params:
+    try:
+        validate_command(info, choice.get("targets", []), choice.get("params", {}), nodes)
+        return True
+    except (BrainError, KeyError, TypeError):
         return False
-    if not set(targets) <= set(info.target_nodes):
-        return False
-    return all(
-        name in specs and _within_bounds(specs[name], value)
-        for name, value in params.items()
-    )
 
 
 def rejection_reason(
@@ -60,7 +49,8 @@ def rejection_reason(
         return f"risk {proposal.risk} is not {RISK}"
     if proposal.preview_required != info.preview_required:
         return "preview_required does not match the manifest"
-    if not set(proposal.source_reading_ids) <= set(incident.source_reading_ids):
+    if (len(set(proposal.source_reading_ids)) != len(proposal.source_reading_ids)
+            or set(proposal.source_reading_ids) != set(incident.source_reading_ids)):
         return "evidence ids not produced by the detector"
     for choice in choices:
         if sorted(proposal.targets) == sorted(choice["targets"]) and (
@@ -81,7 +71,7 @@ async def plan_response(context: PlanningContext, provider: PlanProvider) -> Pla
     for incident in incidents:
         node = ", ".join(incident.node_ids)
         raw = incident.facts.get("supported_valve_actions") or []
-        choices = [c for c in raw if info is not None and manifest_allows(info, c)]
+        choices = [c for c in raw if info is not None and manifest_allows(info, c, context.nodes)]
         if choices:
             actionable.append((incident, choices))
         else:

@@ -1,4 +1,4 @@
-
+from math import isfinite
 from typing import Any
 
 from civis_brain.contracts import (
@@ -10,6 +10,8 @@ from civis_brain.contracts import (
     PlanningContext,
     ReadingsBatch,
 )
+from civis_brain.errors import BrainError
+from civis_brain.planning.service import validate_command
 from civis_brain.ports import PlanProvider
 
 
@@ -22,15 +24,19 @@ class TrafficScenario:
     ) -> DetectionResult:
         sensor = policy.get("sensor", "congestion_index")
         unit = policy.get("unit", "percent")
-        threshold = policy.get("threshold_min", 80.0)
-        persistence = policy.get("persistence_ticks", 2)
+        threshold = policy.get("threshold_min")
+        persistence = policy.get("persistence_ticks")
 
         if (
             not isinstance(threshold, (int, float))
             or isinstance(threshold, bool)
+            or not isfinite(threshold)
+            or not 0 <= threshold <= 100
             or not isinstance(persistence, int)
             or isinstance(persistence, bool)
-            or persistence < 1
+            or not 1 <= persistence <= 100
+            or sensor != "congestion_index"
+            or unit != "percent"
         ):
             raise ValueError("Invalid traffic detection policy")
 
@@ -62,6 +68,10 @@ class TrafficScenario:
                 reason = "unsupported_sensor"
             elif reading.unit != unit:
                 reason = "unsupported_unit"
+            elif reading.channel is not None:
+                reason = "unsupported_channel"
+            elif reading.value is not None and not 0 <= reading.value <= 100:
+                reason = "invalid_percentage"
             elif reading.value is None:
                 reason = "missing_value"
 
@@ -81,14 +91,24 @@ class TrafficScenario:
                 and reading.run_id == batch.run_id
                 and reading.tick == batch.tick
             ):
-                current_readings.setdefault(reading.node_id, (reading, reason))
+                if reading.node_id in current_readings:
+                    current_readings[reading.node_id] = (reading, "ambiguous_readings")
+                else:
+                    current_readings[reading.node_id] = (reading, reason)
+
+        if not current_readings and any(
+            "traffic" in row.domains for row in observations
+        ):
+            warnings.append(
+                "S01: congestion_index unavailable; no agreed conversion from vehicle_count or avg_speed."
+            )
 
         for node_id, (reading, reason) in current_readings.items():
             previous = node_states.get(node_id, {})
             last_tick = previous.get("last_tick")
 
             # Repeated evaluation of the same tick must not advance persistence.
-            if last_tick == batch.tick:
+            if last_tick is not None and last_tick >= batch.tick:
                 continue
 
             above_threshold = (
@@ -109,26 +129,18 @@ class TrafficScenario:
                 else 1 if above_threshold else 0
             )
 
+            source_ids = []
+            if above_threshold:
+                source_ids = list(previous.get("evidence", [])) if consecutive else []
+                source_ids.append(reading.reading_id)
+                source_ids = source_ids[-persistence:]
             node_states[node_id] = {
                 "last_tick": batch.tick,
-                "last_reading_id": reading.reading_id,
-                "streak": streak,
-                "incident_emitted": (
-                    previous.get("incident_emitted", False)
-                    if above_threshold and consecutive
-                    else False
-                ),
+                "streak": min(streak, persistence),
+                "evidence": source_ids,
             }
-
-            if streak < persistence or node_states[node_id]["incident_emitted"]:
+            if len(source_ids) < persistence:
                 continue
-
-            previous_reading_id = previous.get("last_reading_id")
-            source_ids = (
-                [previous_reading_id, reading.reading_id]
-                if consecutive and previous_reading_id
-                else [reading.reading_id]
-            )
 
             incidents.append(
                 Incident(
@@ -137,7 +149,7 @@ class TrafficScenario:
                     ),
                     kind="congestion",
                     run_id=batch.run_id,
-                    domains=["traffic"],
+                    domains=list(node_by_id[node_id].domains),
                     node_ids=[node_id],
                     source_reading_ids=source_ids,
                     facts={
@@ -150,7 +162,6 @@ class TrafficScenario:
                     },
                 )
             )
-            node_states[node_id]["incident_emitted"] = True
 
         return DetectionResult(
             observations=observations,
@@ -169,10 +180,7 @@ class TrafficScenario:
 
         available_readings = {
             reading.reading_id: reading
-            for reading in [
-                *context.evidence_readings,
-                *context.batch.readings,
-            ]
+            for reading in context.evidence_readings
         }
 
         candidates = [
@@ -214,6 +222,10 @@ class TrafficScenario:
                 node_id
                 for node_id in action.target_nodes
                 if node_id in traffic_nodes
+                and any(node_id in incident.node_ids or any(
+                    node_id in traffic_nodes[location].neighbours
+                    for location in incident.node_ids
+                ) for incident in candidates)
             ]
 
             if targets:
@@ -316,76 +328,13 @@ class TrafficScenario:
                     alerts=[*plan.alerts, "Rejected unsupported proposal."],
                 )
 
-            specs = {
-                spec["name"]: spec
-                for spec in action.params
-                if isinstance(spec, dict)
-                and isinstance(spec.get("name"), str)
-            }
-
-            for name, value in proposal.params.items():
-                spec = specs.get(name)
-
-                if spec is None:
-                    return Plan(
-                        proposals=[],
-                        alerts=[*plan.alerts, "Rejected unsupported proposal."],
-                    )
-
-                if "choices" in spec and value not in spec["choices"]:
-                    return Plan(
-                        proposals=[],
-                        alerts=[*plan.alerts, "Rejected unsupported proposal."],
-                    )
-
-                param_type = spec.get("type")
-
-                if param_type == "string":
-                    valid_type = isinstance(value, str)
-                elif param_type == "boolean":
-                    valid_type = isinstance(value, bool)
-                elif param_type == "integer":
-                    valid_type = (
-                        isinstance(value, int) and not isinstance(value, bool)
-                    )
-                elif param_type == "number":
-                    valid_type = (
-                        isinstance(value, (int, float))
-                        and not isinstance(value, bool)
-                    )
-                else:
-                    valid_type = False
-
-                if not valid_type:
-                    return Plan(
-                        proposals=[],
-                        alerts=[*plan.alerts, "Rejected unsupported proposal."],
-                    )
-
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    if "min_value" in spec and value < spec["min_value"]:
-                        return Plan(
-                            proposals=[],
-                            alerts=[*plan.alerts, "Rejected unsupported proposal."],
-                        )
-
-                    if "max_value" in spec and value > spec["max_value"]:
-                        return Plan(
-                            proposals=[],
-                            alerts=[*plan.alerts, "Rejected unsupported proposal."],
-                        )
-
-            forbidden_terms = (
-                "containment",
-                "quarantine",
-                "isolate_device",
-                "release_device",
-            )
-
-            if any(term in proposal.reason.lower() for term in forbidden_terms):
-                return Plan(
-                    proposals=[],
-                    alerts=[*plan.alerts, "Rejected unsupported proposal."],
-                )
+            if (len(set(proposal.source_reading_ids)) != len(proposal.source_reading_ids)
+                    or not any(set(incident.source_reading_ids).issubset(
+                        proposal.source_reading_ids) for incident in candidates)):
+                return Plan(proposals=[], alerts=[*plan.alerts, "Rejected unsupported proposal."])
+            try:
+                validate_command(action, proposal.targets, proposal.params, restricted_context.nodes)
+            except BrainError:
+                return Plan(proposals=[], alerts=[*plan.alerts, "Rejected unsupported proposal."])
 
         return plan

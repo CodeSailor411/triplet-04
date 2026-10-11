@@ -20,14 +20,14 @@ from civis_brain.contracts import (
     ReadingsBatch,
 )
 from civis_brain.errors import BrainError
-from civis_brain.inputs.service import normalize_batch
+from civis_brain.inputs.service import normalize_batch, utc_time
 from civis_brain.integration.journal import Journal
 from civis_brain.planning.service import check_caps, validate_plan
 from civis_brain.ports import PlanProvider, ToolPeer
 from civis_brain.scenarios.registry import SCENARIOS
 
 RELEVANCE = {
-    "S01": ("traffic", {"congestion_index"}),
+    "S01": ("traffic", {"congestion_index", "vehicle_count", "avg_speed"}),
     "S02": ("water", {"water_level"}),
     "S03": ("power", {"load_kw", "voltage_v"}),
     "S04": ("air_quality", {"pm25"}),
@@ -88,7 +88,11 @@ class BrainRuntime:
             raise ValueError("enabled_scenario_ids must contain known scenario IDs")
         self.enabled = set(enabled)
         self.lock = asyncio.Lock()
-        self.journal = Journal(artifact_dir / "trace.jsonl" if artifact_dir else None)
+        self.journal = Journal(
+            artifact_dir / "trace.jsonl" if artifact_dir else None,
+            run_log_dir=Path(features["run_log_dir"]) if features.get("run_log_dir")
+            else artifact_dir / "run-logs" if artifact_dir else None,
+        )
         self.run_id = None
         self._reset()
 
@@ -97,6 +101,7 @@ class BrainRuntime:
         self.ledger = {}
         self.invalid_ids = set()
         self.blocked_devices = set()
+        self.polled_devices = set()
         self.containment_events = set()
         self.generation = 0
         self.last_tick = -1
@@ -148,7 +153,13 @@ class BrainRuntime:
         self.decisions[decision.decision_id] = decision
         if len(self.decisions) > 1000:
             self.decisions.pop(next(iter(self.decisions)))
-        self.journal.append({"event": "decision", "scenario_id": scenario, **decision.model_dump()})
+        intent = (dict(action=proposal.action, targets=proposal.targets, params=proposal.params)
+                  if proposal is not None else None)
+        key = ("brain-" + fingerprint({"run_id": batch.run_id, "scenario": scenario, **intent})
+               if intent is not None else None)
+        self.journal.set_clock(batch)
+        self.journal.append({"event": "decision", "scenario_id": scenario,
+                             **decision.model_dump(), "idempotency_key": key})
         return decision
 
     async def _discovery(self, batch):
@@ -167,6 +178,49 @@ class BrainRuntime:
         actions = [ActionInfo.model_validate(row) for row in actions_response["actions"]]
         normalize_batch(batch, nodes)
         return nodes, actions, capabilities
+
+    async def _sync_containment(self, batch, capabilities):
+        if "get_containment_state" not in capabilities.get("tools_you_can_call", []):
+            if not getattr(self.twin, "is_fixture", False):
+                raise BrainError("CONTAINMENT_UNAVAILABLE", "Twin must advertise containment discovery")
+            return
+        state = await self._call(self.twin, "get_containment_state", {})
+        if state.get("run_id") != batch.run_id or state.get("tick") != batch.tick:
+            raise BrainError("CLOCK_MISMATCH", "Containment snapshot belongs to another run or tick")
+        devices, corrections = state.get("devices"), state.get("corrections")
+        if not isinstance(devices, list) or not isinstance(corrections, list):
+            raise BrainError("PEER_SCHEMA_INVALID", "Malformed containment snapshot")
+        current = set()
+        for row in devices:
+            if (not isinstance(row, dict) or row.get("state") not in {"isolated", "quarantined"}
+                    or not isinstance(row.get("device_id"), str) or not row["device_id"]):
+                raise BrainError("PEER_SCHEMA_INVALID", "Malformed contained device")
+            current.add(row["device_id"])
+        corrected = set()
+        for row in corrections:
+            if (not isinstance(row, dict) or not isinstance(row.get("corrects"), str)
+                    or not row["corrects"]):
+                raise BrainError("PEER_SCHEMA_INVALID", "Malformed corrected reading")
+            corrected.add(row["corrects"])
+        for status, changed in (
+            ("quarantined", current - self.polled_devices),
+            ("released", self.polled_devices - current),
+        ):
+            if changed:
+                self.notify_containment(ContainmentNotice(
+                    event_id="poll-" + fingerprint({"run": batch.run_id, "tick": batch.tick,
+                                                    "state": status, "devices": sorted(changed),
+                                                    "generation": self.generation}),
+                    run_id=batch.run_id, state=status, device_ids=sorted(changed),
+                ))
+        if corrected - self.invalid_ids:
+            self.notify_containment(ContainmentNotice(
+                event_id="corrections-" + fingerprint({"run": batch.run_id,
+                                                       "ids": sorted(corrected)}),
+                run_id=batch.run_id, state="corrected", device_ids=[],
+                reading_ids=sorted(corrected),
+            ))
+        self.polled_devices = current
 
     def _eligible(self, source_ids):
         return all(
@@ -290,16 +344,15 @@ class BrainRuntime:
                 claims["iss"] == "guardian"
                 and claims["aud"] == "twin"
                 and claims["run_id"] == clock.run_id
-                and type(claims["iat"]) is int
-                and type(claims["exp"]) is int
-                and claims["iat"] <= clock.tick < claims["exp"]
+                and utc_time(claims["iat"]) <= utc_time(clock.time) < utc_time(claims["exp"])
+                and 0 < (utc_time(claims["exp"]) - utc_time(claims["iat"])).total_seconds() <= 60
                 and isinstance(claims["jti"], str)
                 and bool(claims["jti"])
                 and all(claims[field] == intent[field] for field in ("action", "targets", "params"))
                 and type(claims["score"]) in (int, float)
                 and math.isfinite(claims["score"])
-                and floor <= claims["score"] <= scale
-                and claims.get("score_scale") == scale
+                and floor / scale <= claims["score"] <= 1
+                and claims.get("score_scale") in (None, "0..1")
             )
         except (ValueError, TypeError, KeyError):
             valid = False
@@ -311,6 +364,7 @@ class BrainRuntime:
 
     async def evaluate_tick(self, batch: ReadingsBatch) -> DecisionBatch:
         async with self.lock:
+            self.journal.set_clock(batch)
             signature = fingerprint(batch.model_dump())
             if batch.run_id == self.run_id and batch.tick in self.cached_ticks:
                 previous, result = self.cached_ticks[batch.tick]
@@ -348,6 +402,7 @@ class BrainRuntime:
                 if batch.run_id != self.run_id:
                     self.run_id = batch.run_id
                     self._reset()
+                await self._sync_containment(batch, capabilities)
                 for reading in batch.readings:
                     prior = self.ledger.get(reading.reading_id)
                     if prior and prior != reading:
@@ -634,6 +689,9 @@ class BrainRuntime:
                 )
             response = await self._call(self.twin, commit_tool, {"idempotency_key": key})
             return self._save_receipt(batch, sid, proposal, key, response)
+        await self._sync_containment(batch, capabilities)
+        if self.generation != generation or not self._eligible(proposal.source_reading_ids):
+            raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
         if proposal.preview_required:
             preview_tool = self.features.get("preview_tool")
             if not preview_tool or preview_tool not in tools:
@@ -658,6 +716,7 @@ class BrainRuntime:
                 "run_id": batch.run_id,
                 "tick": batch.tick,
                 **intent,
+                "time": batch.time,
                 "risk": proposal.risk,
                 "source_reading_ids": proposal.source_reading_ids,
             },
@@ -676,6 +735,7 @@ class BrainRuntime:
             raise BrainError(
                 "CLOCK_CHANGED", "Twin advanced before execution; re-evaluate fresh evidence"
             )
+        await self._sync_containment(batch, capabilities)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
             raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
         self.journal.append(

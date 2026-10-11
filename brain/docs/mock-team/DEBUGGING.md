@@ -1,71 +1,41 @@
 # Local Brain debugging
 
-Open PowerShell in your checkout's brain folder and start the service:
+From brain/, start .\.venv\Scripts\python.exe -m civis_brain and open http://127.0.0.1:8001/. Restart after changing Python code or .env.
 
-~~~powershell
-.\.venv\Scripts\python.exe -m civis_brain
-~~~
+## Explain the page
 
-Open http://127.0.0.1:8001/. If the service is already running, use that page. After changing Python code or .env, stop your running server with Ctrl+C and start it again.
+1. **Environment:** installed versions, service peer mode, selected AI model, whether a key exists, and remaining live API calls. No key value is displayed.
+2. **Load and edit a request:** choose one of the five scenarios, base/refusal and Recorded response or Gemini API. The JSON contains the exact readings submitted by Run request. Reload standard readings restores the preset.
+3. **Result:** the real Brain decision, refusal code, number of model calls and simulated effects. Committed means the mock Twin confirmed an effect; alert means no actuator action.
+4. **Request and response trace:** expand each entry to see discovery, evidence assessment, model input/final Plan, preview when required, approval and actuation. Tokens are redacted.
+5. **Download:** saves the current request and result as JSON. Custom inputs are not graded against the original preset.
+6. **AI connection only:** one real Gemini request without Guardian/Twin or an effect. Usually use Run request for the complete workflow.
+7. **Active service events:** the long-lived MCP runtime's events. Each debug replay is isolated, so it does not populate that service's active run.
 
-## Run the complete action workflow
+## Five scenarios
 
-1. Select **Shared action demo (synthetic detector): base**.
-2. Select **Gemini API** and load the preset if necessary. Check that the request JSON has "provider_mode": "gemini".
-3. Press **Run request**. This submits the editable JSON to /debug/run.
-4. Tick 1 is a baseline. Tick 2 detects the mock incident, requests a Gemini Plan, validates it, requests mock Guardian approval and sends the approved command to mock Twin. The expected result is **committed**, **1 AI call**, **1 simulated effect**.
-5. Expand the request/response entries to inspect selected evidence, the actual Gemini request and final JSON, approval, actuation and receipts. **Download this debug run as JSON** exports the trace.
+| Scenario | Base | Refusal | AI needed |
+| --- | --- | --- | --- |
+| Traffic S01 | Two high percent readings, approved R1 signal, 1 effect | Guardian denies, 0 effects | Yes |
+| Water S02 | Supported valve choice, safe preview, approved R3 valve, 1 effect | Unsafe preview, 0 effects | Yes |
+| Power S03 | Recorded alert | Insufficient fault evidence warning | No |
+| Air Quality S04 | Sustained PM2.5 alert | Unsupported evidence warning | No |
+| Medical S05 | Medical call plus ambulance availability, approved R2 dispatch, 1 effect | Guardian denies, 0 effects | Yes |
 
-The live base and refusal flows passed on 9 October 2026 using gemini-3.5-flash-lite. Live AI can still fail because of network, quota or output validation; the page reports the failure rather than treating it as a successful fixture run.
+All ten presets use actual scenario modules and the same shared runtime. Guardian and Twin are fake peers on this page. Recorded response uses a stored Plan and no network AI; Gemini API uses a real Gemini Plan with those same fake peers.
 
-## Cases and expected results
+For a quick edit test, load Traffic base and change the second value from 95 to 20. Two consecutive high ticks are no longer present: no AI call and no effect. Preserve run/tick/time/IDs/node/sensor/unit/channel; null stays null.
 
-| Preset | What it checks | Expected |
-| --- | --- | --- |
-| Shared action demo: base | Complete action pipeline | One committed simulated effect |
-| Shared action demo: refusal | Mock Guardian denies the proposed command | Blocked, GUARDIAN_DENIED, zero effects |
-| Power: base | Explicit mock overload candidate | Alert, zero effects |
-| Power: refusal | Evidence does not establish the claimed power fault | Uncertainty alert, zero effects |
-| Air Quality: base | Sustained PM2.5 evidence | Alert, zero effects |
-| Air Quality: refusal | Invalid or insufficient pollution evidence | Warning, zero effects |
+Water's positive preview is a declared fixture. Actual Twin currently lacks the preview tool. Actual Twin also lacks Traffic's congestion_index metric. See [partner gaps](PARTNER_GAPS.md).
 
-Power and Air Quality are Elyes's actual alert-only modules. They do not need Gemini even when Gemini is selected. The shared action demo uses a separate synthetic detector and does not complete or replace Yassine's S01. Guardian and Twin are fake peers in every debug run.
+## Gemini and safety controls
 
-Select **Recorded response (offline)** to run the same pipeline using a saved Plan and no external AI request. Each run starts with fresh mock state; it does not modify another run or the active service workflow.
+Local .env uses LLM_MODE=gemini, GEMINI_MODEL=gemini-3.5-flash-lite, AI_TIMEOUT_SECONDS=60 and PEER_MODE=fixture. The key stays in ignored .env. API requests use structured JSON, store=false, bounded output and no automatic retries or search tools. Only final output is displayed.
 
-## Edit the input
+The page shares a budget of three live calls per server session across runs and the API-only check. Restart to reset that local budget. Recorded cases are unlimited. Loopback/session/origin checks protect the console; BRAIN_DEBUG_ENABLED=false disables it.
 
-The editor contains the complete request body, including its readings. Run sends exactly that JSON. Reloading a preset replaces the editor contents.
+## Evidence
 
-For a simple check, load the shared action base and change the second congestion value from **95** to **20**, leaving its IDs, timestamps and other fields intact. Run it again. Both readings are now below the fixture threshold of 80, so the expected result is **no incident, no AI call, no effect**. Edited inputs are marked as custom; the original preset's pass/fail result is not applied to them.
+On 11 October, 264 automated tests, Ruff and environment checks passed. Browser checks covered all primary presets, custom inputs and desktop/mobile layouts. One real Gemini request per S01/S02/S05 base case produced one validated Plan and simulated effect. These are not real Guardian approvals.
 
-Use the preset structure: one run_id per request, increasing ticks and UTC timestamps, distinct source reading IDs, known node IDs, and the metric's declared unit/channel. Preserve null when a value or channel is absent. Invalid input produces validation errors or a blocked/warning result; the runtime does not invent missing evidence.
-
-The displayed mock configuration shows nodes, actions, policy, caps and Guardian settings. These fixed fixture values are test assumptions, not new agreements with Trinity or 9antra. This editor changes readings, not discovery or policy.
-
-## Gemini and environment
-
-Your local .env selects:
-
-~~~dotenv
-LLM_MODE=gemini
-GEMINI_MODEL=gemini-3.5-flash-lite
-AI_TIMEOUT_SECONDS=60
-PEER_MODE=fixture
-~~~
-
-GEMINI_API_KEY is stored only in your local ignored .env. The console shows whether it is configured, never its value. OpenRouter is no longer used.
-
-The pinned Google SDK calls Interactions with a structured JSON schema, store=false, low thinking and a 2,048-token output limit. Requests contain selected fixture evidence; search tools are not enabled. The console displays the final answer, not internal model reasoning.
-
-The browser permits **three live AI calls per server session**, shared by scenario runs and the separate API-only check. Restarting the service resets this local budget. Offline cases are unlimited. The separate API-only button checks Gemini but does not run Guardian/Twin or produce an effect.
-
-Python remains 3.12.13 with the committed dependency lock. No package upgrades are required. See [SETUP.md](SETUP.md) for installation and [VERSIONS.md](VERSIONS.md) for compatibility evidence.
-
-## Verification
-
-104 local tests, Ruff, dependency checks and the local MCP transport smoke passed. Browser checks covered live Gemini approval/refusal, all four offline Power/Air cases, edited baseline readings, and desktop/mobile layouts.
-
-The latest exported trace is saved under ignored .artifacts/debug/last-run.json. This checkout also retains the verified live examples as live-gemini-base.json and live-gemini-refusal.json in that directory. Exported keys/tokens are redacted.
-
-This verifies Brain with real Gemini and fake partner services. Live Guardian/Twin integration and the three teammates' scenario implementations are still pending.
+Ignored .artifacts/debug/review-*.json contains the inspected requests/results; .artifacts/debug/last-run.json is the latest export. [Review report](INTEGRATION_REVIEW_2026-10-11.md) records the individual corrections and MCP/actual Twin checks.

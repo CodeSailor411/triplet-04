@@ -16,8 +16,8 @@
   "actions": [
     {"action": "set_valve_position", "domain": "water", "risk": "R3",
      "preview_required": true,
-     "params": [{"name": "position_pct", "type": "number", "choices": null,
-                 "min_value": 0, "max_value": 100, "unit": "percent"}],
+     "params": [{"name": "position", "type": "number", "choices": null,
+                 "min_value": 0, "max_value": 100, "unit": "%"}],
      "target_nodes": ["valve-01"], "action_cap": 1}
   ],
   "caps": {"water": 1},
@@ -50,7 +50,7 @@
     "requires_preview": true,
     "safe_valve_choices": [
       {"incident_node_id": "tank-01", "targets": ["valve-01"],
-       "params": {"position_pct": 30}}
+       "params": {"position": 30}}
     ]
   },
   "guardian": {
@@ -58,14 +58,14 @@
     "score_scale": 100,
     "thresholds": {"reading": 60, "R1": 65, "R2": 80, "R3": 90},
     "approve": true,
-    "token_lifetime_ticks": 3
+    "token_lifetime_seconds": 60
   },
   "preview": {"available": true, "safe": false,
               "reason": "fixture: preview shows an unsafe downstream effect"},
   "ai_plan": {
     "proposals": [
       {"action": "set_valve_position", "targets": ["valve-01"],
-       "params": {"position_pct": 30}, "risk": "R3", "preview_required": true,
+       "params": {"position": 30}, "risk": "R3", "preview_required": true,
        "source_reading_ids": ["w-r10", "w-r11"],
        "reason": "Water level stayed above the mock threshold on two consecutive ticks and a supplied safe valve choice exists."}
     ],
@@ -75,10 +75,24 @@
                    "details": "Never reached: the request is blocked before actuation."},
   "expected": {
     "decision_status": "blocked",
-    "final_statuses": ["blocked"],
+    "final_statuses": [
+      "blocked"
+    ],
     "reason_contains": "preview",
     "provider_calls": 1,
     "actuate_calls": 0,
-    "effects": 0
+    "effects": 0,
+    "action": "set_valve_position",
+    "targets": [
+      "valve-01"
+    ],
+    "params": {
+      "position": 30
+    },
+    "source_reading_ids": [
+      "w-r10",
+      "w-r11"
+    ],
+    "peer_code": "PREVIEW_UNSAFE"
   }
 }

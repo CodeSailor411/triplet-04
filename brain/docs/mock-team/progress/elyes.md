@@ -1,3 +1,9 @@
+# Integration update, 11 October 2026
+
+shared core is integrated and corrected locally on codex/civis-elyes. See [individual review and test evidence](../INTEGRATION_REVIEW_2026-10-11.md). All five modules now pass the shared workflow checks. No remote upload or final partner approval has been made.
+
+The earlier progress record below describes the submitted branch before this integration and is superseded where it refers to missing shared code, fixtures or scenario delivery.
+
 # Elyes progress
 
 Updated 9 October 2026. Branch: codex/civis-elyes.

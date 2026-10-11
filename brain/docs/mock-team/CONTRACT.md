@@ -1,6 +1,6 @@
 # Frozen contract: five scenario modules and one Brain runtime
 
-Revision: scenario ownership, 7 October 2026. Owner: Elyes. This replaces the earlier three-module team assignment. Public tool signatures remain unchanged; Decision adds optional redacted peer_details. The shared core and S03/S04 are implemented; other scenario modules remain assigned.
+Revision: local integration, 11 October 2026. Owner: Elyes. This replaces the earlier three-module team assignment. Public tool signatures remain unchanged; Decision adds optional redacted peer_details. All five scenario modules and the shared core are implemented locally; full partner readiness remains false.
 
 ## Pipeline
 
@@ -71,15 +71,15 @@ The existing module-level integration.service.evaluate_tick(batch) and MCP tool 
 
 ## Partner wire contract
 
-Basis: final decision report and unmerged Twin twin-containment at 40a7c90, inspected 7 October. Partner code is evidence, not automatically an agreed amendment.
+Basis: final decision report, 9 October meeting and actual Twin main at 9170ee2, inspected 11 October. Partner code is evidence, not automatically an agreed amendment.
 
-- Twin tools: get_capabilities, list_nodes, get_readings, get_clock, list_actions. Join domains from nodes; readings carry run_id, reading_id, tick, timestamp, node_id, device_id, sensor, channel, value, unit.
-- Current sensors include congestion_index (planned), water_level, load_kw, voltage_v, pm25, emergency_calls and units_free. Emergency channels are numeric calls/min; no injury details or real transcripts are available yet.
+- Twin tools: get_capabilities, list_nodes, get_readings, get_clock, list_actions, get_containment_state. Join domains from nodes; readings carry run_id, reading_id, tick, timestamp, node_id, device_id, sensor, channel, value, unit.
+- Current sensors include congestion_index (fixture-only; absent from inspected Twin), water_level, load_kw, voltage_v, pm25, emergency_calls and units_free. Emergency channels are numeric calls/min; no injury details or real transcripts are available yet.
 - Actuation uses string action plus separate targets, params, token, idempotency_key.
 - S01 action: set_signal_plan, R1. S02: set_valve_position, R3 and required preview. S05: dispatch, R2.
 - Dispatch targets are carrier nodes. params.destination is the incident node; unit type ambulance and units 1 only when supported/available. The manifest determines exact parameter names and bounds.
 - Power grid changes require preview/token/caps but are outside this reduced response implementation. AQ has no direct actuator. Only Guardian requests isolation/quarantine/rollback/release.
-- Guardian scores stay numeric with declared scale/cut-offs. No score or cached verdict substitutes for its token. Tool names and token details need partner confirmation.
+- Guardian assessment scores stay numeric with declared scale/cut-offs. Approval claims use score 0..1 and RFC3339 simulated UTC iat/exp with a maximum 60-second lifetime. No score or cached verdict substitutes for its token. Tool names and token details need partner confirmation.
 
 ## Execution and failures
 
@@ -97,4 +97,6 @@ No human-review workflow. No AI or live peer calls in CI. No secrets in prompts,
 
 MCP at /mcp, port 8001, protocol 2026-07-28. get_capabilities, evaluate_tick, get_active_incidents, explain_decision and Guardian-only notify_containment are implemented. Full-release readiness remains false. Optional set_policy_mode is deferred.
 
-Record run, tick, scenario_id, incident/evidence IDs, status, reason and peer refusal detail in mock JSONL. Runtime assigns scenario_id to trace events; no public model change is required. Decision status is alert/blocked/pending/committed/rejected. Never save tokens/keys. Map this format to Trinity's shared log draft when confirmed.
+Write run-logs/<run_id>.brain.jsonl with run_id, event_id, timestamp (simulated UTC), tick, wall (UTC), layer, event_type, caused_by and data. Decision data contains scenario_id, idempotency_key (null for an alert without a command), status, reason, evidence and refusal details. Decision status is alert/blocked/pending/committed/rejected. Never save tokens/keys/hidden truth. Current Twin's log merger accepts this envelope. Local trace.jsonl remains a separate debugging trace.
+
+Brain polls containment before detection and immediately before execution. A caller/driver supplies each ReadingsBatch; there is no autonomous polling scheduler. Current peer timeout is 5 real seconds, AI timeout 60 real seconds. The meeting's neighbour-first retry sequence, total pending deadline and ten-second reaction target are not yet met by a confirmed timing contract. See PARTNER_GAPS.md.

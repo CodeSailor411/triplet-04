@@ -13,59 +13,24 @@ from civis_brain.contracts import (
     Reading,
     ReadingsBatch,
 )
+from civis_brain.errors import BrainError
+from civis_brain.planning.service import validate_command
 from civis_brain.ports import PlanProvider
 
 
-def _manifest_accepts_value(parameter: dict[str, Any], value: Any) -> bool:
-    parameter_type = parameter.get("type")
-    if parameter_type in {"string", "str"}:
-        if not isinstance(value, str):
-            return False
-    elif parameter_type in {"integer", "int"}:
-        if type(value) is not int:
-            return False
-    elif parameter_type in {"number", "float"}:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            return False
-    else:
+def _dispatch_manifest_supports(action: ActionInfo, destination: str,
+                                carrier_id: str, nodes: list[Node]) -> bool:
+    if (action.action != "dispatch" or action.domain != "emergency"
+            or action.risk != "R2"
+            or (action.action_cap is not None and action.action_cap < 1)):
         return False
-
-    choices = parameter.get("choices")
-    if choices is not None and (not isinstance(choices, list) or value not in choices):
+    try:
+        validate_command(action, [carrier_id],
+                         {"unit_type": "ambulance", "destination": destination, "units": 1},
+                         nodes)
+        return True
+    except BrainError:
         return False
-
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        minimum = parameter.get("min_value")
-        maximum = parameter.get("max_value")
-        if minimum is not None and value < minimum:
-            return False
-        if maximum is not None and value > maximum:
-            return False
-    return True
-
-
-def _dispatch_manifest_supports(action: ActionInfo, destination: str) -> bool:
-    required_values = {
-        "unit_type": "ambulance",
-        "destination": destination,
-        "units": 1,
-    }
-    parameter_names = [parameter.get("name") for parameter in action.params]
-    if (
-        action.action != "dispatch"
-        or action.domain != "emergency"
-        or action.risk != "R2"
-        or (action.action_cap is not None and action.action_cap < 1)
-        or set(parameter_names) != set(required_values)
-        or len(parameter_names) != len(set(parameter_names))
-    ):
-        return False
-
-    parameters_by_name = {parameter["name"]: parameter for parameter in action.params}
-    return all(
-        _manifest_accepts_value(parameters_by_name[name], value)
-        for name, value in required_values.items()
-    )
 
 
 def _incident_evidence(
@@ -113,8 +78,11 @@ def _incident_evidence(
             reported_readings = availability_facts.get(reading.node_id)
             if (
                 reading.unit != "units"
+                or reading.channel != "ambulance"
+                or reading.tick != context.batch.tick
                 or reading.value is None
                 or reading.value < 0
+                or not reading.value.is_integer()
                 or not isinstance(reported_readings, list)
                 or reading.model_dump(mode="json") not in reported_readings
             ):
@@ -148,16 +116,15 @@ def _proposal_matches_candidate(
         or proposal.preview_required != action.preview_required
         or proposal.targets != [carrier_id]
         or proposal.params != expected_params
-        or not _dispatch_manifest_supports(action, incident.node_ids[0])
     ):
         return False
 
     proposal_reading_ids = proposal.source_reading_ids
-    allowed_reading_ids = {*call_reading_ids, availability_reading.reading_id}
+    allowed_reading_ids = set(incident.source_reading_ids)
     return (
         len(set(proposal_reading_ids)) == len(proposal_reading_ids)
-        and set(proposal_reading_ids) <= allowed_reading_ids
-        and bool(set(proposal_reading_ids) & set(call_reading_ids))
+        and set(proposal_reading_ids) == allowed_reading_ids
+        and set(call_reading_ids) <= set(proposal_reading_ids)
         and availability_reading.reading_id in proposal_reading_ids
     )
 
@@ -185,7 +152,7 @@ class EmergencyScenario:
         valid_persistence = (
             isinstance(persistence_ticks, int)
             and not isinstance(persistence_ticks, bool)
-            and persistence_ticks > 0
+            and 1 <= persistence_ticks <= 100
         )
 
         observations: list[Observation] = []
@@ -233,6 +200,10 @@ class EmergencyScenario:
             else:
                 if reason is None and reading.unit != availability_unit:
                     reason = "unexpected units_free unit"
+                elif reason is None and reading.channel != "ambulance":
+                    reason = "units_free is not the ambulance channel"
+                elif reason is None and not reading.value.is_integer():
+                    reason = "units_free must be a whole count"
 
                 usable = reason is None
                 observations.append(
@@ -259,11 +230,17 @@ class EmergencyScenario:
         if state.get(run_state_key) != batch.run_id:
             state[run_state_key] = batch.run_id
             state[events_state_key] = {}
+            state["_s05_last_tick"] = -1
+
+        if batch.tick < state.get("_s05_last_tick", -1):
+            return DetectionResult(observations=observations, incidents=[],
+                                   warnings=["S05 stale tick ignored"])
+        state["_s05_last_tick"] = batch.tick
 
         events_by_node: dict[str, dict[str, Any]] = state.setdefault(events_state_key, {})
         for node_id, event_state in events_by_node.items():
             if node_id not in event_readings_by_node and batch.tick > event_state["last_tick"]:
-                event_state.update(last_tick=batch.tick, streak=0, reading_ids=[])
+                event_state.update(last_tick=batch.tick, streak=0, reading_ids=[], history=[])
 
         for node_id, readings in event_readings_by_node.items():
             event_state = events_by_node.get(node_id)
@@ -272,23 +249,25 @@ class EmergencyScenario:
                     "last_tick": batch.tick,
                     "streak": 1,
                     "reading_ids": [reading.reading_id for reading in readings],
+                    "history": [[reading.reading_id for reading in readings]],
                 }
             elif batch.tick == event_state["last_tick"]:
                 continue
             elif batch.tick == event_state["last_tick"] + 1 and event_state["streak"] > 0:
+                history = [*event_state["history"],
+                           [reading.reading_id for reading in readings]][-persistence_ticks:]
                 event_state.update(
                     last_tick=batch.tick,
-                    streak=event_state["streak"] + 1,
-                    reading_ids=[
-                        *event_state["reading_ids"],
-                        *(reading.reading_id for reading in readings),
-                    ],
+                    streak=min(event_state["streak"] + 1, persistence_ticks),
+                    history=history,
+                    reading_ids=[reading_id for group in history for reading_id in group],
                 )
             else:
                 event_state.update(
                     last_tick=batch.tick,
                     streak=1,
                     reading_ids=[reading.reading_id for reading in readings],
+                    history=[[reading.reading_id for reading in readings]],
                 )
 
         incidents = []
@@ -367,7 +346,7 @@ class EmergencyScenario:
                     or available_readings[0].value is None
                     or available_readings[0].value < 1
                     or not _dispatch_manifest_supports(
-                        dispatch_action, incident.node_ids[0]
+                        dispatch_action, incident.node_ids[0], carrier_id, context.nodes
                     )
                 ):
                     continue

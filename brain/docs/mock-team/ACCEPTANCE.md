@@ -1,6 +1,6 @@
 # Acceptance: five scenarios plus shared checks
 
-Elyes approves release evidence. Each owner proves their own full scenario through the common runtime; unit tests alone are not partner handover. Current tests verify preparation only.
+Elyes approves release evidence. Each owner proves their own full scenario through the common runtime; unit tests alone are not partner handover. All five local workflows now have passing evidence; full partner readiness remains pending. See INTEGRATION_REVIEW_2026-10-11.md for the 11 October record.
 
 | ID | Owner | Base outcome | Required refusal/edge proof |
 | --- | --- | --- | --- |
@@ -33,3 +33,5 @@ These are shared test assertions or variants within S01-S05, not additional prim
 All tests and Ruff pass on Windows, including meaningful full workflows. Save one trace per scenario with status, reason and evidence, plus at least one blocked trace. No skipped required behavior. Record fixture assumptions and partner commit/protocol versions.
 
 Run one separate synthetic live Gemini smoke check under free-tier access and real partner discovery/auth checks when endpoints/keys are supplied. Passing fixtures cannot be reported as completed live integration. Preview/schema gaps must be visible in the partner handover; readiness describes actual supported features.
+
+Current local record: 264 tests, Ruff, lock/dependency checks, actual MCP transport and live Gemini S01/S02/S05 checks passed. The review report distinguishes fake peer logic from actual Twin compatibility and lists unresolved partner/timing requirements. This is not authorization to push.

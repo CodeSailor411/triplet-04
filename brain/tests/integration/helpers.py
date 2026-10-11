@@ -113,7 +113,7 @@ def make_case(sid="S01"):
             "score_scale": 100.0,
             "thresholds": {"reading": 60.0, "R1": 65.0, "R2": 80.0, "R3": 90.0},
             "approve": True,
-            "token_lifetime_ticks": 3,
+            "token_lifetime_seconds": 60,
         },
         "preview": {"available": True, "safe": True, "reason": "Synthetic test"},
         "ai_plan": {

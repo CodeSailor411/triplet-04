@@ -13,6 +13,7 @@ from civis_brain.contracts import ReadingsBatch
 from civis_brain.debug_runs import DebugRunRequest, run_debug_case, templates
 from civis_brain.errors import BrainError
 from civis_brain.planning.service import validate_plan
+from civis_brain.scenarios.registry import IMPLEMENTED_SCENARIOS
 
 
 def attach_debug(app, runtime, settings):
@@ -69,8 +70,8 @@ def attach_debug(app, runtime, settings):
         return runtime.journal.redact(
             {
                 "ready": False,
-                "implemented_scenarios": ["S03", "S04"],
-                "pending_scenarios": ["S01", "S02", "S05"],
+                "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),
+                "pending_scenarios": [],
                 "peer_mode": settings.peer_mode,
                 "llm_mode": settings.llm_mode,
                 "model": settings.gemini_model
@@ -106,7 +107,7 @@ def attach_debug(app, runtime, settings):
             remaining = settings.ai_max_calls_per_run - ai_calls
             if (
                 payload.provider_mode == "gemini"
-                and payload.scenario == "DEMO_R1"
+                and payload.scenario in {"S01", "S02", "S05", "DEMO_R1"}
                 and remaining <= 0
             ):
                 raise HTTPException(429, "Debug AI budget exhausted for this server session")
@@ -126,8 +127,8 @@ def attach_debug(app, runtime, settings):
     @app.post("/debug/case/{sid}/{variant}", include_in_schema=False)
     async def replay(request: Request, sid: str, variant: str):
         authorized(request, write=True)
-        if sid not in {"S03", "S04"} or variant not in {"base", "refusal"}:
-            raise HTTPException(404, "Only delivered Power/Air cases are available")
+        if sid not in IMPLEMENTED_SCENARIOS or variant not in {"base", "refusal"}:
+            raise HTTPException(404, "Only delivered cases are available")
         return await execute(DebugRunRequest(scenario=sid, variant=variant))
 
     @app.get("/debug/export", include_in_schema=False)

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, FixtureTwin
 
-from civis_brain.contracts import Decision, ReadingsBatch
+from civis_brain.contracts import ReadingsBatch
 from civis_brain.integration.runtime import build_runtime
 from tests.scenarios.emergency.helpers import load_case
 
@@ -72,23 +72,25 @@ async def test_s05_base_and_refusal_workflows_match_decision_and_peer_effects(
     )
 
     batch = ReadingsBatch.model_validate(case["batches"][0])
+    twin.advance(batch)
     result = await runtime.evaluate_tick(batch)
 
     assert result.run_id == batch.run_id
     assert result.tick == batch.tick
     assert len(result.decisions) == 1
-    assert result.decisions == [Decision.model_validate(case["expected"]["decision"])]
-    assert result.decisions[0].source_reading_ids == case["expected"]["decision"][
-        "source_reading_ids"
-    ]
-
-    expected_counts = case["expected"]["call_counts"]
-    assert _count_tool_calls(guardian, "fixture_score") == expected_counts[
-        "guardian.fixture_score"
-    ]
-    assert _count_tool_calls(guardian, "fixture_approve") == expected_counts[
-        "guardian.fixture_approve"
-    ]
-    assert len(provider.calls) == expected_counts["provider.generate"]
-    assert _count_dispatch_requests(twin) == expected_counts["twin.actuation_request"]
-    assert len(twin.effects) == case["expected"]["actuator_effect_count"]
+    expected = case["expected"]
+    decision = result.decisions[0]
+    assert decision.decision_id
+    assert decision.status == expected["final_statuses"][0]
+    assert decision.peer_code == expected["peer_code"]
+    for field in ("action", "targets", "params", "source_reading_ids"):
+        assert getattr(decision, field) == expected[field]
+    assert runtime.explain_decision(decision.decision_id)["found"]
+    assert _count_tool_calls(guardian, "fixture_score") == 1
+    assert _count_tool_calls(guardian, "fixture_approve") == 1
+    assert len(provider.calls) == expected["provider_calls"]
+    assert _count_dispatch_requests(twin) == expected["actuate_calls"]
+    assert len(twin.effects) == expected["effects"]
+    if twin.effects:
+        assert twin.effects == [{field: expected[field] for field in ("action", "targets", "params")}]
+    assert "eyJ" not in (tmp_path / case_id / "trace.jsonl").read_text(encoding="utf-8")

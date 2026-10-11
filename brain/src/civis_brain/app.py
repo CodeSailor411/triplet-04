@@ -13,6 +13,7 @@ from civis_brain.debug import attach_debug
 from civis_brain.integration.bootstrap import configured_runtime
 from civis_brain.integration.runtime import BrainRuntime
 from civis_brain.integration.service import bind_runtime
+from civis_brain.scenarios.registry import IMPLEMENTED_SCENARIOS
 from civis_brain.settings import Settings
 
 IMPLEMENTED_TOOLS = [
@@ -62,7 +63,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
 
     @mcp.tool()
     def get_capabilities(ctx: Context) -> Capabilities:
-        """Report implemented tools; the five-scenario release remains incomplete."""
+        """Report implemented tools; full partner integration remains unverified."""
         return Capabilities.model_validate(
             {
                 "layer": "city_brain",
@@ -122,8 +123,8 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "service": "city_brain",
             "version": __version__,
             "peer_mode": settings.peer_mode,
-            "implemented_scenarios": ["S03", "S04"],
-            "awaiting_scenarios": ["S01", "S02", "S05"],
+            "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),
+            "awaiting_scenarios": [],
         }
 
     if settings.brain_debug_enabled:

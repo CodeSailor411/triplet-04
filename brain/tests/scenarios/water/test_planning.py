@@ -80,7 +80,7 @@ def test_unsupported_target_is_dropped():
 
 
 def test_changed_param_value_is_dropped():
-    proposal = helpers.make_proposal(params={"position_pct": 90})
+    proposal = helpers.make_proposal(params={"position": 90})
     result, _ = run(helpers.make_context(), plan_of(proposal))
     assert result.proposals == []
 

@@ -1,5 +1,7 @@
 """S02 high-water candidate detector. Policy values are fixture-only."""
 
+from math import isfinite
+
 from civis_brain.contracts import (
     DetectionResult,
     Incident,
@@ -16,6 +18,8 @@ def classify(reading: Reading, domains_by_node: dict, policy: dict) -> Observati
     reason = None
     if "water" not in domains:
         reason = "node is not a water node"
+    elif reading.channel is not None:
+        reason = "unexpected water_level channel"
     elif reading.value is None:
         reason = "null value"
     elif reading.unit != policy["unit"]:
@@ -34,8 +38,12 @@ def detect_high_water(
         state["run_id"] = batch.run_id
         state["streaks"] = {}
     streaks = state["streaks"]
-    needed = max(1, int(policy["persistence_ticks"]))
-    threshold = float(policy["threshold_min"])
+    needed = policy.get("persistence_ticks")
+    threshold = policy.get("threshold_min")
+    if (type(needed) is not int or not 1 <= needed <= 100
+            or type(threshold) not in (int, float) or not isfinite(threshold)):
+        return DetectionResult(observations=[], incidents=[],
+                               warnings=["S02 detection disabled by invalid threshold or persistence policy"])
     domains_by_node = {n.node_id: list(n.domains) for n in nodes}
 
     observations: list[Observation] = []
