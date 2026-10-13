@@ -18,6 +18,8 @@ class Node(BaseModel):
     zone: str
     x: float                    # position on the 1920x1080 map
     y: float
+    lat: float                  # GPS position (WGS84 degrees, 5 decimals), one fixed spot per node
+    lon: float
     sensors: list[SensorInfo]
     actuators: list[str]
     neighbours: list[str]       # nearest nodes, for retries and cross-checks
@@ -28,10 +30,18 @@ class Canvas(BaseModel):
     height: int
 
 
+class Geo(BaseModel):
+    """How map positions became GPS positions: reference only, for people reading the file."""
+    anchor_lat: float           # latitude of the canvas centre
+    anchor_lon: float
+    metres_per_unit: float      # metres on the ground for 1 map unit
+
+
 class Topology(BaseModel):
-    schema_version: int = 1
+    schema_version: int = 2     # 2 = nodes carry lat/lon, topology carries geo
     seed: int
     canvas: Canvas
+    geo: Geo
     node_size_px: int
     nodes: list[Node]
     edges: list[tuple[str, str]]    # neighbour links, each pair once
@@ -75,6 +85,8 @@ class Reading(BaseModel):
     channel: str | None         # only for sensors that split by type
     value: float | None         # null = no value (never zero)
     unit: str
+    lat: float                  # GPS position of the device's node (fixed, WGS84, 5 decimals)
+    lon: float
 
 
 class ReadingsBatch(BaseModel):

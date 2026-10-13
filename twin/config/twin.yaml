@@ -146,6 +146,10 @@ dashboard:
 # ---------------------------------------------------------------------------
 generator:
   canvas: { width: 1920, height: 1080 }   # same size as the Grok base-map job
+  # GPS for every node. The city is invented, so the anchor is one arbitrary round-number point (central Tunisia,
+  # open land, not a real place we mean). The canvas centre sits on it. 5 m per map unit makes the city about
+  # 9.6 km x 5.4 km. Change these two numbers and every lat/lon follows. Reference only: nothing checks distances.
+  geo: { anchor_lat: 36.0, anchor_lon: 10.0, metres_per_unit: 5.0 }
   node_size_px: 24                        # smallest recommended node size (node-style-spec)
   min_spacing_factor: 1.5                 # node centres at least 1.5 x node width apart
   canvas_margin_px: 80

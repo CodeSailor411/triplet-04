@@ -75,6 +75,8 @@ class CorrectedReading(BaseModel):
     channel: str | None
     value: float
     unit: str
+    lat: float                       # same GPS the bad reading carried
+    lon: float
 
 
 class RollbackResult(BaseModel):
@@ -132,6 +134,8 @@ class LaneReading(BaseModel):
     channel: str | None
     value: float | None
     unit: str
+    lat: float
+    lon: float
 
 
 class QuarantineLane(BaseModel):
@@ -283,7 +287,7 @@ class ContainmentBook:
                 self.corrections[(d.device_id, ch, t)] = CorrectedReading(
                     corrects=rid, restored_from=_reading_id(src_tick, d, ch), run_id=self.sim.run_id, tick=t,
                     timestamp=self.sim.clock.iso_of(t), node_id=d.node_id, device_id=d.device_id, sensor=d.sensor,
-                    channel=ch, value=value, unit=d.unit)
+                    channel=ch, value=value, unit=d.unit, lat=d.lat, lon=d.lon)
             res = RollbackResult(status="applied", run_id=self.sim.run_id, tick=tick_now,
                                  time=self.sim.clock.iso_of(tick_now),
                                  corrections=[self.corrections[(d.device_id, ch, t)] for _, d, ch, t, *_ in made]
@@ -335,7 +339,8 @@ class ContainmentBook:
                 for ch in (d.channels or (None,)):
                     readings.append(LaneReading(reading_id=_reading_id(tick, d, ch), device_id=d.device_id,
                                                 node_id=d.node_id, sensor=d.sensor, channel=ch,
-                                                value=self.sim.reported(d, ch, tick).value, unit=d.unit))
+                                                value=self.sim.reported(d, ch, tick).value, unit=d.unit,
+                                                lat=d.lat, lon=d.lon))
             return QuarantineLane(run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick),
                                   held_readings=readings, held_commands=list(self.held))
 

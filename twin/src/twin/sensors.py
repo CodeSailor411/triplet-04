@@ -26,6 +26,8 @@ class Device:
     unit: str
     domain: str
     channels: tuple[str, ...]       # empty for normal sensors
+    lat: float = 0.0                # GPS of the node (copied from it, so a reading can carry it)
+    lon: float = 0.0
 
 
 @lru_cache(maxsize=200_000)
@@ -118,5 +120,5 @@ def devices_from_nodes(nodes: list[Node], sensor_domain: dict[str, str]) -> list
     for n in nodes:
         for s in n.sensors:
             out.append(Device(device_id=s.device_id, node_id=n.node_id, sensor=s.name, unit=s.unit,
-                              domain=sensor_domain[s.name], channels=tuple(s.channels)))
+                              domain=sensor_domain[s.name], channels=tuple(s.channels), lat=n.lat, lon=n.lon))
     return out
