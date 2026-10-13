@@ -19,7 +19,8 @@ from .actions import ActionBook
 from .containment import ContainmentBook
 from .scenarios import ScenarioBook
 from .runlog import RunLog
-from .settings import Settings, load_settings
+from .storage import open_history
+from .settings import TWIN_ROOT, Settings, load_settings
 from .sim import Simulation
 from .util import now_iso
 
@@ -30,6 +31,20 @@ MAX_BACKLOG = 100       # a slow feed reader may fall this many ticks behind bef
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
+
+
+async def follow_history(sim: Simulation, history) -> None:
+    """Background job: for every tick that passes, hand that tick's readings to the history writer.
+    It stores what the live feed showed (isolated or quarantined devices are not in it, same as on the feed)."""
+    seen_run, seen_tick = sim.run_number, -1
+    while True:
+        run, tick = sim.run_number, sim.tick
+        if run != seen_run:                                   # a new run starts again at tick 0
+            seen_run, seen_tick = run, -1
+        for t in range(seen_tick + 1, tick + 1):
+            history.submit_readings([r.model_dump() for r in sim.readings_at(t).readings])
+        seen_tick = tick
+        await sim.wait_for_change(run, tick, 1.0)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -50,6 +65,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                                   "nodes": len(topology.nodes), "tick_seconds": cfg.clock.tick_seconds,
                                                   "twin_version": __version__})
     book.recorder = containment.recorder = scenarios.recorder = runlog
+    history = open_history(cfg.storage, env_file=TWIN_ROOT / ".env")                  # memory by default; timescale when config says so
+    runlog.sink = history.submit_event
     mcp = build_mcp(topology, keyring, sim, book, containment, scenarios)
     if cfg.tokens.mode == "unsigned":
         log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
@@ -59,11 +76,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         ticker = asyncio.create_task(sim.run_forever()) if cfg.clock.autorun else None
         follower = asyncio.create_task(runlog.follow_clock()) if runlog.enabled else None
+        history.start()
+        history_follower = asyncio.create_task(follow_history(sim, history))
         runlog.record("scenario", {"phase": "twin_started"})            # opens the run's part file, also after a restart
         try:
             async with mcp.session_manager.run():      # a mounted sub-app does not start its own lifespan
                 yield
         finally:
+            history_follower.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await history_follower
             if follower:
                 follower.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -73,17 +95,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ticker.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await ticker
+            await asyncio.to_thread(history.stop)             # last try to write what is waiting; do not block the loop
 
     app = FastAPI(title="Twin", version=__version__, lifespan=lifespan)
     app.state.settings, app.state.topology, app.state.layout, app.state.keyring = settings, topology, layout, keyring
     app.state.sim, app.state.book, app.state.containment = sim, book, containment
-    app.state.scenarios, app.state.runlog = scenarios, runlog
+    app.state.scenarios, app.state.runlog, app.state.history = scenarios, runlog, history
 
     @app.get("/health")
     async def health():
         return {"status": "ok", "service": "twin", "version": __version__, "seed": cfg.seed,
                 "city_fingerprint": fingerprint(topology), "nodes": len(topology.nodes), "time": now_iso(),
-                "run_id": sim.run_id, "tick": sim.tick, "sim_time": sim.clock.iso_of(sim.tick)}
+                "run_id": sim.run_id, "tick": sim.tick, "sim_time": sim.clock.iso_of(sim.tick),
+                "history": history.status()}
 
     @app.get("/events")
     async def events(request: Request, max_events: int | None = Query(None, ge=1, le=1000)):

@@ -247,6 +247,15 @@ class GeneratorCfg(_Strict):
         return self
 
 
+class StorageCfg(_Strict):
+    """Where history is kept. `memory` needs nothing installed. `timescale` needs a TimescaleDB server."""
+    history: Literal["memory", "timescale"] = "memory"
+    timescale_dsn_env: str = "TWIN_TIMESCALE_DSN"     # NAME of the environment variable that holds the connection string
+    queue_max: int = Field(50_000, ge=100)            # rows allowed to wait for the database; beyond that the oldest are dropped
+    flush_seconds: float = Field(1.0, gt=0)           # how often the writer sends what is waiting
+    batch_max: int = Field(2000, ge=1)                # most rows of one kind per database call
+
+
 class TwinConfig(_Strict):
     server: ServerCfg
     seed: int
@@ -261,6 +270,7 @@ class TwinConfig(_Strict):
     caps: CapsCfg
     containment: ContainmentCfg = ContainmentCfg()
     logging: LoggingCfg = LoggingCfg()
+    storage: StorageCfg = StorageCfg()
     dashboard: DashboardCfg = DashboardCfg()
     generator: GeneratorCfg
 
