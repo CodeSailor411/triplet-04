@@ -203,7 +203,7 @@ def test_rollback_restores_the_last_reported_value_and_marks_it_corrected():
     assert c.corrected is True and c.corrects == bad and c.restored_from == _reading_id(99, d, None)
     assert c.value == sim.model.observed_value(d, None, 99)                    # the reported value of tick 99
     assert set(c.model_dump()) == {"corrected", "corrects", "restored_from", "run_id", "tick", "timestamp", "node_id",
-                                   "device_id", "sensor", "channel", "value", "unit"}      # no field that could carry the truth
+                                   "device_id", "sensor", "channel", "value", "unit", "lat", "lon"}      # no field that could carry the truth
 
 
 def test_rollback_skips_ticks_that_are_already_known_bad_and_ticks_nobody_saw():

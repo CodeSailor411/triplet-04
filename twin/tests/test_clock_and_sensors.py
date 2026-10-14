@@ -33,7 +33,8 @@ def test_clock_format_and_arithmetic():
 def test_every_reading_has_the_agreed_fields(sim):
     batch = sim.readings_at(10)
     assert batch.count == len(batch.readings) > 60
-    expected = {"run_id", "reading_id", "tick", "timestamp", "node_id", "device_id", "sensor", "channel", "value", "unit"}
+    expected = {"run_id", "reading_id", "tick", "timestamp", "node_id", "device_id", "sensor", "channel", "value", "unit",
+                "lat", "lon"}
     for r in batch.readings:
         assert set(r.model_dump()) == expected               # strict: nothing extra can leak out
         assert RFC3339_Z.match(r.timestamp) and r.tick == 10 and r.run_id == "run-42-001"
@@ -104,7 +105,8 @@ def test_timestamps_wobble_but_stay_near_the_tick(sim):
 
 def test_a_null_value_is_valid_and_serialises_as_null():
     r = Reading(run_id="r", reading_id="x", tick=1, timestamp="2026-10-05T08:00:01.000Z", node_id="TRF-01",
-                device_id="TRF-01.avg_speed", sensor="avg_speed", channel=None, value=None, unit="km/h")
+                device_id="TRF-01.avg_speed", sensor="avg_speed", channel=None, value=None, unit="km/h",
+                lat=36.0, lon=10.0)
     assert json.loads(r.model_dump_json())["value"] is None
 
 

@@ -1,4 +1,4 @@
-# Twin: Interface Card (v7, 10 Oct 2026)
+# Twin: Interface Card (v8, 12 Oct 2026)
 
 The Twin is the simulated city: it sends sensor readings and receives actuator commands. It calls no other layer.
 
@@ -11,7 +11,7 @@ The Twin is the simulated city: it sends sensor readings and receives actuator c
 | Tool | Caller | Input | Returns |
 |---|---|---|---|
 | `get_capabilities` | any | none | versions, your identity, tools you may call |
-| `list_nodes` | Brain, Guardian | `domain`? | nodes: `node_id`, domains, sensors (`device_id`), actuators, neighbours |
+| `list_nodes` | Brain, Guardian | `domain`? | nodes: `node_id`, domains, `lat`/`lon`, sensors (`device_id`), actuators, neighbours |
 | `get_readings`, `get_clock`, `list_actions` | Brain, Guardian | optional filters | latest readings; `run_id`, `tick`, `tick_seconds`; actions with `risk`, `preview_required`, caps |
 | `actuate` | Brain | `action`, `targets`, `params`, `token`, `idempotency_key` | `committed` or `rejected`, `code` |
 | `isolate_sensor`, `quarantine_device`, `release_device` | Guardian | `device_ids`, `reason`?, `caused_by`? | `applied` or `rejected`, `changed` |
@@ -23,8 +23,10 @@ The Twin is the simulated city: it sends sensor readings and receives actuator c
 Reading, in the feed (`value` is what the sensor reports and can be wrong, `null` = no value):
 ```json
 {"run_id": "run-42-001", "reading_id": "rd0000007-TRF-01.avg_speed", "tick": 7, "timestamp": "2026-10-05T08:00:07.071Z",
- "node_id": "TRF-01", "device_id": "TRF-01.avg_speed", "sensor": "avg_speed", "channel": null, "value": 35.6, "unit": "km/h"}
+ "node_id": "TRF-01", "device_id": "TRF-01.avg_speed", "sensor": "avg_speed", "channel": null, "value": 35.6, "unit": "km/h",
+ "lat": 35.98748, "lon": 9.96593}
 ```
+`lat`/`lon`: GPS of the node, WGS84 degrees, 5 decimals, fixed for the whole run. The city is invented, the anchor point is arbitrary (see `list_nodes`/`topology.json` `geo`). Distances are reference only: nothing in the Twin checks them.
 `actuate` call `{"action": "set_valve_position", "targets": ["WAT-01"], "params": {"position": 40}, "token": "...", "idempotency_key": "demo-1"}` returns:
 ```json
 {"status": "committed", "action": "set_valve_position", "targets": ["WAT-01"], "params": {"position": 40.0}, "action_id": "ac-00001", "code": null, "replayed": false}
@@ -43,4 +45,4 @@ Refusal (three valves, water cap is 2). A refusal is a normal result, not a cras
 * **Messages:** we send strict JSON, we ignore unknown extra fields, unknown `params` are refused. UTF-8, snake_case, time = simulated UTC (RFC 3339) plus `tick`.
 * **Log:** `run-logs/<run_id>.twin.jsonl`, merged into `logs/`. Fields: `run_id`, `event_id`, `timestamp`, `tick`, `wall`, `layer`, `event_type`, `caused_by`, `data`. Timeline links: a verdict's `caused_by` is the `reading_id`, Guardian's approval has `data.token_id`, the Brain's decision has `data.idempotency_key`.
 
-**Not final:** dispatch place is `destination` (CIVIS to confirm). Coming: `lat`/`lon` on readings (12 Oct), two-step commit (15 Oct, off by default), `get_flagged_readings`.
+**Not final:** dispatch place is `destination` (CIVIS to confirm). Coming: two-step commit (15 Oct, off by default), `get_flagged_readings`.

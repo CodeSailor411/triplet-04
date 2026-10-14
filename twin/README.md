@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (10 Oct 2026): 267 tests passing.** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. Not built yet: two-step commit, dry-run preview, actuator effects on the city, real storage, signed-token check turned on (see the table at the bottom).
+**Status (12 Oct 2026): 282 tests passing.** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. Not built yet: two-step commit, dry-run preview, actuator effects on the city, real storage, signed-token check turned on (see the table at the bottom).
 
 ## Run it
 
@@ -175,6 +175,16 @@ python -m twin.generator --out generated
 Writes `generated/topology.json` (nodes) and `generated/layout.json` (zones and roads only, no nodes). The same seed
 always gives the same city. Change the seed with `TWIN_SEED=7` or in `config/twin.yaml`.
 
+## GPS positions (12 Oct)
+
+Every node has a fixed `lat` and `lon` (WGS84 degrees, 5 decimals, about 1 m steps), and every reading, corrected
+reading and quarantine-lane reading carries the same two numbers. The city is invented, so the anchor is one
+arbitrary round-number point: the map centre is 36.0 N, 10.0 E, and 1 map unit (1 canvas pixel) is 5 m on the
+ground, so the city is about 9.6 km wide and 5.4 km high. Both numbers are in `config/twin.yaml` under
+`generator.geo`. Change them and every lat/lon follows. `topology.json` has a `geo` block that says how the
+numbers were made. The maths is in `src/twin/geo.py` (north is up; `distance_m` gives straight-line metres).
+This is reference data: no tool and no cap checks distances.
+
 ## Where things are
 
 | Path | What |
@@ -185,6 +195,7 @@ always gives the same city. Change the seed with `TWIN_SEED=7` or in `config/twi
 | `src/twin/mcp_server.py` | The MCP tools |
 | `src/twin/auth.py` | Who is calling, and who may call what |
 | `src/twin/generator.py` | Seeded city generator |
+| `src/twin/geo.py` | Map position to GPS, and straight-line distance in metres |
 | `src/twin/clock.py`, `sim.py` | The simulated clock (tick to time) and the running simulation (which tick we are at, readings for any tick) |
 | `src/twin/actions.py` | `actuate`: request checks, idempotency, token checks, caps, commit. Order of the checks is written at the top of the file |
 | `src/twin/tokens.py` | Reads and verifies Guardian's token (unsigned or Ed25519-signed, chosen by config only) |

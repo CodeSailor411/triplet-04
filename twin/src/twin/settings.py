@@ -214,8 +214,16 @@ class NeighbourCfg(_Strict):
     cross: list[CrossCfg] = []
 
 
+class GeoCfg(_Strict):
+    """Where the invented city sits on the globe. One arbitrary anchor, one scale. See geo.py."""
+    anchor_lat: float = Field(ge=-85, le=85)         # latitude of the canvas centre, WGS84 degrees
+    anchor_lon: float = Field(ge=-180, le=180)       # longitude of the canvas centre, WGS84 degrees
+    metres_per_unit: float = Field(gt=0, le=100)     # metres on the ground for 1 map unit (1 canvas pixel)
+
+
 class GeneratorCfg(_Strict):
     canvas: CanvasCfg
+    geo: GeoCfg
     node_size_px: int = Field(gt=0)
     min_spacing_factor: float = Field(gt=0)
     canvas_margin_px: int = Field(ge=0)
