@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (12 Oct 2026): 296 tests passing, plus 8 that need a PostgreSQL database and are skipped without one.** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Not built yet: two-step commit, dry-run preview, actuator effects on the city, Redis for current state, signed-token check turned on (see the table at the bottom).
+**Status (14 Oct 2026): 305 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 323).** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Not built yet: two-step commit, dry-run preview, actuator effects on the city, signed-token check turned on (see the table at the bottom).
 
 ## Run it
 
@@ -209,6 +209,40 @@ by us yet. On a real TimescaleDB the Twin logs nothing special if it worked. Che
 (it must list `readings`). Run the database tests with
 `TWIN_TEST_PG_DSN=postgresql://twin:twin-dev-password@127.0.0.1:5432/twin python -m pytest tests/test_storage.py`.
 
+## Action state in Redis (14 Oct)
+
+`actuate` must remember two things: which tokens were already **used** (a token works once) and the **first answer** to
+each idempotency key. If the Twin forgets them on a restart, an old token can be replayed. Redis is a fast key-value
+store that runs as its own program and keeps its data when the Twin stops. This is an addition of ours (Redis is not
+in the challenge spec), and it is optional.
+
+| Setting in `config/twin.yaml` | What happens |
+|---|---|
+| `storage.state: memory` (default) | Used tokens and answers live in the Twin's memory and are gone on a restart. Nothing to install. Use this for the demo unless you need the restart protection |
+| `storage.state: redis` | They go to Redis. The address comes from the environment variable `TWIN_REDIS_URL` (in `twin/.env`) |
+
+How it behaves:
+* **Fail safe.** If Redis cannot be reached, `actuate` refuses the request with the code `STATE_UNAVAILABLE`. It never lets a token through because it could not check. Nothing changes, and the same request works when Redis is back. `/health` shows `action_state` (`ok: false` while it is down).
+* **Spending a token and storing its answer happen in one step** (a small Lua script that runs inside Redis). Either both are saved or neither, so a crash cannot leave a spent token with no answer.
+* **Keys expire** after `state_ttl_seconds` (default one day), so Redis does not fill up.
+* **Action numbers (`ac-00001`...) keep counting after a restart**, because the counter lives in Redis too.
+* A Redis that is down at start does not stop the Twin. A missing `TWIN_REDIS_URL` does, with a message.
+
+**What Redis does NOT keep (that would be option B, only if time is left):** the commanded actuator state (what each
+valve or switch was last told to do) and the containment state (which devices are isolated or quarantined). After a
+restart those are empty again.
+
+Start a Redis for development (needs Docker; the tag is pinned, never use `latest`):
+
+```
+docker run -d --name twin-state -p 6379:6379 redis:7.4-alpine
+```
+
+then in `twin/.env`: `TWIN_REDIS_URL=redis://127.0.0.1:6379/0`, and set `storage.state: redis`. Run the Redis tests with
+`TWIN_TEST_REDIS_URL=redis://127.0.0.1:6379/15 python -m pytest tests/test_action_state.py`.
+**Verified:** the tests ran against Redis 7.0 (installed with apt), plus a live run with real processes (hard kill of the
+Twin, token replay refused, Redis stopped and restarted). The Docker image tag above was NOT run by us.
+
 ## GPS positions (12 Oct)
 
 Every node has a fixed `lat` and `lon` (WGS84 degrees, 5 decimals, about 1 m steps), and every reading, corrected
@@ -255,7 +289,9 @@ This is reference data: no tool and no cap checks distances.
 | Containment tools (isolate, quarantine, rollback, release) | **Done 7 Oct** |
 | Shared log format, dashboard (dark look, node style spec, made-up map) | **Done 7 Oct, restyled 10 Oct** |
 | Two-step commit, dry-run preview, undo, actuator effects | Planned 15 Oct |
-| TimescaleDB and Redis storage, Ed25519 token check | 14-15 Oct, 18 Oct |
+| TimescaleDB history | **Done 12-13 Oct** (real hypertable step not verified) |
+| Redis action state (option A: used token IDs, idempotency answers) | **Done 14 Oct** |
+| Ed25519 token check turned on | 18 Oct |
 
 ## Known limits right now
 

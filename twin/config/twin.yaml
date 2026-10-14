@@ -126,6 +126,11 @@ storage:
   queue_max: 50000                # rows allowed to wait while the database is down (about 7 minutes at 50 nodes, 1 tick/s)
   flush_seconds: 1.0
   batch_max: 2000
+  # Action state: used token IDs and idempotency answers (Redis option A, 14 Oct). memory | redis
+  state: memory                   # redis = survives a Twin restart, so a used token cannot be replayed
+  redis_url_env: TWIN_REDIS_URL   # NAME of the environment variable that holds the Redis address
+  redis_timeout_seconds: 0.5      # a Redis call slower than this counts as "down" and actions are refused
+  state_ttl_seconds: 86400        # real seconds a used token ID and an answer are kept
 
 # ---------------------------------------------------------------------------
 # Containment (Guardian's tools: isolate_sensor, quarantine_device, rollback_reading, release_device).

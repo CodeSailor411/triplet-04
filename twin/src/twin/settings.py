@@ -254,6 +254,11 @@ class StorageCfg(_Strict):
     queue_max: int = Field(50_000, ge=100)            # rows allowed to wait for the database; beyond that the oldest are dropped
     flush_seconds: float = Field(1.0, gt=0)           # how often the writer sends what is waiting
     batch_max: int = Field(2000, ge=1)                # most rows of one kind per database call
+    # Action state (used token IDs + idempotency answers). Redis option A, chosen 14 Oct.
+    state: Literal["memory", "redis"] = "memory"
+    redis_url_env: str = "TWIN_REDIS_URL"             # NAME of the environment variable that holds the Redis address
+    redis_timeout_seconds: float = Field(0.5, gt=0, le=5)   # a Redis call that takes longer counts as "down"
+    state_ttl_seconds: int = Field(86400, ge=60)      # how long a used token ID and an answer are kept (real seconds)
 
 
 class TwinConfig(_Strict):
