@@ -54,7 +54,7 @@ def write_sample(out_dir: Path) -> str:
     book.recorder = cont.recorder = sc.recorder = rl
 
     clock = {"n": 0}
-    base = datetime(2026, 10, 7, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime.now(timezone.utc) - timedelta(minutes=3)     # the sample looks like a run that ended a couple of minutes ago
 
     def fake_wall() -> str:                                   # one steady clock for all layers, so the merge order is right
         clock["n"] += 1
@@ -129,7 +129,7 @@ def write_sample(out_dir: Path) -> str:
                 partner("brain", "escalation", {"reason": "No trusted water sensor at the port. A person must check the valve.",
                                                 "incident": "flood risk near the port"}, [d])
         sim.tick = 30
-        stop = _run(sc.run("stop", {"scenario_id": "sc-0001"}))
+        # the attack is NOT stopped: the sample ends in the middle of an incident ("a person must check the valve")
         rl.end_run()
     finally:
         runlog._wall = real_wall

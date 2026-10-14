@@ -14,7 +14,7 @@ from ..models import Layout, Topology
 from ..settings import DashboardCfg
 from .events import Event, LogFollower, RunState, as_list, build_state, node_status, summarize
 from .nodes import HEX, glyph
-from .style import BG, DIM, EDGE, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
+from .style import BG, DIM, EDGE, FONT, FONT_FILES, HEADER_BG, PANEL_2, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
 from .svg import Scene, city_scene, timeline_scene
 
 TABLE_ROWS = 400
@@ -77,7 +77,17 @@ def _age(st: RunState) -> tuple[str, bool]:
 
 CSS = f"""
 body, .q-page, .nicegui-content {{ background:{BG} !important; color:{TEXT}; }}
-.q-header {{ background:#070A12 !important; border-bottom:1px solid {LINE}; box-shadow:none !important; }}
+@font-face {{ font-family:'Lato'; font-weight:400; font-style:normal; font-display:swap; src:url('/tw-fonts/lato-latin-400-normal.woff2') format('woff2'); }}
+@font-face {{ font-family:'Lato'; font-weight:700; font-style:normal; font-display:swap; src:url('/tw-fonts/lato-latin-700-normal.woff2') format('woff2'); }}
+body, button, input, select, textarea, .q-btn, .q-field__native, .q-field__input, .q-field__control, .q-table, .q-table th, .q-table td, .q-menu, .q-item, .q-tooltip, .q-card, .q-toggle__label, .q-pagination, .font-mono, .q-btn-toggle {{ font-family:{FONT} !important; }}
+.q-header {{ background:{HEADER_BG} !important; border-bottom:1px solid {LINE}; box-shadow:none !important; }}
+.tw-sw {{ color:{TEXT}; font-size:14px; }}
+.tw-sw .q-toggle__track {{ background:#1A1A1A !important; opacity:1 !important; border:1px solid #3A3A3A; }}
+.tw-sw .q-toggle__thumb:after {{ background:#6E6E6E !important; box-shadow:none !important; }}
+.tw-sw .q-toggle__inner--truthy .q-toggle__track {{ background:{EDGE} !important; border-color:{EDGE}; }}
+.tw-sw .q-toggle__inner--truthy .q-toggle__thumb:after {{ background:#020202 !important; }}
+.tw-sw .q-toggle__label {{ color:{DIM}; }}
+.tw-sw .q-toggle__inner--truthy + .q-toggle__label {{ color:{TEXT}; }}
 .tw-layer {{ color:{TEXT} !important; border-radius:6px; padding:0 10px; font-size:12px; letter-spacing:.03em; }}
 .tw-layer.off {{ color:{DIM} !important; opacity:.6; }}
 .tw-bar {{ height:60px; padding:0 22px; gap:18px; flex-wrap:nowrap; }}
@@ -85,11 +95,11 @@ body, .q-page, .nicegui-content {{ background:{BG} !important; color:{TEXT}; }}
 .tw-brand-sub {{ font-size:11px; letter-spacing:.06em; color:{DIM}; line-height:1.2; }}
 .tw-divider {{ width:1px; height:28px; background:{LINE}; }}
 .tw-cap {{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:{DIM}; line-height:1; }}
-.tw-run .q-field__control {{ height:34px; min-height:34px; background:#0F1522; border:1px solid {LINE}; border-radius:8px; padding:0 10px; }}
+.tw-run .q-field__control {{ height:34px; min-height:34px; background:{PANEL_2}; border:1px solid {LINE}; border-radius:8px; padding:0 10px; }}
 .tw-run .q-field__native, .tw-run .q-field__append {{ min-height:32px; font-size:13px; }}
 .tw-run .q-field__control:before, .tw-run .q-field__control:after {{ display:none; }}
 .tw-pill {{ display:inline-flex; align-items:center; gap:8px; height:28px; padding:0 12px; border-radius:999px; border:1px solid {LINE};
-            background:#0F1522; color:{DIM}; font-size:12px; letter-spacing:.04em; white-space:nowrap; }}
+            background:{PANEL_2}; color:{DIM}; font-size:12px; letter-spacing:.04em; white-space:nowrap; }}
 .tw-dot {{ width:8px; height:8px; border-radius:50%; background:{DIM}; }}
 .tw-pill.live {{ color:{TEXT}; border-color:#1F5A45; }}
 .tw-pill.live .tw-dot {{ background:#34D399; box-shadow:0 0 8px #34D399; animation:tw-pulse 1.6s ease-in-out infinite; }}
@@ -97,7 +107,7 @@ body, .q-page, .nicegui-content {{ background:{BG} !important; color:{TEXT}; }}
 .tw-sample {{ height:28px; padding:0 12px; border-radius:999px; border:1px solid #FBBF24; color:#FBBF24; font-size:11px; letter-spacing:.14em;
               display:inline-flex; align-items:center; white-space:nowrap; }}
 .tw-stat {{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; min-width:54px; }}
-.tw-stat-val {{ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:16px; font-weight:600; line-height:1; color:{TEXT}; }}
+.tw-stat-val {{ font-variant-numeric:tabular-nums; font-size:17px; font-weight:700; line-height:1; color:{TEXT}; }}
 .tw-stat-val.bad {{ color:#FF5A5F; }}
 .q-card {{ background:{PANEL} !important; color:{TEXT}; border:1px solid {LINE}; box-shadow:none !important; border-radius:10px; }}
 .text-dim {{ color:{DIM}; }}
@@ -109,21 +119,35 @@ body, .q-page, .nicegui-content {{ background:{BG} !important; color:{TEXT}; }}
 """
 
 
+def field_glow(domains: list[str]) -> dict[str, str]:
+    """CSS for a card that glows in the colour of its field (domain). A shared node has two fields: the left half glows in the first
+    colour, the right half in the second. `!important` because the page's own card style switches shadows off."""
+    cols = [DOMAIN_COLORS[d] for d in domains if d in DOMAIN_COLORS] or [EDGE]
+    a, b = cols[0], cols[-1]
+    if a == b:
+        shadow = f"0 0 22px {a}66, 0 0 52px {a}33, inset 0 0 28px {a}1F"
+    else:
+        shadow = (f"-12px 0 26px -6px {a}99, 12px 0 26px -6px {b}99, 0 0 50px {a}22, "
+                  f"inset 14px 0 26px -14px {a}44, inset -14px 0 26px -14px {b}44")
+    return {"card": f"border:1px solid {a}; border-color:{a} {b} {b} {a}; box-shadow:{shadow} !important",
+            "title": f"text-shadow:0 0 14px {a}"}
+
+
 def legend_svg() -> str:
     """The legend is drawn with the real node pictures, so it can never disagree with the map."""
     items = [("Trusted", "trusted"), ("Degraded", "degraded"), ("Untrusted", "untrusted"), ("Isolated", "isolated")]
     out, x = [], 24
     for label, st in items:
-        out.append(glyph(x + 14, 20, 28, ["water"], st, None))
+        out.append(glyph(x + 14, 20, 28, ["power"], st, None, fill=PANEL))
         out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">{label}</text>')
         x += 38 + 9 * len(label) + 26
-    out.append(glyph(x + 14, 20, 28, ["water", "power"], "trusted", None))
+    out.append(glyph(x + 14, 20, 28, ["power", "emergency"], "trusted", None, fill=PANEL))
     out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">Shared node (two colours)</text>')
     x += 38 + 9 * 26 + 26
-    out.append(glyph(x + 14, 20, 28, ["water"], "trusted", None, unknown=True))
+    out.append(glyph(x + 14, 20, 28, ["power"], "trusted", None, unknown=True, fill=PANEL))
     out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">No verdict yet</text>')
     x += 38 + 9 * 14 + 10
-    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {x} 40" width="{x}" height="40" font-family="DejaVu Sans, Arial, sans-serif">{"".join(out)}</svg>'
+    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {x} 40" width="{x}" height="40" overflow="visible" font-family="{FONT}">{"".join(out)}</svg>'
 
 
 def _dot(color: str, ring: bool = False, dashed: bool = False) -> None:
@@ -134,7 +158,7 @@ def _dot(color: str, ring: bool = False, dashed: bool = False) -> None:
 def build_page(hub: Hub) -> None:
     ui.dark_mode(True)
     ui.add_css(CSS)
-    ui.colors(primary=EDGE)                      # the page chrome is black and white. Cyan belongs to Water only
+    ui.colors(primary=EDGE, secondary="#9A9A9A", accent="#BDBDBD", dark=PANEL, info="#BDBDBD")   # page chrome = black, white, grey. Cyan belongs to Water only. (Quasar has a default blue "info" and a teal "secondary": set them too)
     S: dict[str, Any] = {"run": None, "node": None, "event": None, "window": hub.cfg.window_ticks, "follow": True, "end": None,
                          "edges": False, "attacks": True, "seen": None, "hidden": set()}
     scenes: dict[str, Scene] = {}
@@ -158,16 +182,35 @@ def build_page(hub: Hub) -> None:
         S["event"] = event_id
         redraw(force=True)
 
+    def sync_slider(st: RunState) -> None:
+        """The slider limits must be NUMBERS. `slider.props("max=30")` stores the TEXT '30', and the slider in the browser then
+        crashes as soon as you touch it (it adds the limit to a number, and text + number glues instead of adding)."""
+        slider.props["min"] = 0
+        slider.props["max"] = max(st.tick, 1)
+
     def follow_changed(on: bool) -> None:
         st = state()
         S["follow"], S["end"] = on, (None if on else (st.tick if st else 0))
+        if not on and st:
+            sync_slider(st)
+            slider.set_value(st.tick)                                            # the knob starts at the end, where the timeline already is
         slider.set_visibility(not on)
         redraw(force=True)
 
-    def slide(v: float) -> None:
-        if not S["follow"]:
-            S["end"] = int(v)
-            redraw(force=True)
+    def slide(e: Any) -> None:
+        """Runs when the slider is RELEASED ('change' event), not on every step of the drag: one redraw per release."""
+        v = e.args[0] if isinstance(e.args, list) and e.args else e.args
+        st = state()
+        if S["follow"] or st is None or isinstance(v, bool) or not isinstance(v, (int, float)):
+            return
+        S["end"] = max(0, min(int(v), st.tick))
+        redraw(force=True)
+
+    def shown(st: RunState) -> RunState:
+        """What the map and the node card show: the latest state, or the state as of the slider tick when Follow live is off."""
+        if S["follow"] or S["end"] is None or S["end"] >= st.tick:
+            return st
+        return build_state([e for e in st.events if e["tick"] <= S["end"]], hub.topology, hub.cutoffs, st.run_id)
 
     layer_btns: dict[str, Any] = {}
     step_chips: list[Any] = []
@@ -213,6 +256,8 @@ def build_page(hub: Hub) -> None:
         text, live = _age(st)
         set_status(text, live)
         set_stats(st)
+        running = len(st.attacks())
+        attack_sw.set_text(f"Attacks · {running} running" if running else "Attacks · none running")
         per_lane = [0] * len(LANES)
         for e in st.events:
             k = LANE_OF_TYPE.get(e["event_type"])
@@ -222,8 +267,11 @@ def build_page(hub: Hub) -> None:
             chip.set_text(f"{LANES[i]['title']} · {per_lane[i]}" + ("" if per_lane[i] else f"  (waiting for {LANES[i]['who']})"))
             chip.classes(replace="step " + ("step-on" if per_lane[i] else "step-off"))
         if not S["follow"]:
-            slider.props(f"min=0 max={st.tick}")
-        c = city_scene(hub.topology, hub.layout, st, selected=S["node"], show_edges=S["edges"], show_attacks=S["attacks"], hidden=set(S["hidden"]))
+            sync_slider(st)
+            S["end"] = min(S["end"] if S["end"] is not None else st.tick, st.tick)
+        view = shown(st)
+        map_note.set_text(f"Map as of tick {S['end']} (not live)" if view is not st else "")
+        c = city_scene(hub.topology, hub.layout, view, selected=S["node"], show_edges=S["edges"], show_attacks=S["attacks"], hidden=set(S["hidden"]))
         t = timeline_scene(st, selected=S["event"], window_ticks=S["window"], end_tick=S["end"])
         scenes["city"], scenes["timeline"] = c, t
         city_img.set_content(c.content)
@@ -243,7 +291,7 @@ def build_page(hub: Hub) -> None:
         if S["event"] and S["event"] in st.by_id:
             event_card(st, st.by_id[S["event"]])
         if S["node"]:
-            node_card(st, S["node"])
+            node_card(shown(st), S["node"])
         attacks = st.attacks()
         with ui.card().classes("w-full"):
             ui.label("Scenarios").classes("text-lg font-bold")
@@ -278,16 +326,17 @@ def build_page(hub: Hub) -> None:
         if n is None:
             return
         s = node_status(n, st)
-        with ui.card().classes("w-full border-l-4").style(f"border-color:{TRUST_COLORS[s['trust']]}"):
+        glow = field_glow(n.domains)
+        with ui.card().classes("w-full").style(glow["card"]):
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(f"{n.node_id} · {n.label}").classes("text-lg font-bold")
+                ui.label(f"{n.node_id} · {n.label}").classes("text-lg font-bold").style(glow["title"])
                 ui.button(icon="close", on_click=lambda: (S.update(node=None), redraw(force=True))).props("flat dense round")
             ui.label(f"{n.zone} · {', '.join(DOMAIN_NAMES.get(d, d) for d in n.domains)}" + (f" · {n.role.replace('_', ' ')}" if n.role != "standard" else "")).classes("text-dim text-sm")
             for sen in n.sensors:
                 dv = st.devices.get(sen.device_id)
                 with ui.row().classes("items-center gap-2"):
                     _dot(TRUST_COLORS[dv.trust] if dv else TRUST_COLORS["unknown"], ring=True)
-                    ui.label(f"{sen.device_id}").classes("text-sm font-mono")
+                    ui.label(f"{sen.device_id}").classes("text-sm font-bold")
                     ui.label(f"{TRUST_NAMES[dv.trust] if dv else '?'}" + (f" ({dv.score:g})" if dv and dv.score is not None else "")
                              + (f", {dv.cut}" if dv and dv.cut else "") + (f", {dv.corrections} corrected" if dv and dv.corrections else "")).classes("text-sm")
             if n.actuators:
@@ -385,8 +434,11 @@ def build_page(hub: Hub) -> None:
                             layer_btns[dom] = ui.button(DOMAIN_NAMES[dom], on_click=lambda _, d=dom: toggle_layer(d)).props("flat dense no-caps size=sm").classes("tw-layer")
                             style_layer(dom)
                     ui.space()
-                    ui.switch("Connections", value=False, on_change=lambda e: (S.update(edges=e.value), redraw(force=True)))
-                    ui.switch("Attacks", value=True, on_change=lambda e: (S.update(attacks=e.value), redraw(force=True)))
+                    with ui.switch("Connections", value=False, on_change=lambda e: (S.update(edges=e.value), redraw(force=True))).classes("tw-sw"):
+                        ui.tooltip("Draw a line between every pair of neighbouring nodes. The lines of the selected node are always drawn.")
+                    with ui.switch("Attacks", value=True, on_change=lambda e: (S.update(attacks=e.value), redraw(force=True))).classes("tw-sw") as attack_sw:
+                        ui.tooltip("Show a pulsing red ring on every node that is being attacked right now. It only changes the drawing, nothing in the Twin.")
+                map_note = ui.label("").classes("text-sm px-2")
                 city_img = ui.interactive_image(size=(1920, 1080), content="", events=["click"], sanitize=False,
                                                 on_mouse=lambda e: pick("city", e)).classes("w-full")
                 ui.html(legend_svg(), sanitize=False).classes("px-2")
@@ -405,7 +457,8 @@ def build_page(hub: Hub) -> None:
                         step_chips.append(ui.label(lane["title"]).classes("step step-off"))
                 ui.select(WINDOWS, value=S["window"], on_change=lambda e: (S.update(window=e.value), redraw(force=True))).props("dense outlined dark options-dark").classes("w-40")
                 ui.switch("Follow live", value=True, on_change=lambda e: follow_changed(e.value))
-                slider = ui.slider(min=0, max=1, value=0, on_change=lambda e: slide(e.value)).props("label").classes("w-64")
+                slider = ui.slider(min=0, max=1, value=0).props("label").classes("w-64")
+                slider.on("change", slide)
                 slider.set_visibility(False)
                 ui.label("click an event to follow its chain").classes("text-dim text-sm")
             timeline_img = ui.interactive_image(size=(1800, 660), content="", events=["click"], sanitize=False,

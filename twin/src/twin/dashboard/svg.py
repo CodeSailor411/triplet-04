@@ -14,7 +14,7 @@ from ..models import Layout, Node, Topology
 from .events import Event, RunState, node_status, short_label, summarize
 from .basemap import basemap
 from .nodes import glyph
-from .style import (ATTACK_COLOR, BG, DIM, LAND, MAP_BG, LANE_OF_TYPE, LANES, LINE, PANEL, PANEL_2, RUN_STRIP_TYPES, TEXT)
+from .style import (ATTACK_COLOR, FONT, BG, DIM, LAND, MAP_BG, LANE_OF_TYPE, LANES, LINE, PANEL, PANEL_2, RUN_STRIP_TYPES, TEXT)
 
 NODE_W = 58             # width of a node on the 1920-pixel-wide map (about 32 px on a normal screen, the spec's minimum is 24)
 MIN_GAP = 87            # 1.5 x the node width (spec section 5). Nodes closer than this are pushed apart ON SCREEN ONLY, the city data is never changed
@@ -48,7 +48,7 @@ def esc(x: Any) -> str:
 def document(content: str, width: float, height: float) -> str:
     """A full SVG file around the inner content (the app only needs the inner part, tests and pictures need the whole file)."""
     return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width:g} {height:g}" width="{width:g}" height="{height:g}" '
-            f'font-family="DejaVu Sans, Arial, sans-serif">{content}</svg>')
+            f'font-family="{FONT}">{content}</svg>')
 
 
 @dataclass
@@ -75,7 +75,7 @@ def trust_state(s: dict[str, Any]) -> str:
 
 def city_scene(topology: Topology, layout: Layout, state: RunState, selected: str | None = None,
                show_edges: bool = False, show_attacks: bool = True, hidden: set[str] | None = None) -> Scene:
-    """The map. `hidden` = domains whose layer is switched off (their nodes fade to grey, an isolated node keeps its lock)."""
+    """The map. `hidden` = domains whose layer is switched off: their nodes turn dim grey but stay in place (an isolated node keeps its lock)."""
     w, h = topology.canvas.width, topology.canvas.height
     xy = display_positions(topology)
     out = [basemap([xy[n.node_id] for n in topology.nodes], w, h)]                  # one connected city drawn around the node positions
@@ -171,16 +171,16 @@ def _glyph(e: Event, x: float, y: float, color: str) -> str:
         ok = d.get("status") == "applied"
         return f'<polygon points="{x},{y - 15} {x + 15},{y} {x},{y + 15} {x - 15},{y}" fill="{color if ok else "#3B1219"}" stroke="{color if ok else "#FF5A5F"}" stroke-width="3"/>'
     if t == "escalation":
-        return (f'<circle cx="{x}" cy="{y}" r="16" fill="#FF5A5F" stroke="#0A0E17" stroke-width="2"/>'
-                f'<text x="{x}" y="{y + 7}" font-size="22" font-weight="bold" fill="#0A0E17" text-anchor="middle">!</text>')
+        return (f'<circle cx="{x}" cy="{y}" r="16" fill="#FF5A5F" stroke="{PANEL}" stroke-width="2"/>'
+                f'<text x="{x}" y="{y + 7}" font-size="22" font-weight="bold" fill="{PANEL}" text-anchor="middle">!</text>')
     if t == "action":
         ok = d.get("status") == "committed"
         return f'<circle cx="{x}" cy="{y}" r="13" fill="{color if ok else "#3B1219"}" stroke="{color if ok else "#FF5A5F"}" stroke-width="3.5"/>'
     if t == "decision":
-        return f'<rect x="{x - 13}" y="{y - 13}" width="26" height="26" rx="6" fill="{color}" stroke="#0A0E17" stroke-width="2"/>'
+        return f'<rect x="{x - 13}" y="{y - 13}" width="26" height="26" rx="6" fill="{color}" stroke="{PANEL}" stroke-width="2"/>'
     if t == "reading":                                             # the Twin only logs readings a fault touched
         return f'<circle cx="{x}" cy="{y}" r="12" fill="{color}" stroke="{ATTACK_COLOR}" stroke-width="3.5"/>'
-    return f'<circle cx="{x}" cy="{y}" r="12" fill="{color}" stroke="#0A0E17" stroke-width="2"/>'
+    return f'<circle cx="{x}" cy="{y}" r="12" fill="{color}" stroke="{PANEL}" stroke-width="2"/>'
 
 
 def timeline_scene(state: RunState, selected: str | None = None, window_ticks: int = 60, end_tick: int | None = None,
@@ -201,7 +201,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
     clock, chain = tick_clock(state.events), chain_of(state, selected)
     dim = lambda eid: bool(chain) and eid not in chain               # noqa: E731
     out = ['<defs><marker id="tl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">'
-           '<path d="M0,0 L10,5 L0,10 z" fill="#5B6B85"/></marker></defs>', f'<rect width="{width}" height="{height}" fill="{PANEL}"/>']
+           '<path d="M0,0 L10,5 L0,10 z" fill="#6E6E6E"/></marker></defs>', f'<rect width="{width}" height="{height}" fill="{PANEL}"/>']
 
     # lanes: background bands, titles, gridlines
     ys = {}
@@ -220,8 +220,8 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
             continue
         x = x_of(t)
         out.append(f'<line x1="{x}" y1="{top - 8}" x2="{x}" y2="{top + strip + lane_h * len(LANES)}" stroke="{LINE}" stroke-width="2"/>'
-                   f'<text x="{x}" y="24" font-size="22" font-weight="bold" fill="#C9D3E3" text-anchor="middle">{t}</text>'
-                   f'<text x="{x}" y="48" font-size="18" fill="#5B6B85" text-anchor="middle">{esc(clock(t))}</text>')
+                   f'<text x="{x}" y="24" font-size="22" font-weight="bold" fill="#D2D2D2" text-anchor="middle">{t}</text>'
+                   f'<text x="{x}" y="48" font-size="18" fill="#6E6E6E" text-anchor="middle">{esc(clock(t))}</text>')
 
     # which events are inside the window
     shown = [e for e in state.events if start <= e["tick"] <= end]
@@ -259,11 +259,12 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
                 x1, x2 = x1 + (17 if x2 >= x1 else -17), x2 - (19 if x2 >= x1 else -19)       # stop at the edge of the glyphs
                 dx = max(30.0, abs(x2 - x1) / 2)
                 faded = bool(chain) and not (c in chain and e["event_id"] in chain)
-                out.append(f'<path d="M{x1},{y1} C{x1 + dx:.1f},{y1} {x2 - dx:.1f},{y2} {x2},{y2}" fill="none" stroke="{TEXT if chain and not faded else "#5B6B85"}" '
+                out.append(f'<path d="M{x1},{y1} C{x1 + dx:.1f},{y1} {x2 - dx:.1f},{y2} {x2},{y2}" fill="none" stroke="{TEXT if chain and not faded else "#6E6E6E"}" '
                            f'stroke-width="{3.5 if chain and not faded else 2.5}" marker-end="url(#tl-arrow)" opacity="{0.15 if faded else 0.9}"/>')
 
     hits = []
     label_row: dict[int, int] = {}                                         # labels in one lane alternate between two rows so they do not collide
+    phase_x: list[float] = []                                                 # where the run / twin started / run ended labels already are
     for e in shown:
         if e["event_id"] not in pos:
             continue
@@ -274,12 +275,15 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
         if t in RUN_STRIP_TYPES:
             d = e.get("data") if isinstance(e.get("data"), dict) else {}
             phase = str(d.get("phase", ""))
-            col = "#FF5A5F" if t == "partner_failure" else "#C9D3E3"
+            col = "#FF5A5F" if t == "partner_failure" else "#D2D2D2"
             right_side = x > width - 330                                      # near the edge the text goes to the left
             tx, anchor = (x - 24, "end") if right_side else (x + 24, "start")
             if phase in ("run_started", "run_ended", "twin_started"):
+                near = sum(1 for px in phase_x if abs(px - x) < 140)               # a label already close by: draw this one a row higher
+                phase_x.append(x)
+                ly = top + strip - 4 - 18 * near
                 out.append(f'<g opacity="{opa}"><line x1="{x}" y1="{top + 6}" x2="{x}" y2="{top + strip + lane_h * len(LANES)}" stroke="{col}" stroke-width="3" stroke-dasharray="3 8"/>'
-                           f'<text x="{(x - 8) if right_side else (x + 8)}" y="{top + strip - 4}" font-size="16" fill="{col}" text-anchor="{anchor}">{esc(phase.replace("_", " "))}</text><title>{esc(title)}</title></g>')
+                           f'<text x="{(x - 8) if right_side else (x + 8)}" y="{ly}" font-size="16" fill="{col}" text-anchor="{anchor}">{esc(phase.replace("_", " "))}</text><title>{esc(title)}</title></g>')
             else:
                 text = short_label(e)
                 strip_row = label_row.get(-1, 0)
@@ -305,9 +309,9 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
         label = ""
         row = label_row.get(lane, 0)
         label_row[lane] = 1 - row
-        label = (f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#C9D3E3" text-anchor="middle" stroke="#121826" stroke-width="5" '
+        label = (f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#D2D2D2" text-anchor="middle" stroke="{PANEL}" stroke-width="5" '
                  f'stroke-linejoin="round">{esc(short_label(e))}</text>'
-                 f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#C9D3E3" text-anchor="middle">{esc(short_label(e))}</text>')
+                 f'<text x="{x}" y="{y + 36 + 18 * row}" font-size="17" fill="#D2D2D2" text-anchor="middle">{esc(short_label(e))}</text>')
         out.append(f'<g opacity="{opa}">{halo}{_glyph(e, x, y, color)}{label}<title>{esc(title)}</title></g>')
         hits.append((e["event_id"], x, y))
 
@@ -315,7 +319,7 @@ def timeline_scene(state: RunState, selected: str | None = None, window_ticks: i
     layers_seen = {e["layer"] for e in state.events}
     for i, who, key in ((1, "guardian", "verdict"), (2, "brain", "decision")):
         if who not in layers_seen:
-            out.append(f'<text x="{left + plot / 2}" y="{ys[i] + 8}" font-size="24" fill="#5B6B85" text-anchor="middle">waiting for {who.title()} events '
+            out.append(f'<text x="{left + plot / 2}" y="{ys[i] + 8}" font-size="24" fill="#6E6E6E" text-anchor="middle">waiting for {who.title()} events '
                        f'(no {key} in this run yet)</text>')
     out.append(f'<text x="{left - 20}" y="{top + strip / 2 + 7}" font-size="22" fill="{DIM}" text-anchor="end">Run</text>')
     return Scene("".join(out), width, height, hits)
