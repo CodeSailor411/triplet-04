@@ -115,6 +115,19 @@ caps:
   # CAP_EXCEEDED rejects the whole request and reports: domain, cap, in_use, requested, remaining.
 
 # ---------------------------------------------------------------------------
+# Storage (13 Oct). History = what the feed showed (readings) plus the Twin's run-log lines, kept so it can be asked
+# about later. `memory` needs nothing installed and is the default. `timescale` needs a TimescaleDB server; the
+# connection string (it holds a password) is NOT here, it comes from the environment variable named below.
+# The run log files (R2) are written either way: this is an addition, never a replacement.
+# ---------------------------------------------------------------------------
+storage:
+  history: memory                 # memory | timescale
+  timescale_dsn_env: TWIN_TIMESCALE_DSN
+  queue_max: 50000                # rows allowed to wait while the database is down (about 7 minutes at 50 nodes, 1 tick/s)
+  flush_seconds: 1.0
+  batch_max: 2000
+
+# ---------------------------------------------------------------------------
 # Containment (Guardian's tools: isolate_sensor, quarantine_device, rollback_reading, release_device).
 # ---------------------------------------------------------------------------
 containment:

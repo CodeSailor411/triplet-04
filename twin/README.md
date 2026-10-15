@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (12 Oct 2026): 282 tests passing.** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. Not built yet: two-step commit, dry-run preview, actuator effects on the city, real storage, signed-token check turned on (see the table at the bottom).
+**Status (12 Oct 2026): 296 tests passing, plus 8 that need a PostgreSQL database and are skipped without one.** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Not built yet: two-step commit, dry-run preview, actuator effects on the city, Redis for current state, signed-token check turned on (see the table at the bottom).
 
 ## Run it
 
@@ -175,6 +175,40 @@ python -m twin.generator --out generated
 Writes `generated/topology.json` (nodes) and `generated/layout.json` (zones and roads only, no nodes). The same seed
 always gives the same city. Change the seed with `TWIN_SEED=7` or in `config/twin.yaml`.
 
+## History storage (13 Oct)
+
+The Twin can keep a history of what happened: every reading the live feed showed (the reported value, never the true
+one) and every run-log line. It is for asking later ("what did WAT-01 report between tick 100 and 200?"). The run log
+files (R2) are written either way. This is an addition, not a replacement.
+
+| Setting in `config/twin.yaml` | What happens |
+|---|---|
+| `storage.history: memory` (default) | History lives in memory and is gone when the Twin stops. Nothing to install. Use this for the demo and for any machine without a database |
+| `storage.history: timescale` | History goes to TimescaleDB. The connection string comes from the environment variable `TWIN_TIMESCALE_DSN` (put it in `twin/.env`, never in the config file) |
+
+How it behaves:
+* A background thread writes in batches, so a slow database never slows the clock, the feed or the tools.
+* If the database is down, the Twin keeps running. Rows wait in memory (at most `queue_max`, then the oldest are dropped and counted) and are sent again when the database is back. Sending twice is safe: the database skips rows it already has.
+* `/health` shows `history`: backend, healthy or not, and counts of rows written, waiting and dropped. No error text, because it can contain host names.
+* Setting `timescale` without the environment variable stops the start with a message that says what to set.
+
+Start a TimescaleDB for development (needs Docker; the tag is pinned, never use `latest`):
+
+```
+docker run -d --name twin-history -p 5432:5432 -e POSTGRES_USER=twin -e POSTGRES_PASSWORD=twin-dev-password \
+  -e POSTGRES_DB=twin timescale/timescaledb:2.26.1-pg17
+```
+
+then in `twin/.env`: `TWIN_TIMESCALE_DSN=postgresql://twin:twin-dev-password@127.0.0.1:5432/twin`, and set
+`storage.history: timescale`. The Twin creates its two tables (`readings`, `events`) on first connect.
+
+**What is and is not verified.** The tests ran against plain PostgreSQL 16. The TimescaleDB-only step (turning
+`readings` into a hypertable, a table cut into time chunks) runs only when the extension exists and has NOT been run
+by us yet. On a real TimescaleDB the Twin logs nothing special if it worked. Check it once with
+`docker exec twin-history psql -U twin -d twin -c "select hypertable_name from timescaledb_information.hypertables"`
+(it must list `readings`). Run the database tests with
+`TWIN_TEST_PG_DSN=postgresql://twin:twin-dev-password@127.0.0.1:5432/twin python -m pytest tests/test_storage.py`.
+
 ## GPS positions (12 Oct)
 
 Every node has a fixed `lat` and `lon` (WGS84 degrees, 5 decimals, about 1 m steps), and every reading, corrected
@@ -195,6 +229,7 @@ This is reference data: no tool and no cap checks distances.
 | `src/twin/mcp_server.py` | The MCP tools |
 | `src/twin/auth.py` | Who is calling, and who may call what |
 | `src/twin/generator.py` | Seeded city generator |
+| `src/twin/storage/` | History store: interface, memory and TimescaleDB backends, background writer |
 | `src/twin/geo.py` | Map position to GPS, and straight-line distance in metres |
 | `src/twin/clock.py`, `sim.py` | The simulated clock (tick to time) and the running simulation (which tick we are at, readings for any tick) |
 | `src/twin/actions.py` | `actuate`: request checks, idempotency, token checks, caps, commit. Order of the checks is written at the top of the file |
