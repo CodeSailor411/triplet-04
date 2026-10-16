@@ -175,6 +175,7 @@ def test_the_follower_logs_every_tick_that_passes(tmp_path):
 def test_actions_are_logged_with_the_token_id_but_never_the_token(tmp_path):
     sim, book, _, _, rl, _ = build(tmp_path)
     tok = token(sim)
+    book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], {"position": 30})
     ok = book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], {"position": 30}, tok, "k1")
     book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], {"position": 30}, tok, "k1")       # repeat: not a new event
     bad = book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], {"position": 30}, "garbage", "k2")

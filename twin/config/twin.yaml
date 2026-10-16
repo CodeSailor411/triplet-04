@@ -94,8 +94,12 @@ tokens:
   guardian_public_key: null
   min_score: {}
 
+# preview_enforced: true = an action with preview_required (valve, grid switch) is refused with PREVIEW_REQUIRED
+#                   unless the same caller called preview_action for exactly that request recently.
+# preview_valid_ticks: how many ticks a preview stays valid. PLACEHOLDER (30), no number agreed with the partners.
 actions:
-  preview_enforced: false        # flips to true on 15 Oct, when the dry-run preview tool exists
+  preview_enforced: true
+  preview_valid_ticks: 30
 
 # ---------------------------------------------------------------------------
 # Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced from 7 Oct, only computed here for now.

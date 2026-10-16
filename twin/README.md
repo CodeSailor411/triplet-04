@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (14 Oct 2026): 305 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 323).** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Not built yet: two-step commit, dry-run preview, actuator effects on the city, signed-token check turned on (see the table at the bottom).
+**Status (16 Oct 2026): 325 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 343).** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built yet: two-step commit, actuator effects on the city, signed-token check turned on (see the table at the bottom).
 
 ## Run it
 
@@ -288,7 +288,8 @@ This is reference data: no tool and no cap checks distances.
 | Run log: part file, private file, merge (R2) | **Done 7 Oct**, format reviewed with partners 9 Oct |
 | Containment tools (isolate, quarantine, rollback, release) | **Done 7 Oct** |
 | Shared log format, dashboard (dark look, node style spec, made-up map) | **Done 7 Oct, restyled 10 Oct** |
-| Two-step commit, dry-run preview, undo, actuator effects | Planned 15 Oct |
+| Dry-run preview (`preview_action`) and the `PREVIEW_REQUIRED` rule | **Done 16 Oct** |
+| Two-step commit, undo, actuator effects | Planned |
 | TimescaleDB history | **Done 12-13 Oct** (real hypertable step not verified) |
 | Redis action state (option A: used token IDs, idempotency answers) | **Done 14 Oct** |
 | Ed25519 token check turned on | 18 Oct |
@@ -302,7 +303,7 @@ This is reference data: no tool and no cap checks distances.
   Readings are a pure function of (seed, tick) until then.
 * `tokens.mode` is `unsigned` for now, with a loud warning at startup. Signed mode (Ed25519) is built and tested but waits for 9antra's answer on
   format and key. `tokens.min_score` is empty because nobody has agreed a number.
-* `preview_required` is published but not enforced until the preview tool exists (15 Oct).
+* `preview_required` is enforced (`actions.preview_enforced: true`). Previews are remembered in memory only, so a restart forgets them and the Brain just previews again. `actions.preview_valid_ticks: 30` is a placeholder, nobody agreed a number. Only the Brain may preview. Previews are not written to the run log (no new event type was agreed).
 * The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run.
 * Used token ids are remembered until they expire, in memory only. A restart forgets them. A restarted Twin starts again at tick 0 with the SAME run id
   (`run-42-001` for seed 42), so a token that was already used and has not expired yet would be accepted a second time. Only a scenario reset
@@ -317,7 +318,7 @@ This is reference data: no tool and no cap checks distances.
 
 **Refusals** (a normal result with `status: "rejected"` and a `code`): `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_WRONG_RUN`, `TOKEN_EXPIRED`, `TOKEN_REUSED`, `TOKEN_MISMATCH`, `TOKEN_SCORE_TOO_LOW`, `IDEMPOTENCY_CONFLICT`, `PREVIEW_REQUIRED`, `CAP_EXCEEDED`, `DEVICE_QUARANTINED`. Containment refusals: `CAP_EXCEEDED`, `NO_TRUSTED_VALUE`.
 
-**Errors for a wrong request** (the call fails, text `CODE: message`): `UNKNOWN_ACTION`, `UNKNOWN_NODE`, `INVALID_TARGETS`, `INVALID_PARAMS`, `INVALID_IDEMPOTENCY_KEY`. Containment: `UNKNOWN_DEVICE`, `INVALID_DEVICE_IDS`, `INVALID_REASON`, `UNKNOWN_READING`, `READING_NOT_PUBLISHED`. Feed without a key: HTTP 401, wrong caller 403.
+**Errors for a wrong request** (the call fails, text `CODE: message`): `UNKNOWN_ACTION`, `UNKNOWN_NODE`, `INVALID_TARGETS`, `INVALID_PARAMS`, `INVALID_IDEMPOTENCY_KEY`, `PREVIEW_NOT_AVAILABLE` (preview of an action that has no preview). Containment: `UNKNOWN_DEVICE`, `INVALID_DEVICE_IDS`, `INVALID_REASON`, `UNKNOWN_READING`, `READING_NOT_PUBLISHED`. Feed without a key: HTTP 401, wrong caller 403.
 
 **Token payload in full:** `iss` "guardian", `aud` "twin", `jti` (unique, single use), `run_id`, `iat`, `exp` (both in simulated time, issue them from `get_clock`, not your wall clock), `action`, `targets`, `params`, `score`.
 
@@ -325,4 +326,4 @@ This is reference data: no tool and no cap checks distances.
 
 **Units:** congestion 0-100 %, water cm above the sensor's own zero, power kW, PM2.5 ug/m3. `channel` is set only for sensors split by type (`emergency_calls`: accident, fire, flood, medical; `units_free`: police, ambulance, fire). A reading's `timestamp` may be a few ms off its tick.
 
-**Planned (from the old card):** dry-run preview (then `preview_required` is enforced), undo, emergency events with transcript, `congestion_index`.
+**Planned (from the old card):** undo, emergency events with transcript, `congestion_index`.

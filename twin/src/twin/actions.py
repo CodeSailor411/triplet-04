@@ -7,11 +7,15 @@ Order of checks in `actuate` (the order matters, it is on purpose):
   3. The token: present, signed (if required), this run, not expired, never used, same action/targets/params as
      the request, score high enough. Any failure is a REJECTION (a normal result with status "rejected" and a code).
   3b. Quarantine: a target node with a quarantined device holds the command (it is not carried out).
-  4. Preview rule (flag exists, enforced from 15 Oct).
+  4. Preview rule: an action with preview_required needs a fresh `preview_action` from the same caller for exactly
+     this request (action, targets, params), if actions.preview_enforced is true. A preview is used up by the commit.
   5. Caps: how many nodes of each domain this one request touches.
   6. Commit: the actuator now holds the commanded value, the token is spent.
 The token is spent only when the action commits, so a request refused for caps can be tried again with the same token.
-Nothing here changes what the sensors report yet: actuator effects come later (15 Oct).
+`preview_action` is the dry-run: it runs the checks that do not need a token and reports what the action WOULD do.
+It changes nothing (no token, no idempotency key, no actuator, no action number). It only remembers that the
+preview happened, in memory, so a Twin restart forgets it. That fails safe: the Brain just previews again.
+Nothing here changes what the sensors report yet: actuator effects come later.
 """
 import json
 import math
@@ -78,6 +82,33 @@ class ActuateResult(BaseModel):
     replayed: bool = False                        # true: this is the stored first answer to a repeated idempotency key
 
 
+class PreviewChange(BaseModel):
+    node_id: str
+    domains: list[str]
+    current: dict[str, Any] | None   # what this actuator was last commanded to in this run (null: never commanded)
+    new: dict[str, Any]              # what it would hold after the action
+    held: bool                       # true: the node is quarantined, so the command would be held, not carried out
+
+
+class PreviewResult(BaseModel):
+    run_id: str
+    tick: int
+    time: str
+    action: str
+    targets: list[str]
+    params: dict[str, Any]
+    risk: str | None
+    token_needed: bool = True        # a preview is never a permission: the real action still needs Guardian's token
+    min_score: float | None          # lowest token score the Twin accepts for this risk level (null: not set yet)
+    changes: list[PreviewChange]
+    would_pass_checks: bool          # the checks that do not need a token (caps, quarantine) would all pass
+    blocked_by: list[str]            # codes of the checks that would refuse it: CAP_EXCEEDED, DEVICE_QUARANTINED
+    details: dict[str, Any] | None = None
+    valid_until_tick: int            # commit by this tick, or preview again
+    valid_until: str
+    message: str
+
+
 def _clean_param(name: str, spec: ParamCfg, value: Any, node_ids: set[str]) -> Any:
     def bad(why: str):
         raise BadRequest("INVALID_PARAMS", f"Parameter '{name}': {why}")
@@ -103,6 +134,11 @@ def _clean_param(name: str, spec: ParamCfg, value: Any, node_ids: set[str]) -> A
     return value
 
 
+def _fingerprint(action: str, targets: list[str], params: dict[str, Any]) -> str:
+    """One string that identifies a request: same action, targets and params give the same string."""
+    return json.dumps({"action": action, "targets": targets, "params": params}, sort_keys=True, separators=(",", ":"))
+
+
 class ActionBook:
     def __init__(self, topology: Topology, config: TwinConfig, sim: Simulation, state: ActionState | None = None):
         self.cfg, self.sim = config, sim
@@ -117,6 +153,7 @@ class ActionBook:
 
     def _reset_state(self) -> None:
         self.seq = 0
+        self.previews: dict[tuple[str, str], int] = {}                     # (caller, request) -> tick of the preview
         self.committed: dict[str, ActuateResult] = {}                      # action_id -> result
         self.state: dict[tuple[str, str], dict[str, Any]] = {}             # (node_id, action) -> commanded params
         self.store.reset()                                                 # memory backend: wipe. Redis: nothing (keys carry the run id)
@@ -150,20 +187,12 @@ class ActionBook:
     def _actuate(self, caller: Identity, action: str, targets: list[str], params: dict[str, Any] | None,
                  token: str | None, idempotency_key: str) -> ActuateResult:
         with self._lock:
-            if self._run != self.sim.run_number:                            # a new run wipes all action state
-                self._run = self.sim.run_number
-                self._reset_state()
-            act = self.cfg.actuators.get(action)
-            if act is None:
-                raise BadRequest("UNKNOWN_ACTION", f"'{action}' is not an action. Known: "
-                                                   f"{', '.join(self.cfg.actuators)}. See list_actions.")
-            targets = self._check_targets(action, targets)
-            cleaned = self._check_params(act, params)
+            self._sync_run()
+            act, targets, cleaned = self._check_request(action, targets, params)
             if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 128:
                 raise BadRequest("INVALID_IDEMPOTENCY_KEY", "idempotency_key must be a string of 1 to 128 characters.")
 
-            fingerprint = json.dumps({"action": action, "targets": targets, "params": cleaned},
-                                     sort_keys=True, separators=(",", ":"))
+            fingerprint = _fingerprint(action, targets, cleaned)
             run_id = self.sim.run_id
             try:
                 seen = self.store.get_answer(run_id, caller.value, idempotency_key)
@@ -208,9 +237,13 @@ class ActionBook:
                                     "A target node has a quarantined device. The command is held in the quarantine "
                                     "lane and was not carried out. Guardian can release the device.", {"nodes": held},
                                     token_id=claims.jti)
-            if act.preview_required and self.cfg.actions.preview_enforced:
+            if act.preview_required and self.cfg.actions.preview_enforced and not self._preview_is_fresh(
+                    caller, fingerprint):
                 return self._reject("PREVIEW_REQUIRED", action, targets, cleaned,
-                                    f"'{action}' must be previewed before it is committed.", token_id=claims.jti)
+                                    f"'{action}' must be previewed (preview_action, same action, targets and params) "
+                                    f"before it is committed. A preview lasts "
+                                    f"{self.cfg.actions.preview_valid_ticks} ticks and is used up by one commit.",
+                                    {"preview_valid_ticks": self.cfg.actions.preview_valid_ticks}, token_id=claims.jti)
             violations = self._cap_violations(targets)
             if violations:
                 return self._reject("CAP_EXCEEDED", action, targets, cleaned,
@@ -236,12 +269,62 @@ class ActionBook:
                 return self._reject("TOKEN_REUSED", action, targets, cleaned, "Token was already used.",
                                     token_id=claims.jti)
             self.seq = number
+            self.previews.pop((caller.value, fingerprint), None)           # one preview, one commit
             for t in targets:
                 self.state[(t, action)] = cleaned
             self.committed[result.action_id] = result
             return result
 
+    # ------------------------------------------------------------------ preview (dry-run)
+    def preview(self, caller: Identity, action: str, targets: list[str], params: dict[str, Any] | None) -> PreviewResult:
+        """Dry-run of `actuate`. Same input checks, then reports what would happen. Changes nothing."""
+        with self._lock:
+            self._sync_run()
+            act, targets, cleaned = self._check_request(action, targets, params)
+            if not act.preview_required:
+                raise BadRequest("PREVIEW_NOT_AVAILABLE",
+                                 f"'{action}' has no preview: only actions with preview_required (see list_actions) do.")
+            held = self.containment.quarantined_nodes(targets) if self.containment else []
+            violations = self._cap_violations(targets)
+            blocked = (["DEVICE_QUARANTINED"] if held else []) + (["CAP_EXCEEDED"] if violations else [])
+            details: dict[str, Any] = {}
+            if held:
+                details["quarantined_nodes"] = held
+            if violations:
+                details["cap_violations"] = violations
+            changes = [PreviewChange(node_id=t, domains=list(self.nodes[t].domains),
+                                     current=self.state.get((t, action)), new=cleaned, held=t in held)
+                       for t in targets]
+            tick = self.sim.tick
+            until = tick + self.cfg.actions.preview_valid_ticks
+            self.previews[(caller.value, _fingerprint(action, targets, cleaned))] = tick
+            return PreviewResult(
+                run_id=self.sim.run_id, tick=tick, time=self.sim.clock.iso_of(tick), action=action, targets=targets,
+                params=cleaned, risk=act.risk, min_score=self.cfg.tokens.min_score.get(act.risk) if act.risk else None,
+                changes=changes, would_pass_checks=not blocked, blocked_by=blocked, details=details or None,
+                valid_until_tick=until, valid_until=self.sim.clock.iso_of(until),
+                message=("Dry-run only, nothing was changed. " + (
+                    "These checks would refuse it: " + ", ".join(blocked) + "." if blocked else
+                    "The caps and quarantine checks would pass. The real action still needs Guardian's token.")))
+
+    def _preview_is_fresh(self, caller: Identity, fingerprint: str) -> bool:
+        seen = self.previews.get((caller.value, fingerprint))
+        return seen is not None and self.sim.tick - seen <= self.cfg.actions.preview_valid_ticks
+
     # ------------------------------------------------------------------ pieces
+    def _sync_run(self) -> None:
+        if self._run != self.sim.run_number:                                # a new run wipes all action state
+            self._run = self.sim.run_number
+            self._reset_state()
+
+    def _check_request(self, action: str, targets: list[str], params: dict[str, Any] | None):
+        """The input checks that actuate and preview share. Wrong input raises BadRequest."""
+        act = self.cfg.actuators.get(action)
+        if act is None:
+            raise BadRequest("UNKNOWN_ACTION", f"'{action}' is not an action. Known: "
+                                               f"{', '.join(self.cfg.actuators)}. See list_actions.")
+        return act, self._check_targets(action, targets), self._check_params(act, params)
+
     def _check_targets(self, action: str, targets: list[str]) -> list[str]:
         if not targets:
             raise BadRequest("INVALID_TARGETS", "targets must list at least one node id.")
