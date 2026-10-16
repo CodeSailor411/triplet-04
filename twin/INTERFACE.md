@@ -40,7 +40,7 @@ Refusal (three valves, water cap is 2). A refusal is a normal result, not a cras
 ## Rules
 * **Token** (Guardian's permission for this exact action): `header.payload.signature`. Payload: `iss`, `aud`, `jti` (single use), `run_id`, `exp`, `action`, `targets`, `params`, `score`. `list_actions` shows `token_mode`: `signed` (Ed25519) or `unsigned`. Times use the Twin's clock (`get_clock`), 1 tick = 1 s at real speed.
 * **Order of checks:** valid request, idempotency, token, preview (not enforced yet), caps. A token is spent only on commit. Same key and request returns the first answer.
-* **Refusal codes:** `TOKEN_*`, `IDEMPOTENCY_CONFLICT`, `CAP_EXCEEDED`, `DEVICE_QUARANTINED`. A malformed request fails as `CODE: message`. No key: `UNAUTHENTICATED`, wrong caller: `FORBIDDEN`. Full list in the README.
+* **Refusal codes:** `TOKEN_*`, `IDEMPOTENCY_CONFLICT`, `CAP_EXCEEDED`, `DEVICE_QUARANTINED`, `STATE_UNAVAILABLE` (the Twin cannot check token use, nothing was done, retry). A malformed request fails as `CODE: message`. No key: `UNAUTHENTICATED`, wrong caller: `FORBIDDEN`. Full list in the README.
 * **Caps** count nodes per domain. `actuate` counts a shared node in every domain, containment only in the sensor's own domain.
 * **Messages:** we send strict JSON, we ignore unknown extra fields, unknown `params` are refused. UTF-8, snake_case, time = simulated UTC (RFC 3339) plus `tick`.
 * **Log:** `run-logs/<run_id>.twin.jsonl`, merged into `logs/`. Fields: `run_id`, `event_id`, `timestamp`, `tick`, `wall`, `layer`, `event_type`, `caused_by`, `data`. Timeline links: a verdict's `caused_by` is the `reading_id`, Guardian's approval has `data.token_id`, the Brain's decision has `data.idempotency_key`.

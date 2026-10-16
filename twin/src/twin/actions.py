@@ -16,7 +16,6 @@ Nothing here changes what the sensors report yet: actuator effects come later (1
 import json
 import math
 import threading
-from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -26,6 +25,7 @@ from .caps import compute_caps
 from .models import Topology
 from .settings import ActuatorCfg, ParamCfg, TwinConfig
 from .sim import Simulation
+from .storage.actionstate import ActionState, MemoryActionState, StateUnavailable
 from .tokens import TokenError, read_token
 from .util import format_rfc3339
 
@@ -104,8 +104,9 @@ def _clean_param(name: str, spec: ParamCfg, value: Any, node_ids: set[str]) -> A
 
 
 class ActionBook:
-    def __init__(self, topology: Topology, config: TwinConfig, sim: Simulation):
+    def __init__(self, topology: Topology, config: TwinConfig, sim: Simulation, state: ActionState | None = None):
         self.cfg, self.sim = config, sim
+        self.store: ActionState = state or MemoryActionState()      # used token IDs and idempotency answers
         self.nodes = {n.node_id: n for n in topology.nodes}
         self.caps = compute_caps(config.generator, config.caps)
         self._lock = threading.Lock()
@@ -118,8 +119,7 @@ class ActionBook:
         self.seq = 0
         self.committed: dict[str, ActuateResult] = {}                      # action_id -> result
         self.state: dict[tuple[str, str], dict[str, Any]] = {}             # (node_id, action) -> commanded params
-        self._by_key: dict[tuple[Identity, str], tuple[str, ActuateResult]] = {}
-        self._used_jti: dict[str, datetime] = {}                           # jti -> expiry
+        self.store.reset()                                                 # memory backend: wipe. Redis: nothing (keys carry the run id)
 
     # ------------------------------------------------------------------ list
     def list_actions(self) -> ActionList:
@@ -164,24 +164,33 @@ class ActionBook:
 
             fingerprint = json.dumps({"action": action, "targets": targets, "params": cleaned},
                                      sort_keys=True, separators=(",", ":"))
-            seen = self._by_key.get((caller, idempotency_key))
+            run_id = self.sim.run_id
+            try:
+                seen = self.store.get_answer(run_id, caller.value, idempotency_key)
+            except StateUnavailable as e:
+                return self._store_down(action, targets, cleaned, e)
             if seen:
+                first = ActuateResult.model_validate_json(seen[1])
                 if seen[0] == fingerprint:
-                    return seen[1].model_copy(update={"replayed": True})
+                    return first.model_copy(update={"replayed": True})
                 return self._reject("IDEMPOTENCY_CONFLICT", action, targets, cleaned,
                                     "This idempotency_key was already used for a different request. Reuse a key only "
                                     "for a retry of the same unchanged request.",
-                                    {"first_action_id": seen[1].action_id})
+                                    {"first_action_id": first.action_id})
 
             now = self.sim.clock.time_of(self.sim.tick)
             try:
                 claims = read_token(token or "", self.cfg.tokens)
             except TokenError as e:
                 return self._reject(e.code, action, targets, cleaned, e.message)
+            try:
+                already_used = self.store.jti_used(run_id, claims.jti, now)
+            except StateUnavailable as e:
+                return self._store_down(action, targets, cleaned, e, token_id=claims.jti)
             for code, failed, why in (
                 ("TOKEN_WRONG_RUN", claims.run_id != self.sim.run_id, "Token is for another run."),
                 ("TOKEN_EXPIRED", claims.expires_at() <= now, "Token has expired (simulated clock, see get_clock)."),
-                ("TOKEN_REUSED", self._jti_used(claims.jti, now), "Token was already used."),
+                ("TOKEN_REUSED", already_used, "Token was already used."),
                 ("TOKEN_MISMATCH", (claims.action, sorted(claims.targets), claims.params) != (action, targets, cleaned),
                  "Token was issued for a different action, targets or params than this request."),
             ):
@@ -209,15 +218,27 @@ class ActionBook:
                                     "The whole request was refused.", {**violations[0], "violations": violations},
                                     token_id=claims.jti)
 
-            self.seq += 1
-            result = ActuateResult(status="committed", run_id=self.sim.run_id, tick=self.sim.tick,
+            try:
+                number = self.store.next_action_number(run_id)          # keeps counting after a restart (Redis)
+            except StateUnavailable as e:
+                return self._store_down(action, targets, cleaned, e, token_id=claims.jti)
+            result = ActuateResult(status="committed", run_id=run_id, tick=self.sim.tick,
                                    time=format_rfc3339(now), action=action, targets=targets, params=cleaned,
-                                   action_id=f"ac-{self.seq:05d}", token_id=claims.jti)
+                                   action_id=f"ac-{number:05d}", token_id=claims.jti)
+            # The token is spent and the answer stored in ONE step. Only if that worked does the actuator change.
+            # If the store fails here, nothing changed and the same request can be tried again.
+            try:
+                spent = self.store.commit(run_id, claims.jti, claims.expires_at(), caller.value, idempotency_key,
+                                          fingerprint, result.model_dump_json())
+            except StateUnavailable as e:
+                return self._store_down(action, targets, cleaned, e, token_id=claims.jti)
+            if not spent:                         # someone spent this token between our check and now
+                return self._reject("TOKEN_REUSED", action, targets, cleaned, "Token was already used.",
+                                    token_id=claims.jti)
+            self.seq = number
             for t in targets:
                 self.state[(t, action)] = cleaned
             self.committed[result.action_id] = result
-            self._by_key[(caller, idempotency_key)] = (fingerprint, result)
-            self._used_jti[claims.jti] = claims.expires_at()
             return result
 
     # ------------------------------------------------------------------ pieces
@@ -247,11 +268,6 @@ class ActionBook:
             out[name] = _clean_param(name, spec, params[name], node_ids)
         return out
 
-    def _jti_used(self, jti: str, now: datetime) -> bool:
-        for old in [j for j, exp in self._used_jti.items() if exp <= now]:   # forget tokens that could not work anyway
-            del self._used_jti[old]
-        return jti in self._used_jti
-
     def _cap_violations(self, targets: list[str]) -> list[dict[str, Any]]:
         """A shared node counts in every domain it belongs to; one broken cap refuses the whole request."""
         counts: dict[str, int] = {}
@@ -267,6 +283,14 @@ class ActionBook:
                 out.append({"pool": "action", "domain": domain, "cap": cap, "in_use": 0, "requested": n,
                             "remaining": cap})
         return out
+
+    def _store_down(self, action: str, targets: list[str], params: dict[str, Any], why: Exception,
+                    token_id: str | None = None) -> ActuateResult:
+        """Fail safe: if we cannot check or record token use, no action is carried out."""
+        return self._reject("STATE_UNAVAILABLE", action, targets, params,
+                            "The Twin cannot check or record token use right now, so it refuses all actions until "
+                            "that works again. Nothing was changed. Try again later with the same request.",
+                            {"store": self.store.name, "reason": str(why)[:120]}, token_id=token_id)
 
     def _reject(self, code: str, action: str, targets: list[str], params: dict[str, Any], message: str,
                 details: dict[str, Any] | None = None, token_id: str | None = None) -> ActuateResult:

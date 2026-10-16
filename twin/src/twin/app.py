@@ -19,7 +19,7 @@ from .actions import ActionBook
 from .containment import ContainmentBook
 from .scenarios import ScenarioBook
 from .runlog import RunLog
-from .storage import open_history
+from .storage import open_action_state, open_history
 from .settings import TWIN_ROOT, Settings, load_settings
 from .sim import Simulation
 from .util import now_iso
@@ -56,7 +56,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
              fingerprint(topology), len(topology.nodes))
 
     sim = Simulation(topology, cfg)
-    book = ActionBook(topology, cfg, sim)
+    action_state = open_action_state(cfg.storage, env_file=TWIN_ROOT / ".env")      # memory by default; redis when config says so
+    book = ActionBook(topology, cfg, sim, action_state)
     containment = ContainmentBook(topology, cfg, sim)
     sim.overlay, book.containment = containment, containment
     scenarios = ScenarioBook(sim)
@@ -95,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ticker.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await ticker
+            action_state.close()
             await asyncio.to_thread(history.stop)             # last try to write what is waiting; do not block the loop
 
     app = FastAPI(title="Twin", version=__version__, lifespan=lifespan)
@@ -107,7 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "service": "twin", "version": __version__, "seed": cfg.seed,
                 "city_fingerprint": fingerprint(topology), "nodes": len(topology.nodes), "time": now_iso(),
                 "run_id": sim.run_id, "tick": sim.tick, "sim_time": sim.clock.iso_of(sim.tick),
-                "history": history.status()}
+                "history": history.status(), "action_state": action_state.status()}
 
     @app.get("/events")
     async def events(request: Request, max_events: int | None = Query(None, ge=1, le=1000)):
