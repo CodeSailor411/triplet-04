@@ -1,6 +1,6 @@
 """The Twin's MCP tools. Built with the official `mcp` SDK (class MCPServer, formerly FastMCP).
 
-Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, actuate, the containment tools
+Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, preview_action, actuate, the containment tools
 (isolate_sensor, quarantine_device, rollback_reading, release_device, get_containment_state, get_quarantine_lane)
 and run_scenario (hidden: fake_reading, stuck_sensor, replay_exact, list, stop, reset).
 Next (see the plan): two-step commit, congestion_index, actuator controls.
@@ -15,7 +15,7 @@ from mcp.types import CallToolResult, TextContent
 from pydantic import BaseModel
 
 from . import __version__
-from .actions import ActionBook, ActionList, ActuateResult, BadRequest
+from .actions import ActionBook, ActionList, ActuateResult, BadRequest, PreviewResult
 from .scenarios import ScenarioBook, ScenarioResult
 from .containment import (ContainmentBook, ContainmentState, ContainResult, QuarantineLane, ReleaseResult,
                           RollbackResult)
@@ -127,6 +127,20 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
         who = require(ctx, "actuate")
         try:
             return book.actuate(who, action, targets, params, token, idempotency_key)
+        except BadRequest as e:
+            raise ToolError(f"{e.code}: {e.message}") from None
+
+    @mcp.tool()
+    def preview_action(ctx: Context, action: str, targets: list[str],
+                       params: dict[str, Any] | None = None) -> PreviewResult:
+        """Dry-run of `actuate`: shows what the action WOULD change (old and new value per node) and whether the caps
+        and quarantine checks would pass. Changes nothing and needs no token. Only for actions with
+        preview_required (see list_actions). Actions with preview_required are refused (code PREVIEW_REQUIRED) unless
+        you previewed exactly the same action, targets and params shortly before. One preview allows one commit.
+        A preview is not a permission: the real action still needs Guardian's token."""
+        who = require(ctx, "preview_action")
+        try:
+            return book.preview(who, action, targets, params)
         except BadRequest as e:
             raise ToolError(f"{e.code}: {e.message}") from None
 

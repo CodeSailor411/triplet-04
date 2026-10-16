@@ -158,6 +158,7 @@ def test_quarantine_holds_commands_without_spending_the_token_and_isolation_does
     sim, book, cont, _ = world()
     params, tok = {"position": 30}, None
     tok = valve_token(sim, params)
+    book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params)
     cont.contain("isolate_sensor", ["WAT-01.water_level"])                     # isolation alone does not block commands
     ok = book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params, tok, "k-iso")
     assert ok.status == "committed"
@@ -171,6 +172,7 @@ def test_quarantine_holds_commands_without_spending_the_token_and_isolation_does
     assert [r.device_id for r in lane.held_readings] == ["WAT-01.water_level"]
 
     cont.release(["WAT-01.water_level"])
+    book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params)     # the first commit used up the old preview
     again = book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params, tok2, "k-q2")
     assert again.status == "committed"                                         # the same token still works: it was not spent
 

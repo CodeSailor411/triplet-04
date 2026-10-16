@@ -56,6 +56,7 @@ TOOL_ACCESS: dict[str, frozenset[Identity] | None] = {     # None = anyone, even
     "get_clock": LAYERS,
     "list_actions": LAYERS,
     "actuate": frozenset({Identity.CITY_BRAIN}),      # the permission table: the Brain requests, Guardian signs
+    "preview_action": frozenset({Identity.CITY_BRAIN}),   # dry-run of actuate: same caller as actuate, changes nothing
     "get_containment_state": LAYERS,                   # which devices are cut off, caps used (ours, not in the spec)
     "isolate_sensor": frozenset({Identity.GUARDIAN}),  # the permission table: only Guardian contains
     "quarantine_device": frozenset({Identity.GUARDIAN}),

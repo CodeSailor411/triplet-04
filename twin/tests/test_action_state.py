@@ -33,6 +33,7 @@ def world(state, seed_suffix=None):
 
 def valve(sim, book, jti, key, position=40, caller=BRAIN):
     token = make_token(claims(sim, VALVE, ["WAT-01"], {"position": position}, jti=jti))
+    book.preview(caller, VALVE, ["WAT-01"], {"position": position})              # a valve needs a preview first
     return book.actuate(caller, VALVE, ["WAT-01"], {"position": position}, token, key)
 
 
@@ -145,6 +146,7 @@ def test_a_restart_does_not_allow_a_token_replay(redis_state):
     sim, book = world(redis_state)
     jti = f"tk-{uuid.uuid4().hex[:6]}"
     token = make_token(claims(sim, VALVE, ["WAT-01"], {"position": 40}, jti=jti))
+    book.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
     assert book.actuate(BRAIN, VALVE, ["WAT-01"], {"position": 40}, token, "first").status == "committed"
 
     sim2, book2 = world(redis_state)                                    # "restart": a brand new Twin, same run id
@@ -159,8 +161,10 @@ def test_memory_alone_would_have_allowed_that_replay():
     """Proof that the test above tests something: with the memory store the replay after a restart WORKS."""
     sim, book = world(MemoryActionState())
     token = make_token(claims(sim, VALVE, ["WAT-01"], {"position": 40}, jti="tk-mem"))
+    book.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
     assert book.actuate(BRAIN, VALVE, ["WAT-01"], {"position": 40}, token, "first").status == "committed"
     sim2, book2 = world(MemoryActionState())
+    book2.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
     assert book2.actuate(BRAIN, VALVE, ["WAT-01"], {"position": 40}, token, "a-new-key").status == "committed"
 
 
@@ -195,7 +199,9 @@ def test_two_twins_racing_for_one_token_only_one_wins(redis_state):
     sim, book_a = world(redis_state)
     _, book_b = world(redis_state)
     token = make_token(claims(sim, VALVE, ["WAT-01"], {"position": 40}, jti=f"tk-{uuid.uuid4().hex[:6]}"))
+    book_a.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
     a = book_a.actuate(BRAIN, VALVE, ["WAT-01"], {"position": 40}, token, "ka")
+    book_b.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
     b = book_b.actuate(BRAIN, VALVE, ["WAT-01"], {"position": 40}, token, "kb")
     assert sorted([a.status, b.status]) == ["committed", "rejected"]
     assert b.code == "TOKEN_REUSED"
