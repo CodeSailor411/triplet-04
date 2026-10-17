@@ -308,7 +308,8 @@ This is reference data: no tool and no cap checks distances.
 * Used token ids are remembered until they expire, in memory only. A restart forgets them. A restarted Twin starts again at tick 0 with the SAME run id
   (`run-42-001` for seed 42), so a token that was already used and has not expired yet would be accepted a second time. Only a scenario reset
   (8 Oct) creates a new run id. Not a problem for the demo, but do not claim restarts protect against replay.
-* A feed reader that falls more than 100 ticks behind skips ahead (the event says how many it skipped).
+* A feed reader that falls more than 100 ticks behind skips ahead. The first `readings` event after the jump has a `skipped_ticks` number. Fixed 17 Oct: before, a reader that was stuck while the clock ran lost ticks with no warning (`tests/test_feed_stream.py`).
+* Reconnecting to `/events` starts at the current tick. Ticks missed while disconnected are not replayed, and the `Last-Event-ID` header is ignored. Use `get_readings` after a reconnect if you need the latest state.
 * `tools/list` shows every tool except the hidden scenario tool to every caller, but `get_capabilities` now lists only the tools the caller can really call.
 * `mocks/token_tool.py make` defaults to a 30-second token issued at the clock's start time, so it expires quickly. Pass `--ttl 3600` (or `--now` from `get_clock`).
 * `ServerMiddleware` in the `mcp` SDK is marked provisional by its authors. We pin `mcp==2.3.0`, so it cannot change

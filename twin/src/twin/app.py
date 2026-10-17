@@ -14,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 from . import __version__
 from .auth import LAYERS, KeyRing, token_from_headers
 from .generator import fingerprint, generate
+from .feed import MAX_BACKLOG, feed_events  # noqa: F401  (MAX_BACKLOG stays importable from here)
 from .mcp_server import build_mcp
 from .actions import ActionBook
 from .containment import ContainmentBook
@@ -26,7 +27,6 @@ from .util import now_iso
 
 log = logging.getLogger("twin")
 
-MAX_BACKLOG = 100       # a slow feed reader may fall this many ticks behind before it skips ahead
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -123,35 +123,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if who not in LAYERS:
             return _error(403, "FORBIDDEN", f"'{who.value}' may not read the live feed.")
 
-        async def stream():
-            sent = 0
-            yield {"event": "hello", "data": json.dumps({"service": "twin", "seed": cfg.seed, "you_are": who.value,
-                                                         "run_id": sim.run_id, "tick": sim.tick, "time": now_iso()})}
-            sent += 1
-            run_number, last = sim.run_number, sim.tick       # everything up to and including `last` counts as seen
-            while max_events is None or sent < max_events:
-                if not await sim.wait_for_change(run_number, last, cfg.sse.heartbeat_seconds):
-                    yield {"event": "heartbeat", "data": json.dumps({"time": now_iso()})}
-                    sent += 1
-                    continue
-                if sim.run_number != run_number:               # a new run started: begin at its current tick
-                    run_number, last = sim.run_number, sim.tick - 1
-                first, skipped = last + 1, 0
-                if sim.tick - last > MAX_BACKLOG:
-                    first, skipped = sim.tick, sim.tick - last - 1
-                for tick in range(first, sim.tick + 1):
-                    batch = sim.readings_at(tick)
-                    payload = batch.model_dump()
-                    if skipped:
-                        payload["skipped_ticks"] = skipped
-                        skipped = 0
-                    yield {"event": "readings", "id": f"{batch.run_id}:{tick}", "data": json.dumps(payload)}
-                    sent += 1
-                    if max_events is not None and sent >= max_events:
-                        return
-                last = sim.tick
-
-        return EventSourceResponse(stream())
+        stream = feed_events(sim, seed=cfg.seed, who=who.value, heartbeat_seconds=cfg.sse.heartbeat_seconds,
+                             max_events=max_events)
+        return EventSourceResponse(stream)
 
     app.mount("/", mcp_app)                            # last, so the routes above win
     return app

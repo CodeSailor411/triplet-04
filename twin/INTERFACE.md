@@ -3,7 +3,7 @@
 The Twin is the simulated city: it sends sensor readings and receives actuator commands. It calls no other layer.
 
 ## Connect and authenticate
-* MCP over HTTP, protocol `2026-07-28`: `http://<twin-host>:8000/mcp`. Time: 1 tick = 1 simulated second = 1 real second (at speed 1; `get_clock` shows `tick_seconds` and `speed`). Live feed (SSE): `GET /events`, needs a key: `hello`, then one `readings` event per tick, `heartbeat` when quiet. `GET /health` needs no key.
+* MCP over HTTP, protocol `2026-07-28`: `http://<twin-host>:8000/mcp`. Time: 1 tick = 1 simulated second = 1 real second (at speed 1; `get_clock` shows `tick_seconds` and `speed`). Live feed (SSE): `GET /events`, needs a key: `hello`, then one `readings` event per tick, `heartbeat` when quiet. A reader more than 100 ticks behind jumps ahead and the next event carries `skipped_ticks`; a reconnect starts at the current tick (nothing is replayed). `GET /health` needs no key.
 * `Authorization: Bearer <key>` on every call. One key per caller: `city_brain`, `guardian`, and a hidden `scenario` key. Keys live in the Twin's `.env`, never in the repo.
 * Pointing at another partner: the Twin's address is a setting in YOUR config. In `config/twin.yaml`: `server` (host, port), `partners` (Brain and Guardian URLs for the mocks), `dashboard.sources` (log folders). Nothing is hard-coded.
 
