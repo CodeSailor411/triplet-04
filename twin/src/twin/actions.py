@@ -60,10 +60,19 @@ class ActionInfo(BaseModel):
     action_cap: int | None          # most nodes of one domain a single request may touch
 
 
+class IsolationCap(BaseModel):
+    """Guardian's containment limit for one domain. The Brain cannot isolate anything itself, but it needs the number
+    to plan around it (for example, not to ask for a data source that Guardian can no longer cut off)."""
+    domain: str
+    nodes: int                      # how many nodes the domain has
+    isolation_cap: int              # most nodes of this domain that may be isolated or quarantined at once (one shared pool)
+
+
 class ActionList(BaseModel):
     token_mode: Literal["unsigned", "signed"]
     preview_enforced: bool
     actions: list[ActionInfo]
+    isolation_caps: list[IsolationCap]   # same numbers as the pools of get_containment_state, without the usage (D8, 16 Oct)
 
 
 class ActuateResult(BaseModel):
@@ -167,8 +176,9 @@ class ActionBook:
             out.append(ActionInfo(action=name, domain=a.domain, risk=a.risk, preview_required=a.preview_required,
                                   params=params, target_nodes=self._carriers(name),
                                   action_cap=self.caps[a.domain]["action_cap"]))
+        iso = [IsolationCap(domain=d, nodes=c["nodes"], isolation_cap=c["isolation_cap"]) for d, c in self.caps.items()]
         return ActionList(token_mode=self.cfg.tokens.mode, preview_enforced=self.cfg.actions.preview_enforced,
-                          actions=out)
+                          actions=out, isolation_caps=iso)
 
     def _carriers(self, action: str) -> list[str]:
         return sorted(n for n, node in self.nodes.items() if action in node.actuators)

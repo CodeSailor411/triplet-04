@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (16 Oct 2026): 325 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 343).** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built yet: two-step commit, actuator effects on the city, signed-token check turned on (see the table at the bottom).
+**Status (17 Oct 2026): 332 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 350).** The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 109 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built yet: two-step commit, actuator effects on the city, signed-token check turned on (see the table at the bottom).
 
 ## Run it
 
@@ -305,6 +305,7 @@ This is reference data: no tool and no cap checks distances.
   format and key. `tokens.min_score` is empty because nobody has agreed a number.
 * `preview_required` is enforced (`actions.preview_enforced: true`). Previews are remembered in memory only, so a restart forgets them and the Brain just previews again. `actions.preview_valid_ticks: 60` was agreed on 16 Oct (D9). Only the Brain may preview. Previews are not written to the run log (no new event type was agreed).
 * The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run.
+* `list_actions` shows both kinds of limit: `action_cap` on each action, and `isolation_caps` per domain (nodes, and the most that may be isolated or quarantined at once). The isolation numbers are the same as the pools in `get_containment_state`, which also shows how much is in use (D8, 16 Oct).
 * Used token ids are remembered until they expire, in memory only. A restart forgets them. A restarted Twin starts again at tick 0 with the SAME run id
   (`run-42-001` for seed 42), so a token that was already used and has not expired yet would be accepted a second time. Only a scenario reset
   (8 Oct) creates a new run id. Not a problem for the demo, but do not claim restarts protect against replay.

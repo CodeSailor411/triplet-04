@@ -12,7 +12,7 @@ The Twin is the simulated city: it sends sensor readings and receives actuator c
 |---|---|---|---|
 | `get_capabilities` | any | none | versions, your identity, tools you may call |
 | `list_nodes` | Brain, Guardian | `domain`? | nodes: `node_id`, domains, `lat`/`lon`, sensors (`device_id`), actuators, neighbours |
-| `get_readings`, `get_clock`, `list_actions` | Brain, Guardian | optional filters | latest readings; `run_id`, `tick`, `tick_seconds`; actions with `risk`, `preview_required`, caps |
+| `get_readings`, `get_clock`, `list_actions` | Brain, Guardian | optional filters | latest readings; `run_id`, `tick`, `tick_seconds`; actions with `risk`, `preview_required`, `action_cap`; `isolation_caps` per domain |
 | `preview_action` | Brain | `action`, `targets`, `params` | dry-run: old and new value per node, `would_pass_checks`, `blocked_by`. Changes nothing, needs no token |
 | `actuate` | Brain | `action`, `targets`, `params`, `token`, `idempotency_key` | `committed` or `rejected`, `code` |
 | `isolate_sensor`, `quarantine_device`, `release_device` | Guardian | `device_ids`, `reason`?, `caused_by`? | `applied` or `rejected`, `changed` |

@@ -59,6 +59,15 @@ def test_list_actions_shows_risk_preview_and_caps():
     assert book.list_actions().token_mode == "unsigned" and book.list_actions().preview_enforced is True
 
 
+def test_list_actions_shows_the_isolation_caps_from_civis_table():
+    """D8 (16 Oct). The numbers are CIVIS's corrected table: isolation Traffic 5, Water 4, Power 9, Air 4, Emergency 3."""
+    _, book = world()
+    caps = {c.domain: c.isolation_cap for c in book.list_actions().isolation_caps}
+    assert caps == {"traffic": 5, "water": 4, "power": 9, "air_quality": 4, "emergency": 3}
+    assert {c.domain: c.nodes for c in book.list_actions().isolation_caps} == {
+        "traffic": 11, "water": 9, "power": 9, "air_quality": 8, "emergency": 7}
+
+
 # ------------------------------------------------------------------ happy path
 def test_a_valid_request_commits_and_the_actuator_holds_the_value():
     sim, book = world()

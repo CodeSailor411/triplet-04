@@ -39,6 +39,16 @@ async def test_list_actions_for_both_layers(mcp_client):
             data = (await c.call_tool("list_actions", {})).structured_content
         assert {a["action"] for a in data["actions"]} == {"set_signal_plan", "set_valve_position", "set_grid_switch", "dispatch"}
         assert data["token_mode"] == "unsigned"
+        assert {c["domain"]: c["isolation_cap"] for c in data["isolation_caps"]} == {
+            "traffic": 5, "water": 4, "power": 9, "air_quality": 4, "emergency": 3}
+
+
+async def test_isolation_caps_in_list_actions_match_the_containment_pools(mcp_client):
+    """Two views of one set of numbers must never drift apart."""
+    async with mcp_client("city_brain") as c:
+        listed = (await c.call_tool("list_actions", {})).structured_content["isolation_caps"]
+        pools = (await c.call_tool("get_containment_state", {})).structured_content["pools"]
+    assert {x["domain"]: x["isolation_cap"] for x in listed} == {p["domain"]: p["isolation_cap"] for p in pools}
 
 
 async def test_commit_then_exact_retry_gives_the_same_answer(mcp_client):
