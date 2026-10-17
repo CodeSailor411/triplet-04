@@ -326,7 +326,7 @@ def test_preview_shows_old_and_new_value_and_changes_nothing():
     assert (p.action, p.targets, p.params, p.risk, p.token_needed) == (VALVE, ["WAT-01", "WAT-03"], {"position": 75.0}, "R3", True)
     assert [(c.node_id, c.current, c.new, c.held) for c in p.changes] == [
         ("WAT-01", {"position": 40.0}, {"position": 75.0}, False), ("WAT-03", None, {"position": 75.0}, False)]
-    assert p.would_pass_checks and p.blocked_by == [] and p.valid_until_tick == sim.tick + 30
+    assert p.would_pass_checks and p.blocked_by == [] and p.valid_until_tick == sim.tick + book.cfg.actions.preview_valid_ticks
 
 
 def test_preview_spends_no_token_and_uses_no_idempotency_key():
@@ -371,7 +371,7 @@ def test_without_a_preview_a_valve_or_grid_action_is_refused_and_the_token_is_ke
     sim, book = world()
     r = act(sim, book, VALVE, ["WAT-01"], {"position": 40}, preview=False, jti="tk-np")
     assert r.status == "rejected" and r.code == "PREVIEW_REQUIRED" and book.seq == 0
-    assert r.details == {"preview_valid_ticks": 30}
+    assert r.details == {"preview_valid_ticks": book.cfg.actions.preview_valid_ticks}
     book.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
     token = make_token(claims(sim, VALVE, ["WAT-01"], {"position": 40}, jti="tk-np"))   # the SAME token id
     assert book.actuate(BRAIN, VALVE, ["WAT-01"], {"position": 40}, token, "k2").status == "committed"
@@ -405,12 +405,18 @@ def test_a_preview_is_used_up_by_one_commit():
 
 def test_a_preview_expires_after_the_configured_number_of_ticks():
     sim, book = world()
+    life = book.cfg.actions.preview_valid_ticks
     book.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
-    sim.tick = 30                                                           # exactly at the limit: still valid
+    sim.tick = life                                                         # exactly at the limit: still valid
     assert act(sim, book, VALVE, ["WAT-01"], {"position": 40}, preview=False).status == "committed"
     book.preview(BRAIN, VALVE, ["WAT-01"], {"position": 40})
-    sim.tick = 61                                                           # 31 ticks later: too old
+    sim.tick = 2 * life + 1                                                 # one tick past the limit: too old
     assert act(sim, book, VALVE, ["WAT-01"], {"position": 40}, preview=False).code == "PREVIEW_REQUIRED"
+
+
+def test_the_agreed_preview_lifetime_is_60_ticks():
+    """D9 (16 Oct): 60, not 30. The Brain's planning step can take up to 60 s, and one tick is one second."""
+    assert load_config().actions.preview_valid_ticks == 60
 
 
 def test_a_preview_stays_valid_after_a_cap_refusal():

@@ -303,7 +303,7 @@ This is reference data: no tool and no cap checks distances.
   Readings are a pure function of (seed, tick) until then.
 * `tokens.mode` is `unsigned` for now, with a loud warning at startup. Signed mode (Ed25519) is built and tested but waits for 9antra's answer on
   format and key. `tokens.min_score` is empty because nobody has agreed a number.
-* `preview_required` is enforced (`actions.preview_enforced: true`). Previews are remembered in memory only, so a restart forgets them and the Brain just previews again. `actions.preview_valid_ticks: 30` is a placeholder, nobody agreed a number. Only the Brain may preview. Previews are not written to the run log (no new event type was agreed).
+* `preview_required` is enforced (`actions.preview_enforced: true`). Previews are remembered in memory only, so a restart forgets them and the Brain just previews again. `actions.preview_valid_ticks: 60` was agreed on 16 Oct (D9). Only the Brain may preview. Previews are not written to the run log (no new event type was agreed).
 * The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run.
 * Used token ids are remembered until they expire, in memory only. A restart forgets them. A restarted Twin starts again at tick 0 with the SAME run id
   (`run-42-001` for seed 42), so a token that was already used and has not expired yet would be accepted a second time. Only a scenario reset

@@ -96,10 +96,11 @@ tokens:
 
 # preview_enforced: true = an action with preview_required (valve, grid switch) is refused with PREVIEW_REQUIRED
 #                   unless the same caller called preview_action for exactly that request recently.
-# preview_valid_ticks: how many ticks a preview stays valid. PLACEHOLDER (30), no number agreed with the partners.
+# preview_valid_ticks: how many ticks a preview stays valid. 60, agreed on the 16 Oct call (D9). One tick is one second at speed 1,
+#                      and the Brain's planning step may take up to 60 s, so 30 could run out between preview and actuate.
 actions:
   preview_enforced: true
-  preview_valid_ticks: 30
+  preview_valid_ticks: 60
 
 # ---------------------------------------------------------------------------
 # Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced from 7 Oct, only computed here for now.

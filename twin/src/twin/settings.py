@@ -133,7 +133,7 @@ class TokensCfg(_Strict):
 
 class ActionsCfg(_Strict):
     preview_enforced: bool = False      # true: an action with preview_required needs a fresh preview before it commits
-    preview_valid_ticks: int = Field(default=30, ge=1)   # how long a preview counts. PLACEHOLDER: nobody agreed a number
+    preview_valid_ticks: int = Field(default=60, ge=1)   # how long a preview counts. 60 agreed on 16 Oct (D9): CIVIS's planning step can take up to 60 s
 
 
 class CapsCfg(_Strict):
