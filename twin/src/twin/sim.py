@@ -68,7 +68,7 @@ class Simulation:
         rid = f"rd{tick:07d}-{d.device_id}" + (f"-{ch}" if ch else "")
         return Reading(run_id=self.run_id, reading_id=rid, tick=tick, timestamp=_shift(self.clock, tick, wobble),
                        node_id=d.node_id, device_id=d.device_id, sensor=d.sensor, channel=ch,
-                       value=self.model.observed_value(d, ch, tick), unit=d.unit)
+                       value=self.model.observed_value(d, ch, tick), unit=d.unit, lat=d.lat, lon=d.lon)
 
     def reported(self, d: Device, ch: str | None, tick: int) -> Reading:
         """What the sensor really reports: the healthy reading, unless a scenario fault applies. Never the true value."""

@@ -16,7 +16,10 @@ def token_for(action, targets, params, **over):
     return make_token(c)
 
 
-async def call(c, targets, params, action="set_valve_position", token="auto", key=None):
+async def call(c, targets, params, action="set_valve_position", token="auto", key=None, preview=True):
+    """Like a real Brain: preview first when the action needs it (the answer to the preview is not looked at here)."""
+    if preview and action in ("set_valve_position", "set_grid_switch"):
+        await c.call_tool("preview_action", {"action": action, "targets": targets, "params": params})
     return await c.call_tool("actuate", {
         "action": action, "targets": targets, "params": params, "idempotency_key": key or f"mcp-key-{next(_n)}",
         **({"token": token_for(action, targets, params) if token == "auto" else token} if token != "omit" else {})})
@@ -36,6 +39,16 @@ async def test_list_actions_for_both_layers(mcp_client):
             data = (await c.call_tool("list_actions", {})).structured_content
         assert {a["action"] for a in data["actions"]} == {"set_signal_plan", "set_valve_position", "set_grid_switch", "dispatch"}
         assert data["token_mode"] == "unsigned"
+        assert {c["domain"]: c["isolation_cap"] for c in data["isolation_caps"]} == {
+            "traffic": 5, "water": 4, "power": 9, "air_quality": 4, "emergency": 3}
+
+
+async def test_isolation_caps_in_list_actions_match_the_containment_pools(mcp_client):
+    """Two views of one set of numbers must never drift apart."""
+    async with mcp_client("city_brain") as c:
+        listed = (await c.call_tool("list_actions", {})).structured_content["isolation_caps"]
+        pools = (await c.call_tool("get_containment_state", {})).structured_content["pools"]
+    assert {x["domain"]: x["isolation_cap"] for x in listed} == {p["domain"]: p["isolation_cap"] for p in pools}
 
 
 async def test_commit_then_exact_retry_gives_the_same_answer(mcp_client):
@@ -77,3 +90,36 @@ async def test_nothing_secret_in_the_new_tools(mcp_client):
                (await c.call_tool("list_actions", {})).content[0].text
     for forbidden in ("truth", "bias", "noise", "private", "secret"):
         assert forbidden not in text.lower()
+
+
+# ------------------------------------------------------------------ preview_action
+async def preview(c, action, targets, params):
+    return await c.call_tool("preview_action", {"action": action, "targets": targets, "params": params})
+
+
+async def test_only_the_brain_may_preview(mcp_client):
+    for who in ("guardian", "scenario", None):
+        async with mcp_client(who) as c:
+            r = await preview(c, "set_valve_position", ["WAT-01"], {"position": 10})
+        assert r.is_error
+        assert ("UNAUTHENTICATED" if who is None else "FORBIDDEN") in r.content[0].text
+
+
+async def test_preview_then_commit_over_mcp(mcp_client):
+    async with mcp_client("city_brain") as c:
+        no_preview = (await call(c, ["WAT-01"], {"position": 55}, preview=False)).structured_content
+        p = await preview(c, "set_valve_position", ["WAT-01"], {"position": 55})
+        done = (await call(c, ["WAT-01"], {"position": 55}, preview=False)).structured_content
+    assert no_preview["status"] == "rejected" and no_preview["code"] == "PREVIEW_REQUIRED"
+    d = p.structured_content
+    assert not p.is_error and d["would_pass_checks"] is True and d["token_needed"] is True
+    assert d["changes"][0]["node_id"] == "WAT-01" and d["changes"][0]["new"] == {"position": 55.0}
+    assert done["status"] == "committed"
+
+
+async def test_preview_errors_are_clear(mcp_client):
+    async with mcp_client("city_brain") as c:
+        signal = await preview(c, "set_signal_plan", ["TRF-01"], {"plan": "all_red"})
+        bad = await preview(c, "set_valve_position", ["WAT-01"], {"position": 500})
+    assert signal.is_error and "PREVIEW_NOT_AVAILABLE" in signal.content[0].text
+    assert bad.is_error and "INVALID_PARAMS" in bad.content[0].text

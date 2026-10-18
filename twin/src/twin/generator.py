@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .caps import compute_caps
-from .models import Canvas, Layout, Node, Road, SensorInfo, Topology, Zone
+from .geo import to_latlon
+from .models import Canvas, Geo, Layout, Node, Road, SensorInfo, Topology, Zone
 from .settings import ConfigError, GeneratorCfg, TwinConfig, load_config
 
 
@@ -213,8 +214,11 @@ def generate(config: TwinConfig, seed: int | None = None) -> tuple[Topology, Lay
         for n in sensor_names:
             if n not in config.sensors:
                 raise ConfigError(f"Sensor '{n}' is used but not listed under sensors:")
+        g = cfg.geo
+        lat, lon = to_latlon(pos[s.id][0], pos[s.id][1], canvas_w=cfg.canvas.width, canvas_h=cfg.canvas.height,
+                             anchor_lat=g.anchor_lat, anchor_lon=g.anchor_lon, metres_per_unit=g.metres_per_unit)
         nodes[s.id] = Node(node_id=s.id, label=s.label, domains=s.domains, role=s.role, zone=s.zone or "",
-                           x=pos[s.id][0], y=pos[s.id][1],
+                           x=pos[s.id][0], y=pos[s.id][1], lat=lat, lon=lon,
                            sensors=[SensorInfo(name=n, unit=config.sensors[n].unit, device_id=f"{s.id}.{n}",
                                                channels=list(config.sensor_model.profiles[n].channels))
                                     for n in sensor_names],
@@ -257,7 +261,9 @@ def generate(config: TwinConfig, seed: int | None = None) -> tuple[Topology, Lay
     edges = sorted({tuple(sorted((n.node_id, nb))) for n in nodes.values() for nb in n.neighbours})
     ordered = [nodes[i] for i in sorted(nodes)]
     canvas = Canvas(width=cfg.canvas.width, height=cfg.canvas.height)
-    topology = Topology(seed=seed, canvas=canvas, node_size_px=cfg.node_size_px, nodes=ordered, edges=edges)
+    topology = Topology(seed=seed, canvas=canvas,
+                        geo=Geo(anchor_lat=cfg.geo.anchor_lat, anchor_lon=cfg.geo.anchor_lon,
+                                metres_per_unit=cfg.geo.metres_per_unit), node_size_px=cfg.node_size_px, nodes=ordered, edges=edges)
     layout = Layout(seed=seed, canvas=canvas, zones=zones, roads=roads)
     return topology, layout
 

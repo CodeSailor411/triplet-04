@@ -158,6 +158,7 @@ def test_quarantine_holds_commands_without_spending_the_token_and_isolation_does
     sim, book, cont, _ = world()
     params, tok = {"position": 30}, None
     tok = valve_token(sim, params)
+    book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params)
     cont.contain("isolate_sensor", ["WAT-01.water_level"])                     # isolation alone does not block commands
     ok = book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params, tok, "k-iso")
     assert ok.status == "committed"
@@ -171,6 +172,7 @@ def test_quarantine_holds_commands_without_spending_the_token_and_isolation_does
     assert [r.device_id for r in lane.held_readings] == ["WAT-01.water_level"]
 
     cont.release(["WAT-01.water_level"])
+    book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params)     # the first commit used up the old preview
     again = book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-01"], params, tok2, "k-q2")
     assert again.status == "committed"                                         # the same token still works: it was not spent
 
@@ -203,7 +205,7 @@ def test_rollback_restores_the_last_reported_value_and_marks_it_corrected():
     assert c.corrected is True and c.corrects == bad and c.restored_from == _reading_id(99, d, None)
     assert c.value == sim.model.observed_value(d, None, 99)                    # the reported value of tick 99
     assert set(c.model_dump()) == {"corrected", "corrects", "restored_from", "run_id", "tick", "timestamp", "node_id",
-                                   "device_id", "sensor", "channel", "value", "unit"}      # no field that could carry the truth
+                                   "device_id", "sensor", "channel", "value", "unit", "lat", "lon"}      # no field that could carry the truth
 
 
 def test_rollback_skips_ticks_that_are_already_known_bad_and_ticks_nobody_saw():

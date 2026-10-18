@@ -132,7 +132,8 @@ class TokensCfg(_Strict):
 
 
 class ActionsCfg(_Strict):
-    preview_enforced: bool = False      # becomes true when the preview tool exists (15 Oct)
+    preview_enforced: bool = False      # true: an action with preview_required needs a fresh preview before it commits
+    preview_valid_ticks: int = Field(default=60, ge=1)   # how long a preview counts. 60 agreed on 16 Oct (D9): CIVIS's planning step can take up to 60 s
 
 
 class CapsCfg(_Strict):
@@ -214,8 +215,16 @@ class NeighbourCfg(_Strict):
     cross: list[CrossCfg] = []
 
 
+class GeoCfg(_Strict):
+    """Where the invented city sits on the globe. One arbitrary anchor, one scale. See geo.py."""
+    anchor_lat: float = Field(ge=-85, le=85)         # latitude of the canvas centre, WGS84 degrees
+    anchor_lon: float = Field(ge=-180, le=180)       # longitude of the canvas centre, WGS84 degrees
+    metres_per_unit: float = Field(gt=0, le=100)     # metres on the ground for 1 map unit (1 canvas pixel)
+
+
 class GeneratorCfg(_Strict):
     canvas: CanvasCfg
+    geo: GeoCfg
     node_size_px: int = Field(gt=0)
     min_spacing_factor: float = Field(gt=0)
     canvas_margin_px: int = Field(ge=0)
@@ -239,6 +248,20 @@ class GeneratorCfg(_Strict):
         return self
 
 
+class StorageCfg(_Strict):
+    """Where history is kept. `memory` needs nothing installed. `timescale` needs a TimescaleDB server."""
+    history: Literal["memory", "timescale"] = "memory"
+    timescale_dsn_env: str = "TWIN_TIMESCALE_DSN"     # NAME of the environment variable that holds the connection string
+    queue_max: int = Field(50_000, ge=100)            # rows allowed to wait for the database; beyond that the oldest are dropped
+    flush_seconds: float = Field(1.0, gt=0)           # how often the writer sends what is waiting
+    batch_max: int = Field(2000, ge=1)                # most rows of one kind per database call
+    # Action state (used token IDs + idempotency answers). Redis option A, chosen 14 Oct.
+    state: Literal["memory", "redis"] = "memory"
+    redis_url_env: str = "TWIN_REDIS_URL"             # NAME of the environment variable that holds the Redis address
+    redis_timeout_seconds: float = Field(0.5, gt=0, le=5)   # a Redis call that takes longer counts as "down"
+    state_ttl_seconds: int = Field(86400, ge=60)      # how long a used token ID and an answer are kept (real seconds)
+
+
 class TwinConfig(_Strict):
     server: ServerCfg
     seed: int
@@ -253,6 +276,7 @@ class TwinConfig(_Strict):
     caps: CapsCfg
     containment: ContainmentCfg = ContainmentCfg()
     logging: LoggingCfg = LoggingCfg()
+    storage: StorageCfg = StorageCfg()
     dashboard: DashboardCfg = DashboardCfg()
     generator: GeneratorCfg
 

@@ -110,6 +110,7 @@ def write_sample(out_dir: Path) -> str:
                                                     "approved_action": "set_valve_position"})
                 partner("brain", "decision", {"incident": "flood risk near the port", "chosen_action": "set_valve_position",
                                               "idempotency_key": "sample-k1"}, [g])
+                book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-03"], {"position": 40})     # the valve needs a preview first
                 book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-03"], {"position": 40},
                              token("t-sample-1", "set_valve_position", ["WAT-03"], {"position": 40}), "sample-k1")
             if t == 20:                                                                                              # a refused command
