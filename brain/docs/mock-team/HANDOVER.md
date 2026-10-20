@@ -1,5 +1,7 @@
 # CIVIS primary mock handover
 
+Current update, 20 October 2026: see [the integration report](INTEROPERABILITY_2026-10-19.md) and [current interface](../../INTERFACE.md). The dated checkpoint notes below describe the earlier release; current clock, preview, episode keys and SSE behavior supersede those earlier limitations.
+
 Updated 11 October 2026. Integration branch: **codex/civis-elyes**. Checkpoint: **brain-mock-1**, authorized by Elyes as a limited mock. All five modules are integrated. Main and member branches were not modified. The published Twin source was imported unchanged into the local twin/ folder.
 
 ## What runs

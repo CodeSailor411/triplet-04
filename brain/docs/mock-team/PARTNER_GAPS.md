@@ -1,5 +1,7 @@
 # Partner integration gaps
 
+Current update, 20 October 2026: see [the integration report](INTEROPERABILITY_2026-10-19.md) and [current interface](../../INTERFACE.md). The dated checkpoint notes below describe the earlier release; current clock, preview, episode keys and SSE behavior supersede those earlier limitations.
+
 Updated 11 October 2026 from the 9 October meeting and actual Twin main at 9170ee2. Local five-scenario tests pass; full partner readiness remains false. See [review evidence](INTEGRATION_REVIEW_2026-10-11.md).
 
 | Item | Verified state | Next action |

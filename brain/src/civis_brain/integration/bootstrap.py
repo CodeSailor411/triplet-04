@@ -21,12 +21,21 @@ def configured_runtime(settings):
         sid: json.loads((root / "config" / "scenarios" / f"{domain}.json").read_text())
         for sid, domain in domains.items()
     }
+    if settings.scenario_policy_file:
+        overrides = json.loads((root / settings.scenario_policy_file).read_text(encoding="utf-8"))
+        if (not isinstance(overrides, dict) or not set(overrides).issubset(domains)
+                or any(not isinstance(value, dict) for value in overrides.values())):
+            raise ValueError("Scenario policy overrides must map known S01-S05 IDs to objects")
+        for sid, values in overrides.items():
+            policies[sid] = {**policies[sid], **values}
     case_path = root / settings.brain_fixture_case
     case = json.loads(case_path.read_text(encoding="utf-8"))
     features = {
         "ai_max_calls_per_run": settings.ai_max_calls_per_run,
         "ai_timeout_seconds": settings.ai_timeout_seconds,
         "peer_timeout_seconds": settings.peer_timeout_seconds,
+        "max_evidence_age_seconds": settings.max_evidence_age_seconds,
+        "mock_integration_profile": settings.mock_integration_profile,
         "run_log_dir": str(root / "run-logs"),
     }
     if settings.peer_mode == "fixture":

@@ -11,6 +11,7 @@ from civis_brain import __version__
 from civis_brain.contracts import Capabilities, ContainmentNotice, DecisionBatch, ReadingsBatch
 from civis_brain.debug import attach_debug
 from civis_brain.integration.bootstrap import configured_runtime
+from civis_brain.integration.feed import TwinFeed
 from civis_brain.integration.runtime import BrainRuntime
 from civis_brain.integration.service import bind_runtime
 from civis_brain.scenarios.registry import IMPLEMENTED_SCENARIOS
@@ -105,12 +106,25 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
         return runtime.notify_containment(notice)
 
     mcp_app = mcp.streamable_http_app()
+    feed = None
+    if settings.twin_feed_enabled:
+        if settings.peer_mode != "live":
+            raise ValueError("Twin SSE requires live peer mode")
+        feed = TwinFeed(runtime, settings.twin_events_url, settings.twin_brain_key)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        async with mcp.session_manager.run():
-            yield
-        await runtime.close()
+        try:
+            async with mcp.session_manager.run():
+                if feed:
+                    feed.start()
+                try:
+                    yield
+                finally:
+                    if feed:
+                        await feed.close()
+        finally:
+            await runtime.close()
 
     app = FastAPI(title="CIVIS Brain primary mock", version=__version__, lifespan=lifespan)
     app.state.runtime = runtime
@@ -125,6 +139,8 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "peer_mode": settings.peer_mode,
             "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),
             "awaiting_scenarios": [],
+            "feed": feed.status if feed else {"state": "disabled"},
+            "mock_integration_profile": settings.mock_integration_profile,
         }
 
     if settings.brain_debug_enabled:

@@ -72,10 +72,9 @@ def peer_app(peer, key):
             return peer.clock
 
         @mcp.tool()
-        async def fixture_preview(ctx: Context, run_id: str, tick: int,
-                                  action: str, targets: list[str], params: dict) -> dict:
+        async def fixture_preview(ctx: Context, action: str, targets: list[str], params: dict) -> dict:
             return await call(ctx, "fixture_preview", dict(
-                run_id=run_id, tick=tick, action=action, targets=targets, params=params))
+                action=action, targets=targets, params=params))
 
         @mcp.tool()
         async def actuate(ctx: Context, action: str, targets: list[str], params: dict,

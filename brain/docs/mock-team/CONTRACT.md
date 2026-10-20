@@ -1,5 +1,7 @@
 # Frozen contract: five scenario modules and one Brain runtime
 
+Current update, 20 October 2026: see [the integration report](INTEROPERABILITY_2026-10-19.md) and [current interface](../../INTERFACE.md). The dated checkpoint notes below describe the earlier release; current clock, preview, episode keys and SSE behavior supersede those earlier limitations.
+
 Revision: local integration, 11 October 2026. Owner: Elyes. This replaces the earlier three-module team assignment. Public tool signatures remain unchanged; Decision adds optional redacted peer_details. All five scenario modules and the shared core are implemented locally; full partner readiness remains false.
 
 ## Pipeline

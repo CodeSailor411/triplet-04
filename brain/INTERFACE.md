@@ -1,29 +1,50 @@
 # CIVIS Brain mock interface
 
-Revision: 11 October 2026. Python 3.12; FastAPI; MCP Streamable HTTP, protocol 2026-07-28. Start from brain/ with .\.venv\Scripts\python.exe -m civis_brain. MCP endpoint: http://127.0.0.1:8001/mcp. Local developer console: http://127.0.0.1:8001/.
+19 October 2026. Python 3.12; MCP SDK 2.3.0; protocol 2026-07-28. Run from brain: `.\.venv\Scripts\python.exe -m civis_brain`. MCP: http://127.0.0.1:8001/mcp. Developer console: http://127.0.0.1:8001/. Dependencies remain pinned in requirements-lock.txt.
 
-| MCP tool | Arguments | Caller/result |
+| Tool | Arguments | Caller/result |
 | --- | --- | --- |
-| get_capabilities | {} | Public discovery, implemented tools and readiness |
-| evaluate_tick | {batch: ReadingsBatch} | Twin, Guardian or scenario caller; returns DecisionBatch |
-| get_active_incidents | {run_id: string} | Authenticated caller; active candidates for that run |
-| explain_decision | {decision_id: string} | Authenticated caller; saved decision or found=false |
-| notify_containment | {notice: ContainmentNotice} | Guardian only; invalidates affected evidence |
+| get_capabilities | {} | Public discovery; full joint readiness is false |
+| evaluate_tick | {batch} | Twin, Guardian or scenario caller; DecisionBatch |
+| get_active_incidents | {run_id} | Authenticated caller; active candidates |
+| explain_decision | {decision_id} | Authenticated caller; saved result, no re-execution |
+| notify_containment | {notice} | Guardian only; evidence invalidation |
 
-Use distinct Bearer keys configured in ignored .env: BRAIN_TWIN_CALLER_KEY, BRAIN_GUARDIAN_CALLER_KEY and BRAIN_SCENARIO_KEY. Local development defaults are not partner credentials.
+Separate inbound Bearer keys: BRAIN_TWIN_CALLER_KEY, BRAIN_GUARDIAN_CALLER_KEY, BRAIN_SCENARIO_KEY. Outbound keys: TWIN_BRAIN_KEY and GUARDIAN_BRAIN_KEY. Keep secrets in ignored .env; development defaults are not partner credentials. Brain never issues a Guardian approval or calls Twin containment tools.
 
-**Batch:** run_id, tick, time (RFC3339 UTC), tick_seconds, count, readings. Each reading keeps run_id, reading_id, tick, timestamp, node_id, device_id, sensor, channel, value and unit. Null remains null. Membership comes from list_nodes. Extra future fields are tolerated; malformed required fields are rejected.
+## Input and workflow
 
-**Flow:** a driver gets Twin readings and calls evaluate_tick. Brain discovers nodes/actions/clock/containment, detects candidates, obtains Guardian evidence assessments, asks Gemini for an actionable Plan, validates it, previews R3, requests exact approval, rechecks containment/clock and calls Twin actuate. Twin alone executes. Current Twin does not automatically send batches.
+Batch: run_id, tick, time (simulated UTC RFC3339), tick_seconds, count, readings. Reading: run_id, reading_id, tick, timestamp, node_id, device_id, sensor, channel, value, unit, optional lat/lon (finite WGS84 degrees). Null remains null. Node discovery supplies all domain memberships. Future domains and unknown extra fields do not break the existing five scenarios. Traffic accepts percent and %, preserving the original unit.
 
-**Responses:** alert, blocked, pending, committed or rejected, with evidence IDs and reasons/codes. Pending is not a completed action. explain_decision is a read tool; it does not rerun anything.
+With PEER_MODE=live and TWIN_FEED_ENABLED=true, Brain reads authenticated Twin /events independently while one worker evaluates batches. An external driver may still call evaluate_tick; choose one driver per run. Hello/heartbeat time is wall time and never authorizes an action. /health includes feed state, counters and last error. Debug presets remain isolated synthetic replays, not a claim about the live partner run.
 
-**Local presets:** Traffic percent -> R1 signal; Water cm -> R3 valve with supported topology/preview; Power kW/V -> alert; Air Quality ug/m3 -> alert; Medical calls/min plus ambulance units -> R2 dispatch. All are synthetic test readings. CLI scripts/run_case.py supports S01-S05 base/refusal. BRAIN_FIXTURE_CASE selects the fixture discovery/profile for the long-lived MCP service, e.g. mocks/cases/traffic/base_case.json; restart after changing it. Debug replays load their own case without altering that service.
+Flow: discovery and containment -> normalization -> detection -> Guardian evidence scores -> typed Gemini plan -> local validation -> required preview -> exact-action Guardian token -> fresh clock/containment check -> Twin actuate. Scores never replace tokens. There is no mock-approval fallback in live mode.
 
-**Live boundaries:** real Guardian mapping is unverified; current Twin lacks Traffic congestion_index and Water preview. Illustrative policy is blocked with live peers. Timeouts/retry/pending deadlines still need team agreement. ready=false describes those partner gaps, not missing local scenario modules.
+## Clocks, gaps and execution
 
-**Logs:** run-logs/<run_id>.brain.jsonl, meeting envelope with event_id, timestamp, tick, wall, layer, event_type, caused_by and data; decisions include idempotency_key. Secrets and full tokens are redacted. In-memory state requires a new run after restart.
+- Peer call: 3 real seconds by default. Gemini: at most 60 real seconds, before authorization.
+- Batch and Twin must agree on run, tick rate and elapsed simulated time. Evidence may be at most MAX_EVIDENCE_AGE_SECONDS old at execution, default 10 simulated seconds. This is a configurable CIVIS mock safeguard, not a newly agreed triplet value. Slow plans can be refused.
+- Approval uses a fresh Twin clock. Token validity is checked again before sending; maximum token lifetime is 60 simulated seconds.
+- Reception and planning use separate tasks with a bounded 64-batch queue. Gaps, reconnects, overflow and run changes invalidate queued plans. Missing ticks never establish consecutive evidence. Newer feed data can withdraw a cleared incident or unavailable ambulance.
+- preview_action receives only action, targets and params. Brain checks the returned exact intent, would_pass_checks, blocked_by and valid_until_tick. A successful dry run means caps/quarantine checks pass, not hydraulic safety. Water additionally requires configured safe_valve_choices. Reduced Power is alert-only; no grid-switch plan is generated.
+- An operation key binds run, scenario, incident episode and normalized command. Persistent incidents reuse receipts. A confirmed clear followed by a new incident gets a new key; missing data or a gap does not clear an episode.
+- Lost-send reconciliation makes at most one repeat using the original in-memory token, request and key after fresh checks. Unresolved overlapping actuator operations are blocked. Receipts for a different request are not treated as success.
+- If a configured confirmation tool is advertised, Brain confirms pending immediately with the original key. Budget: 10 real seconds from send, at most two 3-second calls and one 1-second wait after transport uncertainty. Deadline is not extended. Current Twin does not advertise commit_action, so joint confirmation is unverified.
 
-See [review evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md) and [handover](docs/mock-team/HANDOVER.md). Checkpoint: brain-mock-1, an explicitly limited mock; full joint readiness remains false.
+## Five scenarios and configuration
 
-Latest checks and release limits: [handover audit](docs/mock-team/HANDOVER_AUDIT_2026-10-11.md). Guardian field mapping and credentials: [contract](docs/mock-team/GUARDIAN_CONTRACT.md).
+| Scenario | Reduced response | Current partner boundary |
+| --- | --- | --- |
+| S01 Traffic | R1 signal plan | Twin congestion_index missing; report the gap |
+| S02 Water | R3 valve, topology and preview required | Preview works; safe valve direction must be explicitly supplied |
+| S03 Power | Alert or evidence warning | No invented outage or grid switching |
+| S04 Air Quality | Sustained-pollution alert | No AQ actuator |
+| S05 Medical | R2 ambulance dispatch | Requires current availability and exact approval |
+
+MOCK_INTEGRATION_PROFILE=true explicitly permits illustrative policies against partner mocks. It defaults to false. SCENARIO_POLICY_FILE optionally loads local overrides keyed by S01-S05, including reviewed Water choices; use an ignored path such as .artifacts/local-policies.json. It does not bypass trust, preview or caps. Source configuration remains test policy, not physical safety settings.
+
+Guardian_Unified currently exposes RF advisory tools, not the required trust/token contract. Keep GUARDIAN_CONTRACT_CONFIRMED=false until the actual interfaces arrive. The [Guardian adapter contract](docs/mock-team/GUARDIAN_CONTRACT.md) describes the fields requiring agreement. Neighbour-first evidence recovery and pushed Guardian verdicts remain unintegrated; current assessment attempts are bounded across distinct evaluated ticks.
+
+Logs: run-logs/<run_id>.brain.jsonl with run_id, event_id, timestamp, tick, wall, layer, event_type, caused_by, data. Approval records include token ID, never the full token. Decisions include the operation key. State is in memory: use a new Twin run after restarting Brain, and reconcile uncertain outcomes first. Logs do not restore execution state.
+
+See the [19 October test report](docs/mock-team/INTEROPERABILITY_2026-10-19.md) for scope, reproducible commands and partner blockers. No new release tag is claimed by this document.

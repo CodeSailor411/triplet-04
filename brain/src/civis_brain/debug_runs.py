@@ -195,7 +195,8 @@ async def run_debug_case(settings, request: DebugRunRequest, *, live_provider=No
                 case["expected"]["reason_contains"] in row["reason"]
                 for row in results[-1]["decisions"]
             )
-        unchanged = submitted == case["batches"]
+        unchanged = submitted == [ReadingsBatch.model_validate(row).model_dump(mode="json")
+                                  for row in case["batches"]]
         result = journal.redact(
             {
                 "scenario": request.scenario,

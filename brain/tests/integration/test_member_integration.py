@@ -375,5 +375,5 @@ async def test_clock_change_during_approval_cannot_execute(tmp_path):
         return response
     guardian.call_tool = call
     result = (await evaluate(case, runtime, twin))[-1]
-    assert result.decisions[0].peer_code == "CLOCK_CHANGED"
+    assert result.decisions[0].peer_code == "CLOCK_MISMATCH"
     assert not twin.effects

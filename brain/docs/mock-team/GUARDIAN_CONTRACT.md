@@ -1,6 +1,6 @@
 # Brain and Guardian integration contract
 
-11 October 2026. This is the implemented Brain adapter contract for partner review, not confirmation of 9antra's unpublished API. The real Guardian is not in the repository yet.
+20 October 2026. This is the implemented Brain adapter contract for partner review. Guardian_Unified is uploaded, but its MCP server exposes RF advisory tools and no exact-action token issuer. Keep the mapping unconfirmed until its actual assessment and authorization interfaces are delivered. See INTEROPERABILITY_2026-10-19.md for the current test evidence.
 
 ## Requests and responses
 
@@ -39,13 +39,13 @@ Current Twin draft fields: iss, aud, jti, run_id, iat, exp, action, targets, par
 
 The draft uses RFC3339 strings for iat and exp. This is a custom JWS payload, not strict RFC 7519 JWT claims: JWT requires numeric NumericDate values for these fields. Agree custom claims or migrate both peers together; do not change one side silently. References: [JWS compact serialization](https://www.rfc-editor.org/rfc/rfc7515.html#section-3.1), [JWT expiration](https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4), [JWT issued-at](https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.6).
 
-The same run/scenario/normalized command keeps the same idempotency key. Duplicate ticks return their saved result. Lost confirmation remains pending with the original key. A changed command needs a new key and new approval. State is in memory: use a fresh run after restart or reconcile uncertain outcomes first. Logs do not restore execution state.
+The same run/scenario/incident episode/normalized command keeps the same idempotency key. A confirmed clear followed by a new incident starts a new operation. Duplicate ticks return their saved result. Lost confirmation remains pending with the original key. A changed command needs a new key and new approval. State is in memory: use a fresh run after restart or reconcile uncertain outcomes first. Logs do not restore execution state.
 
 ## Still requiring agreement and joint testing
 
 - Real Guardian discovery, verdicts, tokens, errors and callback wiring.
 - Pushed Guardian verdict stream: not implemented. Current Brain requests assessments.
 - Neighbour-first, later-reading and fresh-verdict retry sequence: not implemented. The mock bounds trust attempts to three per incident kind/location.
-- Total pending deadline and the ten-second reaction target: not verified. Current AI timeout is 60 real seconds.
-- Brain refuses execution if Twin advances during planning. Compatibility tests freeze Twin's clock; continuous-clock AI actuation still needs an agreed freshness/timing design.
-- Traffic needs an agreed congestion metric; Water needs safe topology and an advertised preview. Twin's published mock does not supply both.
+- Brain now confirms immediately when the configured tool is advertised, with a 10-real-second budget from send and at most one same-key retry. Actual Twin commit_action is absent, so joint confirmation and the Guardian reaction target remain unverified.
+- Advancing-clock and concurrent SSE tests now pass against real Twin with recorded plans and a test Guardian. Brain uses a configurable 10-simulated-second evidence-age limit; long Gemini plans may still be refused. The team must agree that freshness policy.
+- Traffic still needs congestion_index or an agreed conversion. Current Twin preview is integrated and tested; Water still requires explicitly reviewed safe topology.

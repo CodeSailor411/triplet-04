@@ -120,7 +120,8 @@ async def test_pending_confirmation(confirmation):
     case["twin_outcome"] = {"status": "pending", "commit_available": confirmation}
     runtime, twin, _, provider = harness(case)
     first = await runtime.evaluate_tick(ReadingsBatch.model_validate(case["batches"][0]))
-    assert first.decisions[0].status == "pending" and not twin.effects
+    assert first.decisions[0].status == ("committed" if confirmation else "pending")
+    assert len(twin.effects) == int(confirmation)
     second = await runtime.evaluate_tick(next_batch(case, twin, provider))
     assert second.decisions[0].status == ("committed" if confirmation else "pending")
     assert len(twin.effects) == int(confirmation)

@@ -24,14 +24,19 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     ai_timeout_seconds: float = Field(default=60, gt=0, le=60)
     ai_max_calls_per_run: int = Field(default=3, ge=1, le=20)
-    peer_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    peer_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    max_evidence_age_seconds: float = Field(default=10, gt=0, le=60)
+    twin_feed_enabled: bool = False
+    twin_events_url: str = "http://127.0.0.1:8000/events"
+    mock_integration_profile: bool = False
+    scenario_policy_file: str = ""
 
     peer_mode: Literal["fixture", "live"] = "fixture"
     brain_config_root: str = str(Path(__file__).resolve().parents[2])
     brain_fixture_case: str = "mocks/cases/air_quality/base_case.json"
     guardian_contract_confirmed: bool = False
     guardian_mapping_file: str = ""
-    twin_preview_tool: str | None = None
+    twin_preview_tool: str | None = "preview_action"
     twin_commit_tool: str | None = None
 
     brain_debug_enabled: bool = True

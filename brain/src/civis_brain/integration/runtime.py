@@ -6,7 +6,9 @@ import copy
 import hashlib
 import json
 import math
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from pydantic import ValidationError
 
@@ -94,6 +96,9 @@ class BrainRuntime:
             else artifact_dir / "run-logs" if artifact_dir else None,
         )
         self.run_id = None
+        self.feed_generation = 0
+        self.latest_feed = None
+        self.feed_connected = None
         self._reset()
 
     def _reset(self):
@@ -111,6 +116,47 @@ class BrainRuntime:
         self.intents = {}
         self.trust_attempts = {}
         self.ai_calls = 0
+        self.episodes = {}
+        self.pending_started = {}
+        self.sent_requests = {}
+        self.reconciliation_attempts = set()
+        self.observed_feed_generation = self.feed_generation
+
+    def observe_feed(self, batch=None, *, discontinuity=False, connected=True):
+        """Called by the independent receiver, including while Gemini is awaiting I/O."""
+        self.feed_connected = connected
+        if discontinuity or not connected or (
+            batch and self.run_id and batch.run_id != self.run_id
+        ):
+            self.feed_generation += 1
+            self.generation += 1
+        if batch is not None:
+            self.latest_feed = batch
+
+    def _validate_clock(self, batch, clock, *, execution=False):
+        tick = clock.get("tick")
+        if (clock.get("run_id") != batch.run_id or type(tick) is not int
+                or tick < batch.tick or clock.get("tick_seconds") != batch.tick_seconds):
+            raise BrainError("CLOCK_MISMATCH", "Twin clock has a different run, rate or older tick")
+        age = (utc_time(clock["time"]) - utc_time(batch.time)).total_seconds()
+        expected = (tick - batch.tick) * batch.tick_seconds
+        if abs(age - expected) > 0.001:
+            raise BrainError("CLOCK_MISMATCH", "Simulated time and tick difference disagree")
+        limit = self.features.get("max_evidence_age_seconds", 10)
+        if age < 0 or age > limit:
+            raise BrainError("EVIDENCE_STALE", "Evidence exceeded the configured simulated-time age")
+        if execution and self.feed_connected is False:
+            raise BrainError("FEED_DISCONNECTED", "Feed disconnected while planning")
+        return SimpleNamespace(**clock)
+
+    def _operation_key(self, batch, sid, proposal):
+        intent = dict(action=proposal.action, targets=proposal.targets, params=proposal.params)
+        sources = set(proposal.source_reading_ids)
+        episodes = sorted(incident.incident_id for owner, incident in self.active.values()
+                          if owner == sid and sources.intersection(incident.source_reading_ids))
+        key = "brain-" + fingerprint({"run_id": batch.run_id, "scenario": sid,
+                                      "episodes": episodes or [batch.tick], **intent})
+        return key
 
     async def _call(self, peer, name, arguments):
         if not name:
@@ -155,7 +201,7 @@ class BrainRuntime:
             self.decisions.pop(next(iter(self.decisions)))
         intent = (dict(action=proposal.action, targets=proposal.targets, params=proposal.params)
                   if proposal is not None else None)
-        key = ("brain-" + fingerprint({"run_id": batch.run_id, "scenario": scenario, **intent})
+        key = (self._operation_key(batch, scenario, proposal)
                if intent is not None else None)
         self.journal.set_clock(batch)
         self.journal.append({"event": "decision", "scenario_id": scenario,
@@ -167,11 +213,7 @@ class BrainRuntime:
         if capabilities.get("protocol_version") != PROTOCOL:
             raise BrainError("PROTOCOL_MISMATCH", "Twin must negotiate the required MCP protocol")
         clock = await self._call(self.twin, "get_clock", {})
-        if any(
-            clock.get(field) != getattr(batch, field)
-            for field in ("run_id", "tick", "time", "tick_seconds")
-        ):
-            raise BrainError("CLOCK_MISMATCH", "Batch does not match Twin's current run and clock")
+        self._validate_clock(batch, clock)
         nodes_response = await self._call(self.twin, "list_nodes", {})
         actions_response = await self._call(self.twin, "list_actions", {})
         nodes = [Node.model_validate(row) for row in nodes_response["nodes"]]
@@ -185,8 +227,7 @@ class BrainRuntime:
                 raise BrainError("CONTAINMENT_UNAVAILABLE", "Twin must advertise containment discovery")
             return
         state = await self._call(self.twin, "get_containment_state", {})
-        if state.get("run_id") != batch.run_id or state.get("tick") != batch.tick:
-            raise BrainError("CLOCK_MISMATCH", "Containment snapshot belongs to another run or tick")
+        self._validate_clock(batch, {**state, "tick_seconds": batch.tick_seconds})
         devices, corrections = state.get("devices"), state.get("corrections")
         if not isinstance(devices, list) or not isinstance(corrections, list):
             raise BrainError("PEER_SCHEMA_INVALID", "Malformed containment snapshot")
@@ -228,16 +269,11 @@ class BrainRuntime:
             and source not in self.invalid_ids
             and self.ledger[source].device_id not in self.blocked_devices
             and self.ledger[source].value is not None
-            and self.ledger[source].unit
-            == {
-                "congestion_index": "percent",
-                "water_level": "cm",
-                "load_kw": "kW",
-                "voltage_v": "V",
-                "pm25": "ug/m3",
-                "emergency_calls": "calls/min",
-                "units_free": "units",
-            }.get(self.ledger[source].sensor)
+            and self.ledger[source].unit in {
+                "congestion_index": {"percent", "%"},
+                "water_level": {"cm"}, "load_kw": {"kW"}, "voltage_v": {"V"},
+                "pm25": {"ug/m3"}, "emergency_calls": {"calls/min"}, "units_free": {"units"},
+            }.get(self.ledger[source].sensor, set())
             and self.ledger[source].channel
             == {
                 "emergency_calls": "medical",
@@ -412,6 +448,17 @@ class BrainRuntime:
                 if batch.run_id != self.run_id:
                     self.run_id = batch.run_id
                     self._reset()
+                if (self.observed_feed_generation != self.feed_generation
+                        or (self.last_tick >= 0 and batch.tick > self.last_tick + 1)):
+                    # Missing ticks cannot establish persistence. Keep operation receipts
+                    # and episode identity so reconnects cannot duplicate an action.
+                    self.states = {scenario.scenario_id: {} for scenario in self.scenarios}
+                    self.trust_attempts.clear()
+                    self.invalid_ids.update(self.ledger)
+                    self.generation += 1
+                    self.observed_feed_generation = self.feed_generation
+                    self.journal.append({"event": "feed_gap", "run_id": batch.run_id,
+                                         "tick": batch.tick, "previous_tick": self.last_tick})
                 await self._sync_containment(batch, capabilities)
                 for reading in batch.readings:
                     prior = self.ledger.get(reading.reading_id)
@@ -489,7 +536,7 @@ class BrainRuntime:
                 policy = self.policies.get(sid, {})
                 if policy.get("fixture_only") is True and not getattr(
                     self.twin, "is_fixture", False
-                ):
+                ) and not self.features.get("mock_integration_profile", False):
                     raise BrainError(
                         "POLICY_NOT_APPROVED",
                         "Illustrative thresholds cannot authorize live actions",
@@ -502,6 +549,24 @@ class BrainRuntime:
                 )
                 incidents = detected.incidents
                 touched = {row.node_id for row in relevant}
+                current_episode_keys = {(sid, item.kind, tuple(sorted(item.node_ids)))
+                                        for item in incidents}
+                # Only usable observations can close an episode. Silence/null/gaps
+                # are not evidence that the incident ended.
+                clear_nodes = {row.reading.node_id for row in detected.observations
+                               if row.usable and row.reading.sensor == policy.get("sensor")
+                               and row.reading.value is not None
+                               and row.reading.value < policy.get("threshold_min", float("-inf"))}
+                for episode_key in list(self.episodes):
+                    if (episode_key[0] == sid and episode_key not in current_episode_keys
+                            and set(episode_key[2]).issubset(clear_nodes)):
+                        self.episodes.pop(episode_key)
+                        self.trust_attempts.pop((episode_key[1], episode_key[2]), None)
+                for incident in incidents:
+                    episode_key = (sid, incident.kind, tuple(sorted(incident.node_ids)))
+                    stable_id = self.episodes.setdefault(
+                        episode_key, f"{incident.incident_id}:onset:{batch.tick}")
+                    incident.incident_id = stable_id
                 for key, (owner, incident) in list(self.active.items()):
                     if owner == sid and set(incident.node_ids) & touched:
                         self.active.pop(key)
@@ -625,13 +690,29 @@ class BrainRuntime:
 
     async def _check_execution_state(self, batch, capabilities, generation, proposal):
         clock = await self._call(self.twin, "get_clock", {})
-        if any(clock.get(field) != getattr(batch, field) for field in ("run_id", "tick", "time")):
-            raise BrainError(
-                "CLOCK_CHANGED", "Twin advanced before execution; re-evaluate fresh evidence"
-            )
+        current = self._validate_clock(batch, clock, execution=True)
         await self._sync_containment(batch, capabilities)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
             raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
+        latest = self.latest_feed
+        if latest is not None and latest.run_id != batch.run_id:
+            raise BrainError("CLOCK_MISMATCH", "Twin reset while planning")
+        if latest is not None and latest.tick > batch.tick:
+            # Newer observations can withdraw a plan, never grant permission for it.
+            fresh = {(r.device_id, r.sensor, r.channel): r for r in latest.readings}
+            for source in proposal.source_reading_ids:
+                old = self.ledger[source]
+                row = fresh.get((old.device_id, old.sensor, old.channel))
+                if row is None or row.value is None or row.unit != old.unit:
+                    raise BrainError("EVIDENCE_CHANGED", "Latest feed no longer supports the plan evidence")
+                if row.sensor == "units_free" and row.value < proposal.params.get("units", 1):
+                    raise BrainError("EVIDENCE_CHANGED", "Latest feed has insufficient ambulance availability")
+                sid = next((sid for sid, action in ACTION_BY_SCENARIO.items() if action == proposal.action), None)
+                policy = self.policies.get(sid, {})
+                if (row.sensor == policy.get("sensor")
+                        and row.value < policy.get("threshold_min", float("-inf"))):
+                    raise BrainError("EVIDENCE_CHANGED", "Latest feed no longer shows this incident")
+        return current
 
     async def _execute(
         self,
@@ -682,7 +763,7 @@ class BrainRuntime:
                 "TRUST_INSUFFICIENT", "Evidence does not meet the actuator's risk cut-off"
             )
         intent = dict(action=proposal.action, targets=proposal.targets, params=proposal.params)
-        key = "brain-" + fingerprint({"run_id": batch.run_id, "scenario": sid, **intent})
+        key = self._operation_key(batch, sid, proposal)
         receipt = self.intents.get(key)
         if receipt and receipt["status"] in {"committed", "rejected"}:
             return self._decision(
@@ -696,56 +777,59 @@ class BrainRuntime:
                 receipt.get("details"),
             )
         if receipt and receipt["status"] == "pending":
-            commit_tool = self.features.get("commit_tool")
-            if not commit_tool or commit_tool not in tools:
-                return self._decision(
-                    batch,
-                    sid,
-                    "pending",
-                    "Twin confirmation is not advertised",
-                    proposal.source_reading_ids,
-                    proposal,
-                    code="CONFIRMATION_UNAVAILABLE",
-                )
-            await self._check_execution_state(batch, capabilities, generation, proposal)
-            try:
-                response = await self._call(self.twin, commit_tool, {"idempotency_key": key})
-            except BrainError as error:
-                if error.code in {"PEER_TIMEOUT", "PEER_UNAVAILABLE"}:
-                    return self._decision(
-                        batch, sid, "pending", "Confirmation outcome is uncertain; preserve the original key",
-                        proposal.source_reading_ids, proposal, code=error.code,
-                    )
-                response = {"status": "rejected", "code": error.code, "details": error.details}
-            return self._save_receipt(batch, sid, proposal, key, response)
+            return await self._confirm(batch, sid, proposal, key, capabilities, generation)
+        if receipt and receipt["status"] == "uncertain":
+            request = self.sent_requests.get(key)
+            if request and key not in self.reconciliation_attempts:
+                current = await self._check_execution_state(batch, capabilities, generation, proposal)
+                self._token_binding(request["token"], intent, current, cutoff, scale)
+                self.reconciliation_attempts.add(key)
+                try:
+                    response = await self._call(self.twin, "actuate", request)
+                except BrainError:
+                    return self._decision(batch, sid, "pending", "Reconciliation failed; original outcome remains unknown",
+                                          proposal.source_reading_ids, proposal, code="OUTCOME_UNCERTAIN")
+                result = self._save_receipt(batch, sid, proposal, key, response)
+                if self.intents[key]["status"] == "pending":
+                    return await self._confirm(batch, sid, proposal, key, capabilities, generation)
+                return result
+            return self._decision(batch, sid, "pending", "Uncertain send needs reconciliation; no new token or send",
+                                  proposal.source_reading_ids, proposal, code="OUTCOME_UNCERTAIN")
+        for previous_key, previous in self.intents.items():
+            request = self.sent_requests.get(previous_key, {})
+            if (previous.get("status") in {"pending", "uncertain"}
+                    and request.get("action") == proposal.action
+                    and set(request.get("targets", [])) & set(proposal.targets)):
+                raise BrainError("OUTCOME_UNCERTAIN", "An earlier operation on this actuator is unresolved")
         await self._sync_containment(batch, capabilities)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
             raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
+        preview = None
         if proposal.preview_required:
             preview_tool = self.features.get("preview_tool")
             if not preview_tool or preview_tool not in tools:
                 raise BrainError("PREVIEW_UNAVAILABLE", "Required preview is not advertised")
-            preview = await self._call(
-                self.twin,
-                preview_tool,
-                {
-                    "run_id": batch.run_id,
-                    "tick": batch.tick,
-                    **intent,
-                },
-            )
-            if preview.get("safe") is not True:
+            preview = await self._call(self.twin, preview_tool, intent)
+            if preview_tool == "preview_action":
+                if (preview.get("run_id") != batch.run_id
+                        or any(preview.get(field) != intent[field] for field in intent)):
+                    raise BrainError("PREVIEW_INVALID", "Preview does not bind the exact request")
+                passed = preview.get("would_pass_checks") is True and preview.get("blocked_by") == []
+            else:
+                passed = preview.get("safe") is True
+            if not passed:
                 raise BrainError(
                     "PREVIEW_UNSAFE", "Required preview did not confirm a safe command"
                 )
+        authorization_clock = await self._check_execution_state(batch, capabilities, generation, proposal)
         approval = await self._call(
             self.guardian,
             self.features.get("guardian_token_tool"),
             {
                 "run_id": batch.run_id,
-                "tick": batch.tick,
+                "tick": authorization_clock.tick,
                 **intent,
-                "time": batch.time,
+                "time": authorization_clock.time,
                 "risk": proposal.risk,
                 "source_reading_ids": proposal.source_reading_ids,
             },
@@ -758,8 +842,18 @@ class BrainRuntime:
                     "guardian_code": approval.get("code"),
                 },
             )
-        token = self._token_binding(approval.get("token"), intent, batch, cutoff, scale)
-        await self._check_execution_state(batch, capabilities, generation, proposal)
+        current = await self._check_execution_state(batch, capabilities, generation, proposal)
+        token = self._token_binding(approval.get("token"), intent, current, cutoff, scale)
+        if preview is not None and self.features.get("preview_tool") == "preview_action":
+            until = preview.get("valid_until_tick")
+            if type(until) is not int or current.tick > until:
+                raise BrainError("PREVIEW_EXPIRED", "Preview expired before execution")
+        self.journal.set_clock(current)
+        claims = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=" * (-len(token.split(".")[1]) % 4)))
+        self.journal.append({"event": "guardian_approval", "run_id": batch.run_id,
+                             "tick": current.tick, "token_id": claims["jti"],
+                             "source_reading_ids": proposal.source_reading_ids,
+                             "idempotency_key": key})
         self.journal.append(
             {
                 "event": "actuate_requested",
@@ -771,14 +865,13 @@ class BrainRuntime:
             }
         )
         try:
+            self.pending_started.setdefault(key, time.monotonic())
+            self.sent_requests[key] = {**intent, "token": token, "idempotency_key": key}
+            self.intents[key] = {"status": "uncertain"}
             response = await self._call(
                 self.twin,
                 "actuate",
-                {
-                    **intent,
-                    "token": token,
-                    "idempotency_key": key,
-                },
+                self.sent_requests[key],
             )
         except BrainError as error:
             if error.code in {"PEER_TIMEOUT", "PEER_UNAVAILABLE"}:
@@ -803,9 +896,47 @@ class BrainRuntime:
                 error.code,
                 error.details,
             )
-        return self._save_receipt(batch, sid, proposal, key, response)
+        result = self._save_receipt(batch, sid, proposal, key, response)
+        if self.intents[key]["status"] == "pending":
+            return await self._confirm(batch, sid, proposal, key, capabilities, generation)
+        return result
+
+    async def _confirm(self, batch, sid, proposal, key, capabilities, generation):
+        tool = self.features.get("commit_tool")
+        if not tool or tool not in capabilities.get("tools_you_can_call", []):
+            return self._decision(batch, sid, "pending", "Twin confirmation is not advertised",
+                                  proposal.source_reading_ids, proposal, code="CONFIRMATION_UNAVAILABLE")
+        deadline = self.pending_started.setdefault(key, time.monotonic()) + 10
+        for attempt in range(2):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                async with asyncio.timeout(remaining):
+                    current = await self._check_execution_state(batch, capabilities, generation, proposal)
+                    request = self.sent_requests.get(key)
+                    if request:
+                        self._token_binding(request["token"],
+                                            {field: request[field] for field in ("action", "targets", "params")},
+                                            current, 0, 1)
+                    response = await asyncio.wait_for(
+                        self._call(self.twin, tool, {"idempotency_key": key}), min(3, remaining))
+                return self._save_receipt(batch, sid, proposal, key, response)
+            except (TimeoutError, BrainError) as error:
+                if isinstance(error, BrainError) and error.code not in {"PEER_TIMEOUT", "PEER_UNAVAILABLE"}:
+                    raise
+                if attempt == 0 and deadline - time.monotonic() > 1:
+                    await asyncio.sleep(1)
+        return self._decision(batch, sid, "pending", "Confirmation outcome uncertain; retain original key",
+                              proposal.source_reading_ids, proposal, code="CONFIRMATION_TIMEOUT")
 
     def _save_receipt(self, batch, sid, proposal, key, response):
+        expected = {"run_id": batch.run_id, "action": proposal.action,
+                    "targets": proposal.targets, "params": proposal.params}
+        if any(field in response and response[field] != value for field, value in expected.items()):
+            self.intents[key] = {"status": "uncertain"}
+            return self._decision(batch, sid, "pending", "Peer receipt refers to a different operation",
+                                  proposal.source_reading_ids, proposal, code="RECEIPT_MISMATCH")
         status = response.get("status")
         if status not in {"committed", "pending", "rejected"}:
             self.intents[key] = {"status": "uncertain"}
@@ -819,6 +950,9 @@ class BrainRuntime:
                 code="PEER_SCHEMA_INVALID",
             )
         self.intents[key] = response
+        if status in {"committed", "rejected"}:
+            self.sent_requests.pop(key, None)
+            self.pending_started.pop(key, None)
         return self._decision(
             batch,
             sid,

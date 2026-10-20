@@ -66,7 +66,7 @@ class TrafficScenario:
                 reason = "node_not_in_traffic_domain"
             elif reading.sensor != sensor:
                 reason = "unsupported_sensor"
-            elif reading.unit != unit:
+            elif reading.unit not in {unit, "%"}:
                 reason = "unsupported_unit"
             elif reading.channel is not None:
                 reason = "unsupported_channel"

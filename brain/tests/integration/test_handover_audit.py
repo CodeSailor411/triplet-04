@@ -53,24 +53,16 @@ async def test_pending_confirmation_checks_clock_again(tmp_path):
     case = case_for("emergency")
     case["twin_outcome"] = {"status": "pending", "commit_available": True}
     runtime, twin, guardian, provider = harness(case, tmp_path)
-    first = (await evaluate(case, runtime, twin))[-1]
-    assert first.decisions[0].status == "pending"
-    raw = copy.deepcopy(case["batches"][-1])
-    raw["tick"] += 1
-    raw["time"] = (utc_time(raw["time"]) + timedelta(seconds=raw["tick_seconds"])).isoformat().replace("+00:00","Z")
-    for row in raw["readings"]:
-        row.update(tick=raw["tick"],timestamp=raw["time"],reading_id=row["reading_id"]+"-next")
-    provider.case["ai_plan"]["proposals"][0]["source_reading_ids"] = [r["reading_id"] for r in raw["readings"]]
-    original = provider.generate
+    original = twin.call_tool
 
-    async def advance_during_planning(context):
-        plan = await original(context)
-        twin.clock["tick"] += 1
-        return plan
-    provider.generate = advance_during_planning
-    twin.advance(raw)
-    result = await runtime.evaluate_tick(ReadingsBatch.model_validate(raw))
-    assert result.decisions[0].peer_code == "CLOCK_CHANGED"
+    async def inconsistent_clock_after_pending(name, args):
+        result = await original(name, args)
+        if name == "actuate":
+            twin.clock["tick"] += 1
+        return result
+    twin.call_tool = inconsistent_clock_after_pending
+    result = (await evaluate(case, runtime, twin))[-1]
+    assert result.decisions[0].peer_code == "CLOCK_MISMATCH"
     assert not twin.effects
     assert not any(call["name"] == "fixture_commit" for call in twin.calls)
 
@@ -81,7 +73,6 @@ async def test_lost_pending_confirmation_retains_pending_and_same_key(tmp_path):
     case = make_case()
     case["twin_outcome"] = {"status": "pending", "commit_available": True}
     runtime, twin, _, provider = core_harness(case, tmp_path)
-    await runtime.evaluate_tick(ReadingsBatch.model_validate(case["batches"][0]))
     original = twin.call_tool
     lost_once = True
 
@@ -93,14 +84,15 @@ async def test_lost_pending_confirmation_retains_pending_and_same_key(tmp_path):
             raise TimeoutError
         return result
     twin.call_tool = lose_confirmation
-    result = await runtime.evaluate_tick(next_batch(case, twin, provider))
-    assert result.decisions[0].status == "pending"
+    result = await runtime.evaluate_tick(ReadingsBatch.model_validate(case["batches"][0]))
+    assert result.decisions[0].status == "committed"
     assert len(twin.effects) == 1
     result = await runtime.evaluate_tick(next_batch(case, twin, provider, 3))
     assert result.decisions[0].status == "committed"
     assert len(twin.effects) == 1
     calls = [c for c in twin.calls if c["name"] in {"actuate","fixture_commit"}]
     assert len({c["arguments"]["idempotency_key"] for c in calls}) == 1
+    assert sum(c["name"] == "fixture_commit" for c in calls) == 2
 
 
 async def test_boolean_is_not_equivalent_to_integer_in_guardian_approval(tmp_path):
