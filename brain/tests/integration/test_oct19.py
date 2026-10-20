@@ -46,9 +46,11 @@ async def test_moving_clock_and_fresh_authorization(delay, expected, tmp_path):
 
 
 @pytest.mark.parametrize("domain", ["emergency", "water", "traffic"])
-async def test_new_episode_after_clear_uses_new_key(domain, tmp_path):
+@pytest.mark.parametrize("one_response", [False, True])
+async def test_new_episode_after_clear_uses_new_key(domain, one_response, tmp_path):
     case = case_for(domain)
     runtime, twin, guardian, provider = harness(case, tmp_path)
+    runtime.features["one_response_per_episode"] = one_response
     await evaluate(case, runtime, twin)
     assert len(twin.effects) == 1
     last = case["batches"][-1]
@@ -288,6 +290,7 @@ def test_live_mock_policy_override_is_explicit_and_guardian_stays_unconfirmed(tm
         {"incident_node_id": "WAT-01", "targets": ["WAT-01"], "params": {"position": 30}}
     ]}}))
     runtime = configured_runtime(Settings(_env_file=None, peer_mode="live",
+        llm_mode="gemini", gemini_api_key="test-only-not-a-real-key",
         scenario_policy_file=str(policy), mock_integration_profile=True))
     assert runtime.policies["S02"]["safe_valve_choices"][0]["params"] == {"position": 30}
     assert runtime.policies["S02"]["fixture_only"] is True

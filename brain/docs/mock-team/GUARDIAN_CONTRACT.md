@@ -45,7 +45,7 @@ The same run/scenario/incident episode/normalized command keeps the same idempot
 
 - Real Guardian discovery, verdicts, tokens, errors and callback wiring.
 - Pushed Guardian verdict stream: not implemented. Current Brain requests assessments.
-- Neighbour-first, later-reading and fresh-verdict retry sequence: not implemented. The mock bounds trust attempts to three per incident kind/location.
+- Live recovery is implemented against this adapter: matching neighbour readings, a later tick of the same sensors within 3 real seconds, then a fresh assessment of original plus supporting evidence. Total recovery budget is 10 real seconds. Guardian must return one score for every requested reading, including historical IDs. It must reassess the originals rather than treating a neighbour as permission. No missing observations are fabricated. This remains to be accepted against real Guardian.
 - Brain now confirms immediately when the configured tool is advertised, with a 10-real-second budget from send and at most one same-key retry. Actual Twin commit_action is absent, so joint confirmation and the Guardian reaction target remain unverified.
-- Advancing-clock and concurrent SSE tests now pass against real Twin with recorded plans and a test Guardian. Brain uses a configurable 10-simulated-second evidence-age limit; long Gemini plans may still be refused. The team must agree that freshness policy.
+- Advancing-clock and concurrent SSE tests pass against real Twin with recorded plans and a test Guardian. The partner mock environment allows 60 simulated seconds of evidence age; the developer default is 10. Long Gemini plans may still be refused. The team must agree the final freshness and reaction-time policy.
 - Traffic still needs congestion_index or an agreed conversion. Current Twin preview is integrated and tested; Water still requires explicitly reviewed safe topology.

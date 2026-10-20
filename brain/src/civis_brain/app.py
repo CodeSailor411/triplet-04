@@ -15,7 +15,7 @@ from civis_brain.integration.feed import TwinFeed
 from civis_brain.integration.runtime import BrainRuntime
 from civis_brain.integration.service import bind_runtime
 from civis_brain.scenarios.registry import IMPLEMENTED_SCENARIOS
-from civis_brain.settings import Settings
+from civis_brain.settings import Settings, load_settings
 
 IMPLEMENTED_TOOLS = [
     "get_capabilities",
@@ -27,7 +27,7 @@ IMPLEMENTED_TOOLS = [
 
 
 def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = None) -> FastAPI:
-    settings = settings or Settings()
+    settings = settings or load_settings()
     runtime = runtime or configured_runtime(settings)
     bind_runtime(runtime)
     mcp = MCPServer("civis_brain", version=__version__)
@@ -137,6 +137,9 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "service": "city_brain",
             "version": __version__,
             "peer_mode": settings.peer_mode,
+            "llm_mode": settings.llm_mode,
+            "guardian_contract_confirmed": settings.guardian_contract_confirmed,
+            "browser_presets": "isolated fixtures, not the live feed",
             "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),
             "awaiting_scenarios": [],
             "feed": feed.status if feed else {"state": "disabled"},

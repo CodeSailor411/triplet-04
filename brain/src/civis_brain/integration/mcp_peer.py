@@ -22,6 +22,33 @@ class MCPPeer:
         self.key = key
         self.timeout_seconds = timeout_seconds
 
+    async def list_tool_names(self) -> list[str]:
+        """Read-only partner inventory for the handover connection check."""
+        try:
+            async with asyncio.timeout(self.timeout_seconds):
+                async with httpx2.AsyncClient(
+                    headers={"Authorization": f"Bearer {self.key}"},
+                    timeout=self.timeout_seconds,
+                ) as http:
+                    async with Client(
+                        streamable_http_client(self.url, http_client=http),
+                        read_timeout_seconds=self.timeout_seconds,
+                    ) as client:
+                        if client.protocol_version != PROTOCOL_VERSION:
+                            raise BrainError("PROTOCOL_MISMATCH", "Unexpected MCP protocol")
+                        names, cursor = [], None
+                        for _ in range(10):
+                            page = await client.list_tools(cursor=cursor, cache_mode="refresh")
+                            names.extend(tool.name for tool in page.tools)
+                            cursor = page.next_cursor
+                            if cursor is None:
+                                return names
+                        raise BrainError("PEER_SCHEMA_INVALID", "Peer inventory exceeds page limit")
+        except BrainError:
+            raise
+        except Exception:
+            raise BrainError("PEER_UNAVAILABLE", "Check peer URL, Bearer key and protocol") from None
+
     async def call_tool(self, name: str, arguments: dict) -> dict:
         async def request():
             async with httpx2.AsyncClient(

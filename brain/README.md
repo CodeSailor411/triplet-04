@@ -1,6 +1,8 @@
 # CIVIS Brain primary mock
 
-Checkpoint **brain-mock-1**, 11 October 2026, on **codex/civis-elyes**: all five scenario modules are integrated. The three member submissions retain their merge history. This is an explicitly limited mock for partner testing. Full partner readiness remains false because the real Guardian contract, Traffic metric and Water preview still need partner work.
+Checkpoint **brain-mock-2**, 20 October 2026, on **codex/civis-elyes**. The five reduced scenarios are integrated, including continuous Twin input and bounded evidence recovery. Full joint readiness remains false because real Guardian authorization, the Traffic metric and partner security fixes are outstanding. Twin preview is integrated; Water still needs reviewed valve choices.
+
+**Partners: follow [the live handover](docs/mock-team/BRAIN_MOCK_2.md).** Use the separately supplied `.env.partner` and `scripts/start_partner.ps1`. This path uses actual peer services and Gemini. The developer commands below use the ordinary `.env`; the browser presets always use isolated simulated peers.
 
 | Scenario | Original owner | Reduced mock response |
 | --- | --- | --- |

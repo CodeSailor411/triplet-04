@@ -73,7 +73,9 @@ Nine checks in interop/test_partner_acceptance.py give **one passing control and
 
 The Twin tests use a local Ed25519 test signer. They demonstrate missing claim validation, not a forged-signature bypass. Valid-signature and invalid-signature controls work. Brain independently rejects the five invalid claim variants before actuate. Guardian and Twin sources remain unchanged; these failures require their owners.
 
-## Remaining CIVIS limits
+## Remaining CIVIS limits at this audit checkpoint
+
+The later [brain-mock-2 handover](BRAIN_MOCK_2.md) supersedes the recovery, startup and live-Gemini items below. This audit retains the original test results and outstanding items for traceability.
 
 - The full neighbour-first, next-sensor-tick, fresh-verdict recovery sequence is not integrated. Existing attempts are bounded across evaluated ticks. Guardian has no usable evidence-assessment contract to validate that sequence against. Do not describe it as completed or reinterpret unrelated neighbour values as proof.
 - The maximum evidence age defaults to 10 simulated seconds. This is an explicit CIVIS mock safeguard, not a triplet-agreed threshold. Gemini may take up to 60 real seconds; an old result is rejected. The team should agree the required freshness versus latency budget.

@@ -240,6 +240,39 @@ async def test_actual_sse_continues_during_medical_planning(twin):
         await feed.close()
 
 
+async def test_actual_sse_recovers_low_trust_with_later_tick(twin):
+    app, url = twin
+    client, case, guardian, provider, _ = await prepare(url, "S05")
+    original = guardian.call_tool
+    score_calls = []
+
+    async def assess(name, args):
+        result = await original(name, args)
+        if name == "fixture_score":
+            score_calls.append(args)
+            if len(score_calls) == 1:
+                for row in result["scores"]:
+                    row["score"] = 0
+        return result
+
+    guardian.call_tool = assess
+    runtime = runtime_for(client, case, guardian, provider)
+    runtime.features.update(evidence_recovery_enabled=True, one_response_per_episode=True)
+    feed = TwinFeed(runtime, url.removesuffix("/mcp") + "/events", KEY)
+    feed.start()
+    try:
+        async with asyncio.timeout(15):
+            while not any(d.status == "committed" for d in runtime.decisions.values()):
+                await asyncio.sleep(.1)
+        assert len(score_calls) == 2 and score_calls[1]["tick"] > score_calls[0]["tick"]
+        assert len(app.state.book.state) == 1
+        save("live-recovery-control", {"authorization": "TEST GUARDIAN", "planner": "recorded",
+             "initial_tick": score_calls[0]["tick"], "fresh_verdict_tick": score_calls[1]["tick"],
+             "feed": feed.status, "effects": len(app.state.book.state)})
+    finally:
+        await feed.close()
+
+
 async def test_real_guardian_has_no_authorization_tool(guardian_url):
     found = await inventory(guardian_url + "/mcp")
     save("guardian-inventory", found)
@@ -283,3 +316,54 @@ async def test_guardian_denial_and_twin_containment_prevent_effects(twin):
     result = await runtime.evaluate_tick(ReadingsBatch.model_validate(batch))
     assert not app.state.book.state
     assert all(d.status != "committed" for d in result.decisions)
+
+
+async def test_partner_bootstrap_uses_real_feed_without_fixture_files(twin, tmp_path, monkeypatch):
+    """Exercise the shipped app factory/configuration, with explicit test authorization."""
+    import shutil
+
+    from civis_brain.integration import bootstrap
+    from civis_brain.preflight import check
+
+    app, url = twin
+    _, case, guardian, provider, _ = await prepare(url, "S05", delay=1)
+    shutil.copytree(ROOT / "config", tmp_path / "config")
+    score_fields = ("run_id", "tick", "readings")
+    approval_fields = ("run_id", "tick", "time", "action", "targets", "params", "risk",
+                       "source_reading_ids")
+    mapping = {
+        "capabilities": {"tool": "get_capabilities", "request_fields": {},
+                         "response_fields": {k: k for k in ("protocol_version", "score_scale", "thresholds")}},
+        "score": {"tool": "fixture_score", "request_fields": {k: k for k in score_fields},
+                  "response_fields": {"scores": "scores"}},
+        "approval": {"tool": "fixture_approve", "request_fields": {k: k for k in approval_fields},
+                     "response_fields": {"approved": "approved"},
+                     "optional_response_fields": {"token": "token", "code": "code"}},
+    }
+    mapping_path = tmp_path / "test-mapping.json"
+    mapping_path.write_text(json.dumps(mapping))
+    monkeypatch.setattr(bootstrap, "configured_provider", lambda *_: provider)
+    with serve(peer_app(guardian, GKEY)) as guardian_mcp:
+        settings = Settings(_env_file=None, brain_config_root=str(tmp_path),
+            peer_mode="live", llm_mode="gemini", gemini_api_key="test-placeholder",
+            twin_mcp_url=url, twin_events_url=url.removesuffix("/mcp") + "/events",
+            twin_brain_key=KEY, twin_feed_enabled=True, mock_integration_profile=True,
+            guardian_mcp_url=guardian_mcp, guardian_brain_key=GKEY,
+            guardian_contract_confirmed=True, guardian_mapping_file=str(mapping_path),
+            guardian_score_tool="fixture_score", guardian_token_tool="fixture_approve")
+        preflight = await check(settings)
+        assert next(r for r in preflight["checks"] if r["check"] == "guardian_mapping")["passed"]
+        assert next(r for r in preflight["checks"] if r["check"] == "twin_clock")["passed"]
+        assert next(r for r in preflight["checks"] if r["check"] == "traffic_metric")["passed"] is False
+        with serve(brain_app(settings)) as brain_url:
+            async with httpx.AsyncClient() as http:
+                async with asyncio.timeout(15):
+                    while not app.state.book.state:
+                        await asyncio.sleep(.1)
+                health = (await http.get(brain_url.removesuffix("/mcp") + "/health")).json()
+                assert health["peer_mode"] == "live" and health["feed"]["received"] >= 2
+        assert len(app.state.book.state) == 1
+        assert not (tmp_path / "mocks").exists()
+        save("partner-launcher-control", {"preflight": preflight, "health": health,
+             "effects": len(app.state.book.state), "authorization": "TEST GUARDIAN",
+             "planner": "recorded", "fixture_files_needed": False})

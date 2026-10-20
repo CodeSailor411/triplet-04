@@ -24,6 +24,7 @@ from civis_brain.contracts import (
 from civis_brain.errors import BrainError
 from civis_brain.inputs.service import normalize_batch, utc_time
 from civis_brain.integration.journal import Journal
+from civis_brain.integration.recovery import recover
 from civis_brain.planning.service import check_caps, validate_plan
 from civis_brain.ports import PlanProvider, ToolPeer
 from civis_brain.scenarios.registry import SCENARIOS
@@ -117,6 +118,7 @@ class BrainRuntime:
         self.trust_attempts = {}
         self.ai_calls = 0
         self.episodes = {}
+        self.episode_receipts = {}
         self.pending_started = {}
         self.sent_requests = {}
         self.reconciliation_attempts = set()
@@ -159,6 +161,8 @@ class BrainRuntime:
         return key
 
     async def _call(self, peer, name, arguments):
+        if asyncio.current_task().cancelling():
+            raise asyncio.CancelledError
         if not name:
             raise BrainError("TOOL_UNAVAILABLE", "Required peer tool has no confirmed mapping")
         try:
@@ -282,7 +286,24 @@ class BrainRuntime:
             for source in source_ids
         )
 
-    async def _trusted(self, batch, incidents):
+    def _parse_scores(self, response, scale):
+        rows = response.get("scores")
+        if not isinstance(rows, list):
+            raise BrainError("PEER_SCHEMA_INVALID", "Guardian did not return per-reading scores")
+        scores = {}
+        for row in rows:
+            if (not isinstance(row, dict) or not isinstance(row.get("reading_id"), str)
+                    or not row["reading_id"]):
+                raise BrainError("PEER_SCHEMA_INVALID", "Guardian verdict needs a reading ID and score")
+            score = row.get("score")
+            if (row["reading_id"] in scores or isinstance(score, bool)
+                    or not isinstance(score, (int, float)) or not math.isfinite(score)
+                    or not 0 <= score <= scale):
+                raise BrainError("PEER_SCHEMA_INVALID", "Guardian returned malformed numeric evidence")
+            scores[row["reading_id"]] = score
+        return scores
+
+    async def _trusted(self, batch, incidents, nodes=()):
         if not (
             getattr(self.guardian, "is_fixture", False)
             or self.features.get("guardian_contract_confirmed") is True
@@ -337,26 +358,7 @@ class BrainRuntime:
                 "readings": [self.ledger[source].model_dump() for source in ids],
             },
         )
-        rows = response.get("scores")
-        if not isinstance(rows, list):
-            raise BrainError("PEER_SCHEMA_INVALID", "Guardian did not return per-reading scores")
-        scores = {}
-        for row in rows:
-            if (not isinstance(row, dict) or not isinstance(row.get("reading_id"), str)
-                    or not row["reading_id"]):
-                raise BrainError("PEER_SCHEMA_INVALID", "Guardian verdict needs a reading ID and score")
-            score = row.get("score")
-            if (
-                row.get("reading_id") in scores
-                or isinstance(score, bool)
-                or not isinstance(score, (int, float))
-                or not math.isfinite(score)
-                or not 0 <= score <= scale
-            ):
-                raise BrainError(
-                    "PEER_SCHEMA_INVALID", "Guardian returned malformed numeric evidence"
-                )
-            scores[row.get("reading_id")] = score
+        scores = self._parse_scores(response, scale)
         if set(scores) != set(ids) or any(score < cutoff for score in scores.values()):
             for key in attempts_keys:
                 self.trust_attempts[key] = self.trust_attempts.get(key, 0) + 1
@@ -369,7 +371,19 @@ class BrainRuntime:
                     "source_reading_ids": ids,
                 }
             )
-            raise BrainError("TRUST_INSUFFICIENT", "Evidence has missing or insufficient trust")
+            if self.features.get("evidence_recovery_enabled"):
+                # A failed three-step recovery exhausts this incident's budget. Do
+                # not start a new ten-second recovery on every arriving tick.
+                for key in attempts_keys:
+                    self.trust_attempts[key] = 3
+                response, recovery_ids = await recover(self, batch, ids, nodes)
+                recovered = self._parse_scores(response, scale)
+                if (set(recovered) != recovery_ids
+                        or any(score < cutoff for score in recovered.values())):
+                    raise BrainError("TRUST_INSUFFICIENT", "Fresh Guardian verdict still refuses evidence")
+                scores = {source: recovered[source] for source in ids}
+            else:
+                raise BrainError("TRUST_INSUFFICIENT", "Evidence has missing or insufficient trust")
         for key in attempts_keys:
             self.trust_attempts.pop(key, None)
         return [self.ledger[source] for source in ids], scores, thresholds, scale
@@ -560,7 +574,7 @@ class BrainRuntime:
                 for episode_key in list(self.episodes):
                     if (episode_key[0] == sid and episode_key not in current_episode_keys
                             and set(episode_key[2]).issubset(clear_nodes)):
-                        self.episodes.pop(episode_key)
+                        self.episode_receipts.pop(self.episodes.pop(episode_key), None)
                         self.trust_attempts.pop((episode_key[1], episode_key[2]), None)
                 for incident in incidents:
                     episode_key = (sid, incident.kind, tuple(sorted(incident.node_ids)))
@@ -572,6 +586,14 @@ class BrainRuntime:
                         self.active.pop(key)
                 for incident in incidents:
                     self.active[incident.incident_id] = (sid, incident)
+                # A confirmed operation resolves this episode. Continuous input
+                # must not spend another Gemini call on the same completed action.
+                if self.features.get("one_response_per_episode"):
+                    settled = {self.episode_receipts[i.incident_id].decision_id:
+                               self.episode_receipts[i.incident_id] for i in incidents
+                               if i.incident_id in self.episode_receipts}
+                    results.extend(row.model_copy(deep=True) for row in settled.values())
+                    incidents = [i for i in incidents if i.incident_id not in self.episode_receipts]
                 evidence_ids = [row.reading_id for row in relevant]
                 for warning in detected.warnings:
                     results.append(
@@ -582,7 +604,7 @@ class BrainRuntime:
                 if not incidents:
                     continue
                 generation = self.generation
-                evidence, scores, thresholds, scale = await self._trusted(batch, incidents)
+                evidence, scores, thresholds, scale = await self._trusted(batch, incidents, nodes)
                 allowed = [row for row in actions if row.action == ACTION_BY_SCENARIO[sid]]
                 context = PlanningContext(
                     batch=available_batch,
@@ -953,7 +975,7 @@ class BrainRuntime:
         if status in {"committed", "rejected"}:
             self.sent_requests.pop(key, None)
             self.pending_started.pop(key, None)
-        return self._decision(
+        decision = self._decision(
             batch,
             sid,
             status,
@@ -967,6 +989,12 @@ class BrainRuntime:
             response.get("code"),
             response.get("details"),
         )
+        if status == "committed":
+            for owner, incident in self.active.values():
+                if (owner == sid and incident.source_reading_ids
+                        and set(incident.source_reading_ids).issubset(proposal.source_reading_ids)):
+                    self.episode_receipts[incident.incident_id] = decision
+        return decision
 
     def notify_containment(self, notice: ContainmentNotice):
         if notice.run_id != self.run_id:

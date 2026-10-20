@@ -28,17 +28,24 @@ def configured_runtime(settings):
             raise ValueError("Scenario policy overrides must map known S01-S05 IDs to objects")
         for sid, values in overrides.items():
             policies[sid] = {**policies[sid], **values}
-    case_path = root / settings.brain_fixture_case
-    case = json.loads(case_path.read_text(encoding="utf-8"))
+    case = None
+    if settings.peer_mode == "live" and settings.llm_mode != "gemini":
+        raise ValueError("Live peers require LLM_MODE=gemini; recorded fixture plans are offline only")
+    if settings.peer_mode == "live" and not settings.gemini_api_key:
+        raise ValueError("Live peers require GEMINI_API_KEY in the selected local environment")
     features = {
         "ai_max_calls_per_run": settings.ai_max_calls_per_run,
         "ai_timeout_seconds": settings.ai_timeout_seconds,
         "peer_timeout_seconds": settings.peer_timeout_seconds,
         "max_evidence_age_seconds": settings.max_evidence_age_seconds,
         "mock_integration_profile": settings.mock_integration_profile,
+        "evidence_recovery_enabled": settings.peer_mode == "live",
+        "one_response_per_episode": settings.peer_mode == "live",
         "run_log_dir": str(root / "run-logs"),
     }
     if settings.peer_mode == "fixture":
+        case_path = root / settings.brain_fixture_case
+        case = json.loads(case_path.read_text(encoding="utf-8"))
         policies[case["scenario_id"]] = case["policy"]
         if not any(row["node_id"] == "POW-01" for row in case["nodes"]):
             case["nodes"].append(

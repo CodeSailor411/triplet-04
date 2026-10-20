@@ -15,14 +15,17 @@ class TwinFeed:
         self.runtime, self.url, self.key = runtime, url, key
         self.queue = asyncio.Queue(maxsize=queue_size)
         self.tasks = []
+        self.closing = False
         self.last = None
         self.status = {"state": "stopped", "received": 0, "evaluated": 0,
                        "dropped": 0, "reconnects": 0, "last_error": None}
 
     def start(self):
+        self.closing = False
         self.tasks = [asyncio.create_task(self.receive()), asyncio.create_task(self.consume())]
 
     async def close(self):
+        self.closing = True
         for task in self.tasks:
             task.cancel()
         for task in self.tasks:
@@ -64,7 +67,7 @@ class TwinFeed:
                            run_id=batch.run_id, tick=batch.tick, last_error=None)
 
     async def receive(self):
-        while True:
+        while not self.closing:
             try:
                 async with httpx.AsyncClient(
                     headers={"Authorization": f"Bearer {self.key}"},
@@ -107,7 +110,7 @@ class TwinFeed:
             await asyncio.sleep(1)
 
     async def consume(self):
-        while True:
+        while not self.closing:
             batch = await self.queue.get()
             try:
                 result = await self.runtime.evaluate_tick(batch)

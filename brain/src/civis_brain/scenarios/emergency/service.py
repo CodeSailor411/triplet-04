@@ -363,7 +363,22 @@ class EmergencyScenario:
         if not candidates:
             return Plan(proposals=[])
 
-        generated_plan = await provider.generate(context)
+        # The reduced mock permits one ambulance, even if Twin's general manifest
+        # permits larger dispatches. Send that restriction to Gemini as well as
+        # checking it afterward, so a valid partner manifest does not invite an
+        # unsupported two-unit proposal.
+        parameters = []
+        for spec in dispatch_action.params:
+            spec = dict(spec)
+            if spec["name"] == "units":
+                spec.update(min_value=1, max_value=1)
+            elif spec["name"] == "unit_type":
+                spec["choices"] = ["ambulance"]
+            parameters.append(spec)
+        restricted = context.model_copy(update={"actions": [dispatch_action.model_copy(update={
+            "params": parameters, "target_nodes": sorted({candidate[2] for candidate in candidates})
+        })]})
+        generated_plan = await provider.generate(restricted)
         accepted_proposals = []
         planned_incident_ids = set()
         for proposal in generated_plan.proposals:
@@ -391,4 +406,8 @@ class EmergencyScenario:
                     planned_incident_ids.add(incident.incident_id)
                     break
 
-        return Plan(proposals=accepted_proposals)
+        alerts = list(generated_plan.alerts)
+        if len(accepted_proposals) < len(generated_plan.proposals):
+            alerts.append("Medical proposal rejected: require one available ambulance, the reported "
+                          "destination and exact incident evidence.")
+        return Plan(proposals=accepted_proposals, alerts=alerts)

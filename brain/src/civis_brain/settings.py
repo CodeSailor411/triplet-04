@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -40,3 +41,14 @@ class Settings(BaseSettings):
     twin_commit_tool: str | None = None
 
     brain_debug_enabled: bool = True
+
+
+def load_settings() -> Settings:
+    """An explicit partner environment must never fall back to the offline .env."""
+    selected = os.environ.get("CIVIS_ENV_FILE")
+    if selected:
+        path = Path(selected).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError("Selected CIVIS_ENV_FILE does not exist")
+        return Settings(_env_file=path)
+    return Settings()

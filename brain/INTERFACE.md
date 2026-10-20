@@ -1,6 +1,6 @@
 # CIVIS Brain mock interface
 
-19 October 2026. Python 3.12; MCP SDK 2.3.0; protocol 2026-07-28. Run from brain: `.\.venv\Scripts\python.exe -m civis_brain`. MCP: http://127.0.0.1:8001/mcp. Developer console: http://127.0.0.1:8001/. Dependencies remain pinned in requirements-lock.txt.
+20 October 2026, brain-mock-2. Python 3.12; MCP SDK 2.3.0; protocol 2026-07-28. Partners run `scripts/start_partner.ps1` with the private `.env.partner`; see [handover](docs/mock-team/BRAIN_MOCK_2.md). MCP: http://127.0.0.1:8001/mcp. Developer console: http://127.0.0.1:8001/. Dependencies remain pinned in requirements-lock.txt.
 
 | Tool | Arguments | Caller/result |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ Flow: discovery and containment -> normalization -> detection -> Guardian eviden
 ## Clocks, gaps and execution
 
 - Peer call: 3 real seconds by default. Gemini: at most 60 real seconds, before authorization.
-- Batch and Twin must agree on run, tick rate and elapsed simulated time. Evidence may be at most MAX_EVIDENCE_AGE_SECONDS old at execution, default 10 simulated seconds. This is a configurable CIVIS mock safeguard, not a newly agreed triplet value. Slow plans can be refused.
+- Batch and Twin must agree on run, tick rate and elapsed simulated time. Evidence may be at most MAX_EVIDENCE_AGE_SECONDS old at execution: 10 simulated seconds by default, 60 in the explicit partner mock profile for Gemini latency. This is a configurable CIVIS mock safeguard, not a newly agreed triplet value. Slow plans can be refused.
 - Approval uses a fresh Twin clock. Token validity is checked again before sending; maximum token lifetime is 60 simulated seconds.
 - Reception and planning use separate tasks with a bounded 64-batch queue. Gaps, reconnects, overflow and run changes invalidate queued plans. Missing ticks never establish consecutive evidence. Newer feed data can withdraw a cleared incident or unavailable ambulance.
 - preview_action receives only action, targets and params. Brain checks the returned exact intent, would_pass_checks, blocked_by and valid_until_tick. A successful dry run means caps/quarantine checks pass, not hydraulic safety. Water additionally requires configured safe_valve_choices. Reduced Power is alert-only; no grid-switch plan is generated.
@@ -43,8 +43,10 @@ Flow: discovery and containment -> normalization -> detection -> Guardian eviden
 
 MOCK_INTEGRATION_PROFILE=true explicitly permits illustrative policies against partner mocks. It defaults to false. SCENARIO_POLICY_FILE optionally loads local overrides keyed by S01-S05, including reviewed Water choices; use an ignored path such as .artifacts/local-policies.json. It does not bypass trust, preview or caps. Source configuration remains test policy, not physical safety settings.
 
-Guardian_Unified currently exposes RF advisory tools, not the required trust/token contract. Keep GUARDIAN_CONTRACT_CONFIRMED=false until the actual interfaces arrive. The [Guardian adapter contract](docs/mock-team/GUARDIAN_CONTRACT.md) describes the fields requiring agreement. Neighbour-first evidence recovery and pushed Guardian verdicts remain unintegrated; current assessment attempts are bounded across distinct evaluated ticks.
+Guardian_Unified currently exposes RF advisory tools, not the required trust/token contract. Keep GUARDIAN_CONTRACT_CONFIRMED=false until the actual interfaces arrive. The [Guardian adapter contract](docs/mock-team/GUARDIAN_CONTRACT.md) describes the fields requiring agreement. Live recovery gathers matching advertised neighbours, waits at most 3 real seconds for later readings of the same sensors, then requests a fresh verdict over original and supporting evidence. Total budget is 10 real seconds. No substituted readings or synthetic scores grant trust. A failed recovery exhausts that incident's budget. Pushed Guardian verdicts remain outside this mock; assessment is requested through MCP.
+
+Live mode reuses the original confirmed receipt for a completed episode without another Gemini call. A new clear-then-incident episode can act again. Changing policy or restarting requires a new Twin run.
 
 Logs: run-logs/<run_id>.brain.jsonl with run_id, event_id, timestamp, tick, wall, layer, event_type, caused_by, data. Approval records include token ID, never the full token. Decisions include the operation key. State is in memory: use a new Twin run after restarting Brain, and reconcile uncertain outcomes first. Logs do not restore execution state.
 
-See the [19 October test report](docs/mock-team/INTEROPERABILITY_2026-10-19.md) for scope, reproducible commands and partner blockers. No new release tag is claimed by this document.
+See the [release handover](docs/mock-team/BRAIN_MOCK_2.md) and [validation](docs/mock-team/RELEASE_VALIDATION.md) for scope, commands and partner blockers.
