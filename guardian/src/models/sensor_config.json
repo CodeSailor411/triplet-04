@@ -1,0 +1,40 @@
+{
+  "source": "generate_dataset_v2.py (CIVIS 4 Oct 2026 conventions; traffic mapping assumed)",
+  "domains": {
+    "traffic": {
+      "quantity": "traffic_congestion_index",
+      "unit": "percent",
+      "lo": 0,
+      "hi": 100,
+      "max_rate": 15
+    },
+    "water": {
+      "quantity": "water_level",
+      "unit": "cm",
+      "lo": 20,
+      "hi": 120,
+      "max_rate": 6
+    },
+    "power": {
+      "quantity": "power_load",
+      "unit": "kW",
+      "lo": 200,
+      "hi": 800,
+      "max_rate": 120
+    },
+    "air_quality": {
+      "quantity": "pm25",
+      "unit": "ug/m3",
+      "lo": 5,
+      "hi": 35,
+      "max_rate": 12
+    },
+    "emergency": {
+      "quantity": "emergency_calls",
+      "unit": "calls_per_min",
+      "lo": 0,
+      "hi": 3,
+      "max_rate": 1.5
+    }
+  }
+}
