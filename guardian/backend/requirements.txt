@@ -1,0 +1,16 @@
+# Shared runtime versions match the Twin requirements lock.
+fastapi==0.142.2
+mcp==2.3.0
+mcp-types==2.3.0
+pydantic==2.13.5
+starlette==1.7.0
+uvicorn==0.54.0
+
+# Guardian model dependencies are pinned to the tested bundled-model stack.
+joblib==1.6.0
+numpy==2.5.4
+pandas==2.3.3
+scikit-learn==1.7.2
+
+# Keep the test runner aligned with the Twin development lock.
+pytest==9.1.1

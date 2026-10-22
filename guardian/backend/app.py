@@ -9,7 +9,7 @@ from typing import Literal
 
 import joblib
 import pandas as pd
-from mcp.server import MCPServer
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, ConfigDict
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
