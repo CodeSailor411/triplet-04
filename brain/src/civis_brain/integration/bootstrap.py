@@ -3,6 +3,7 @@ from pathlib import Path
 
 from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, FixtureTwin
 
+from civis_brain.integration.guardian_http import APPROVAL_TOOL, SCORE_TOOL, GuardianHTTPPeer
 from civis_brain.integration.mcp_peer import MappedGuardianPeer, MCPPeer
 from civis_brain.integration.runtime import build_runtime
 from civis_brain.planning.gemini import GeminiPlanProvider
@@ -90,6 +91,15 @@ def configured_runtime(settings):
             preview_tool=settings.twin_preview_tool,
             commit_tool=settings.twin_commit_tool,
         )
+        if settings.guardian_transport == "http_v2":
+            if not settings.guardian_http_policy_file:
+                raise ValueError("HTTP Guardian needs its explicit published policy file")
+            policy = json.loads((root / settings.guardian_http_policy_file).read_text(encoding="utf-8"))
+            guardian = GuardianHTTPPeer(
+                settings.guardian_http_url, settings.guardian_brain_key, policy,
+                settings.peer_timeout_seconds, allow_provisional=settings.mock_integration_profile,
+            )
+            features.update(guardian_score_tool=SCORE_TOOL, guardian_token_tool=APPROVAL_TOOL)
     provider = configured_provider(settings, case)
     artifacts = root / ".artifacts" / "service"
     artifacts.mkdir(parents=True, exist_ok=True)

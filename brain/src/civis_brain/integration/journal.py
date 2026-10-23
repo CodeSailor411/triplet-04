@@ -47,6 +47,7 @@ class Journal:
                 r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*", "<redacted>", value
             )
             value = re.sub(r"sk-or-v1-[A-Za-z0-9_-]+", "<redacted>", value)
+            value = re.sub(r"\bg1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "<redacted>", value)
             return value[:100000]
         return value
 

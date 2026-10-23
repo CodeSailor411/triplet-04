@@ -53,6 +53,22 @@ async def check(settings):
         except (BrainError, ValueError, KeyError, TypeError) as error:
             record("twin_connection", False,
                    error.code if isinstance(error, BrainError) else "PEER_SCHEMA_INVALID")
+        if settings.guardian_transport == "http_v2":
+            try:
+                capabilities = await runtime.guardian.call_tool("get_capabilities", {})
+                record("guardian_http", True,
+                       "HTTP verdict transport; start Guardian's own Twin feed bridge separately")
+                record("guardian_contract", settings.guardian_contract_confirmed,
+                       "HTTP evidence mapping must be explicitly confirmed")
+                record("guardian_authorization", capabilities.get("authorization_ready") is True,
+                       capabilities.get("authorization_blocker"))
+                record("guardian_policy", not capabilities.get("policy_provisional"),
+                       "Current risk minima are provisional; confirm with partners")
+            except BrainError as error:
+                record("guardian_connection", False, error.code)
+            return {"ready": all(row["passed"] for row in checks),
+                    "scope": "HTTP evidence support does not certify signed-action interoperability",
+                    "checks": checks}
         try:
             names = await MCPPeer(settings.guardian_mcp_url, settings.guardian_brain_key,
                                   settings.peer_timeout_seconds).list_tool_names()

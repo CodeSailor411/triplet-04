@@ -1,5 +1,7 @@
 # Opt-in partner tests
 
+23 October tagged v2 audit: see `../docs/mock-team/INTEROPERABILITY_2026-10-23.md` and run `brain/scripts/test_tagged_v2.ps1` from the repository root as documented there. The exact Guardian tag has a startup packaging defect. `-DiagnosticGuardianLayout` explicitly enables the isolated layout workaround for deeper checks. `test_v2_joint.py` uses actual Guardian verdicts; `test_v2_acceptance.py` preserves required joint failures. The older controls below still distinguish their test Guardian from real Guardian checks.
+
 These tests start local copies of the actual Twin and Guardian. They never contact Gemini. Source paths must point to the reviewed snapshots. Python 3.12 is required.
 
 Use a separate integration environment containing Brain's requirements-lock.txt, an editable Brain install, and Twin's requirements.txt. Do not replace Brain's agreed pins with Guardian's broad dependencies. Guardian runs in its own environment with its backend requirements. The test fixtures supply temporary local keys; do not use real partner secrets.

@@ -30,7 +30,7 @@ from civis_brain.settings import Settings
 ROOT = Path(__file__).resolve().parents[1]
 TWIN = Path(os.environ["CIVIS_TEST_TWIN_ROOT"]).resolve()
 GUARDIAN = Path(os.environ["CIVIS_TEST_GUARDIAN_ROOT"]).resolve()
-OUT = ROOT / ".artifacts" / "interop-oct19"
+OUT = Path(os.environ.get("CIVIS_TEST_ARTIFACT_DIR", ROOT / ".artifacts" / "interop-oct19"))
 OUT.mkdir(parents=True, exist_ok=True)
 sys.path.insert(0, str(TWIN / "src"))
 from twin.app import create_app as twin_app  # noqa: E402
@@ -70,7 +70,8 @@ def guardian_url():
     env.pop("PYTHONPATH", None)
     with (OUT / "guardian-server.log").open("w") as log:
         process = subprocess.Popen(
-            [os.environ["CIVIS_TEST_GUARDIAN_PYTHON"], str(GUARDIAN / "backend/run.py")],
+            [os.environ["CIVIS_TEST_GUARDIAN_PYTHON"],
+             str(GUARDIAN / os.environ.get("CIVIS_TEST_GUARDIAN_ENTRYPOINT", "backend/run.py"))],
             cwd=GUARDIAN, env=env, stdout=log, stderr=log,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         url = f"http://127.0.0.1:{port}"
