@@ -5,12 +5,11 @@
 Unit-complete / integration-pending.
 
 ## Step 4 — constrained planning and local scenario tests
-
 * Traffic detection and planning tests pass locally.
-* Traffic scenario test suite: 9 passed.
-* Full test suite: 24 passed.
-* Ruff: all checks passed.
-* These results do not prove shared-core workflow integration.
+* Traffic scenario test suite: 9 passed (latest run).
+* Full test suite: 24 passed (latest run).
+* Ruff: all checks passed (latest run).
+* These results prove local test success only, not shared-core workflow integration.
 
 ## Step 5 — shared-core workflow
 
