@@ -35,7 +35,7 @@ Flow: discovery and containment -> normalization -> detection -> Guardian eviden
 
 | Scenario | Reduced response | Current partner boundary |
 | --- | --- | --- |
-| S01 Traffic | R1 signal plan | Twin congestion_index missing; report the gap |
+| S01 Traffic | R1 signal plan | Twin supplies vehicle_count (cars/min) and avg_speed (km/h); CIVIS expects congestion_index (%). Agree and test a native-metric policy or explicit conversion |
 | S02 Water | R3 valve, topology and preview required | Preview works; safe valve direction must be explicitly supplied |
 | S03 Power | Alert or evidence warning | No invented outage or grid switching |
 | S04 Air Quality | Sustained-pollution alert | No AQ actuator |

@@ -53,12 +53,12 @@ The partner mock profile explicitly opts into illustrative scenario policies and
 
 **Trinity**
 
-- Provide `congestion_index` for Traffic, or agree a conversion with CIVIS.
 - Reject signed tokens with future `iat`, lifetime over 60 simulated seconds, nonfinite/out-of-range score or empty `jti`.
 - Keep two-step off until `commit_action` is available and jointly tested.
 
 **Joint configuration**
 
+- Twin already supplies Traffic `vehicle_count` in `cars/min` and `avg_speed` in `km/h`. CIVIS currently expects `congestion_index` in percent. CIVIS and Trinity must agree and test detection using the native metrics, or an explicit derived index. This is an input-policy mismatch, not absent Traffic data; no new Twin metric is inherently required.
 - Match peer keys and URLs; exchange them privately. Supply Guardian's actual mapping before setting `GUARDIAN_CONTRACT_CONFIRMED=true`.
 - Supply reviewed Water `safe_valve_choices` via `SCENARIO_POLICY_FILE`. Without them Water is alert-only. Preview success proves caps/containment checks, not hydraulic safety.
 

@@ -22,7 +22,7 @@ Twin runs with an advancing clock at speed 1. Actual authenticated SSE supplies 
 
 | Workflow | Observed result using actual Guardian |
 |---|---|
-| S01 congestion | Evidence warning: Twin has no `congestion_index`. No guessed conversion from speed or count; no signal action |
+| S01 congestion | Twin supplies `vehicle_count` (`cars/min`) and `avg_speed` (`km/h`). CIVIS currently expects `congestion_index` (%), so it warns and does not signal. This is an input-policy mismatch; no conversion is invented |
 | S02 high water | Native evidence accepted; test-configured valve choice reaches real Twin preview; CIVIS blocks the incompatible signed approval contract |
 | S03 Power | Evidence-based reduced alerts; grid switching remains outside this reduced response implementation |
 | S04 Air Quality | Sustained pollution produces the intended alert; no AQ actuator or unsupported emergency dispatch |
@@ -48,7 +48,7 @@ Twin's public scenario tool injects reported-value faults, stuck sensors and rep
 | 9antra | Exact tag fails at `python guardian/src/run.py` | Resolve models and bundled-layer paths from the actual published layout; verify a fresh clone |
 | 9antra + Trinity | Real Ed25519 Guardian token is valid under Guardian's own public key but Twin rejects it as `TOKEN_INVALID` | Agree one signed contract: Guardian `g1`, `token_id`, `parameters`, `trust_score` differ from Twin JWS, `jti`, `targets`, `params`, `score`. Include exact targets and use Twin simulated UTC time. Do not translate an already signed token in Brain |
 | 9antra | Each 109-reading Twin batch produces 50 evaluations and 59 unsupported skips; 18 emergency-channel readings are falsely rejected as replay | Preserve channel identity and use appropriate per-channel sequence tracking. Add the required `units_free` and other sensor semantics, or agree explicit exclusions without breaking evidence needed for decisions |
-| Trinity + CIVIS agreement | S01 metric unavailable | Publish `congestion_index`, or jointly specify and test a valid conversion; CIVIS must not invent one |
+| CIVIS + Trinity agreement | CIVIS S01 expects an index, while Twin provides native count and speed | Prefer adapting CIVIS to native `vehicle_count` and `avg_speed` under an agreed detection policy. An explicit derived index is optional, not a required new Twin API. Do not invent live thresholds or conversions |
 | 9antra | Authorization accepts a verdict from one run with another requested run ID | Store and enforce run identity for readings, verdicts, replay state and approval; define reset behaviour |
 | Trinity | Five invalid signed-claim variants still commit: future issued-at, excessive lifetime, score above one, NaN score, empty token ID | Validate time ordering/lifetime and finite bounded scores; require nonempty single-use IDs before execution |
 | 9antra | Legacy mutations are unauthenticated; rollback leaves a trusted old verdict; caller can disable signature requirement | Protect mutation paths, invalidate corrected evidence, make signature policy server-controlled. New ingestion endpoint authentication does pass |
@@ -80,3 +80,11 @@ Required partner acceptance failures remain ordinary failing assertions. The scr
 Start the unmodified published Guardian, receive both live feeds, obtain correctly bound actual Guardian verdicts and compatible signed approvals, execute supported actions exactly once, propagate actual containment, and merge all three event logs. Verify normal, attack/refusal, stale-data, reconnect, duplicate-request and partner-failure cases. Preserve clear boundaries when a capability or reviewed topology is absent.
 
 The current evidence supports continued joint debugging. It does not support declaring the final architecture, all physical response types or the future graph/eight-incident work complete.
+
+## Traffic and current-code recheck
+
+On 23 October, a real MCP `get_readings(domain="traffic")` call returned 22 readings covering `vehicle_count` (`cars/min`) and `avg_speed` (`km/h`). A `get_readings(sensor="congestion_index")` call returned `UNKNOWN_SENSOR`. Twin README and MCP module comments mention the index as planned, not implemented. Earlier wording that Twin has no Traffic metric was incorrect.
+
+After fetching GitHub, `twin-mock-2`, `origin/main` and `origin/twin-integration-tip` have the identical `twin/` tree `5666e5a75b86ac42573c3300997e8f17e305660b`. The six signed-claim checks were rerun: the valid control passes, and all five invalid variants still incorrectly commit. The signer is a local test signer, not an actual Guardian authorization. This verifies Twin claim validation independently of the Guardian token-format mismatch.
+
+A newer `guardian_mock_v3` tag was discovered during this recheck. The Guardian findings above apply to the frozen v2 source only; v3 has not been integrated or tested by this audit.

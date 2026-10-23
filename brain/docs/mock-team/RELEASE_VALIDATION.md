@@ -30,6 +30,6 @@ For real partner controls and required acceptance checks, follow `interop/README
 
 ## Acceptance still blocked
 
-Real Guardian score/token APIs, native ingestion and real containment callbacks are missing. Twin needs the Traffic metric and token-claim validation fixes. Two-step remains off pending its real tool. Water valve choices require joint configuration. Final reaction-time/freshness limits need agreement. Runtime state is in memory; use a fresh Twin run after restart.
+Real Guardian score/token APIs, native ingestion and real containment callbacks are missing in this release checkpoint. Twin already supplies vehicle_count (cars/min) and avg_speed (km/h); CIVIS expects congestion_index (%), so the teams must align and test the input policy. The five Twin token-claim checks need fixes. Two-step remains off pending its real tool. Water valve choices require joint configuration. Final reaction-time/freshness limits need agreement. Runtime state is in memory; use a fresh Twin run after restart. See the 23 October audit for the later Guardian v2 adapter and evidence.
 
 The neighbour/later-tick/fresh-verdict sequence is implemented and tested against the adapter contract and actual Twin with test scores. It cannot yet be certified against Guardian's missing assessment API. Pushed verdict streams and grid-switch responses are outside the reduced mock. The five scenarios and MCP endpoints are delivered; the complete final-version architecture is not being declared accepted.

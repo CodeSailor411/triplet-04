@@ -25,3 +25,5 @@ The diagnostic layout adds copies of tagged model/layer assets at legacy expecte
 Evidence: `brain/.artifacts/interop-oct23/brain-final.xml`, `tagged-partners-final.xml`, `live-gemini.xml`, scenario JSON and source manifests. The shareable evidence package contains sanitized summaries and outcomes, not credentials, PEM private keys, `.env` files or full approval tokens.
 
 Changes are local to `codex/civis-elyes`; the existing `brain-mock-2` tag and remote branches were not updated. Partner folders are exact imported snapshots; all integration fixes are under `brain/`.
+
+Recheck: actual Twin MCP exposes Traffic count and speed, not `congestion_index`; the latter is CIVIS's current detector input requirement. Six Twin signed-claim checks rerun against the unchanged current Twin source give one valid control pass and the same five failures. The synchronized Desktop checkout separately passes all 357 Brain tests on Python 3.12.13. Its existing private configuration is unchanged. New Guardian v3 is available but outside this v2 audit.
