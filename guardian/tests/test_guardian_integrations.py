@@ -25,7 +25,7 @@ from twin_adapter import normalize_twin_reading  # noqa: E402
 def test_trust_policy_boundaries_and_validation():
     policy = TrustPolicy()
     assert [policy.classify(x) for x in [0, .3, .3000001, .7, .7000001, 1]] == [
-        "compromised", "compromised", "suspect", "suspect", "trusted", "trusted"]
+        "compromised", "compromised", "suspect", "trusted", "trusted", "trusted"]
     with pytest.raises(ValueError):
         policy.classify(float("nan"))
     with pytest.raises(ValueError):
@@ -54,6 +54,45 @@ def test_token_issue_signature_binding_expiry_and_replay():
     forged = token[:-2] + ("aa" if not token.endswith("aa") else "bb")
     with pytest.raises(TokenError):
         replay_verifier.verify(forged, action="set_priority_mode", parameters={"mode": "normal"})
+
+
+def test_token_v1_binds_target_key_id_and_idempotency():
+    now = lambda: 1000.0
+    private = Ed25519PrivateKey.generate()
+    issuer = ActionTokenService(private_key=private, clock=now, kid="twin-key-7")
+    token, claims = issuer.issue(run_id="run-1", action="dispatch", parameters={"units": 1},
+        reading_id="r1", reading_ids=["r1", "r2"], targets=["node-1"], idempotency_key="idem-1",
+        trust_score=.8, risk_level="R2")
+    verifier = ActionTokenService(public_key=private.public_key(), clock=now, kid="twin-key-7")
+    assert verifier.verify(token, action="dispatch", parameters={"units": 1},
+        targets=["node-1"], idempotency_key="idem-1", consume=False) == claims
+    with pytest.raises(TokenError, match="targets_or_idempotency_mismatch"):
+        verifier.verify(token, action="dispatch", parameters={"units": 1},
+            targets=["node-2"], idempotency_key="idem-1", consume=False)
+    wrong_kid = ActionTokenService(public_key=private.public_key(), clock=now, kid="other")
+    with pytest.raises(TokenError, match="wrong_kid"):
+        wrong_kid.verify(token, action="dispatch", parameters={"units": 1}, consume=False)
+    wrong_key = ActionTokenService(public_key=Ed25519PrivateKey.generate().public_key(), clock=now, kid="twin-key-7")
+    with pytest.raises(TokenError):
+        wrong_key.verify(token, action="dispatch", parameters={"units": 1}, consume=False)
+
+
+def test_fresh_verdict_does_not_count_its_own_reputation_flag_twice():
+    import unified_api
+    from integration_service import service
+
+    service.reset()
+    result = service.process_reading({
+        "sensor_id": "fresh-water", "sensor_type": "water_level", "value": 7000,
+        "unit": "cm", "timestamp": 1_800_000_000, "location": {"lat": 1, "lng": 1},
+        "sequence_number": 1, "reading_id": "fresh-reading",
+    })
+    assert result["guardian"]["verdict"] != "trusted"
+    flags_before = len(service.reputation.get("fresh-water").flags)
+    first = unified_api._fresh_verdict("fresh-reading")
+    second = unified_api._fresh_verdict("fresh-reading")
+    assert first.trust_score == second.trust_score == result["guardian"]["trust_score"]
+    assert len(service.reputation.get("fresh-water").flags) == flags_before
 
 
 def test_action_alias_policy_power_cap_and_rollback_pools():
@@ -95,7 +134,7 @@ def test_risk_minimum_boundaries_are_independent_of_verdict_classification(risk,
     with pytest.raises(ActionPolicyError, match="risk_minimum_score_not_met"):
         policy.authorize(run_id="below", action=action, parameters=parameters,
                          trust_score=minimum - .0001, risk_level=risk, domain=domain)
-    assert policy.trust.classify(.7) == "suspect"
+    assert policy.trust.classify(.7) == "trusted"
     assert policy.trust.classify(.70001) == "trusted"
 
 
@@ -197,6 +236,7 @@ def test_local_twin_event_auth_and_pipeline(monkeypatch, tmp_path):
     import unified_api
     from integration_service import service
 
+    monkeypatch.setenv("DEMO_MODE", "false")
     monkeypatch.setenv("GUARDIAN_API_BEARER_KEY", "local-test-secret")
     monkeypatch.setattr(unified_api, "_audit_log", JsonlAuditLog(tmp_path))
     private = Ed25519PrivateKey.generate()
@@ -215,20 +255,25 @@ def test_local_twin_event_auth_and_pipeline(monkeypatch, tmp_path):
                            headers={"Authorization": "Bearer local-test-secret"})
     assert response.status_code == 200, response.text
     assert response.json()["results"][0]["reading_id"] == "twin-reading-1"
+    duplicate = client.post("/api/integrations/twin/event", json=body,
+                            headers={"Authorization": "Bearer local-test-secret"})
+    assert duplicate.status_code == 200
+    assert duplicate.json()["processed"] == 0
+    assert duplicate.json()["duplicates"] == ["twin-reading-1"]
+    changed = {**body, "data": {**body["data"], "readings": [{
+        **body["data"]["readings"][0], "value": 451,
+    }]}}
+    replay = client.post("/api/integrations/twin/event", json=changed,
+                         headers={"Authorization": "Bearer local-test-secret"})
+    assert replay.json()["skipped"][0]["reason"] == "replay_attack_reading_id_content_mismatch"
     authorization = client.post("/api/actions/authorize", json={
         "run_id": "local-1", "reading_id": "twin-reading-1", "action": "set_grid_switch",
         "parameters": {"state": "open"}, "risk_level": "NONE", "domain": "Power",
     }, headers={"Authorization": "Bearer local-test-secret"})
-    assert authorization.status_code == 200, authorization.text
-    approved = authorization.json()
-    verification = client.post("/api/actions/verify", json={
-        "token": approved["token"], "action": "set_grid_switch", "parameters": {"state": "open"},
-    }, headers={"Authorization": "Bearer local-test-secret"})
-    assert verification.status_code == 200, verification.text
-    assert verification.json()["token_id"] == approved["token_id"]
+    assert authorization.status_code == 503, authorization.text
+    assert authorization.json()["detail"] == "twin_discovery_unavailable"
     log = (tmp_path / "local-1.guardian.jsonl").read_text(encoding="utf-8")
-    assert approved["token"] not in log
-    assert f'"token_id":"{approved["token_id"]}"' in log
+    assert '"reason":"twin_discovery_unavailable"' in log
     for node in ("w1", "w2", "w3"):
         reserved = client.post(f"/api/actions/rollback-pool/Waste/{node}", json={
             "run_id": "local-1", "reading_id": "twin-reading-1",
@@ -241,3 +286,4 @@ def test_local_twin_event_auth_and_pipeline(monkeypatch, tmp_path):
     assert (tmp_path / "local-1.guardian.jsonl").is_file()
     client.close()
     service.reset()
+

@@ -45,6 +45,7 @@ class GuardianIntegration:
             self.buffer = SensorBuffer()
             self.reputation = ReputationStore()
             self.verdict_log: dict[str, TrustVerdict] = {}
+            self.reputation_flag_by_reading: dict[str, float] = {}
             self.evaluations: list[dict[str, Any]] = []
             self.timeline: list[dict[str, Any]] = []
             self.known_sensors: set[str] = set()
@@ -262,6 +263,8 @@ class GuardianIntegration:
                 trusted_threshold=self.trust_policy.trusted_min,
                 suspect_threshold=self.trust_policy.suspect_min,
             )
+            if len(self.reputation.get(sid).flags) > raw_flags_before:
+                self.reputation_flag_by_reading[reading_id] = self.reputation.get(sid).flags[-1]
             self.verdict_log[reading_id] = verdict
             raw_flags_after = len(self.reputation.get(sid).flags)
             reputation_after = self.reputation.recent_flags(sid)

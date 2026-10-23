@@ -25,12 +25,39 @@ class ActionPolicy:
         if self.power_cap < 1 or self.power_action_scope != "per_run":
             raise ValueError("Power action cap must be positive and explicitly scoped per_run")
         self.pool_sizes = {k.lower(): int(v) for k, v in config["actions"]["rollback_pool_sizes"].items()}
+        self.capacity_source = config["actions"].get("capacity_source", "offline_fallback")
         if any(size < 1 for size in self.pool_sizes.values()):
             raise ValueError("rollback pool sizes must be positive")
         self.trust = trust_policy or load_trust_policy(str(config_path) if config_path else None)
         self._lock = threading.RLock()
         self._power_actions: dict[str, int] = {}
         self._occupied_pools: dict[str, set[str]] = {k: set() for k in self.pool_sizes}
+
+    def reset_run(self, run_id: str) -> None:
+        """Drop Guardian-side per-run fallback accounting when a run ends."""
+        with self._lock:
+            self._power_actions.pop(run_id, None)
+            # Rollback pools are run scoped fallback bookkeeping, not Twin state.
+            self._occupied_pools = {key: set() for key in self.pool_sizes}
+
+    def apply_discovered_capacity(self, capacity: dict[str, Any]) -> None:
+        """Install a validated Twin-discovered advisory capacity snapshot."""
+        if not isinstance(capacity, dict):
+            raise ActionPolicyError("invalid_discovered_capacity")
+        power_cap = capacity.get("power_action_cap")
+        pools = capacity.get("rollback_pool_sizes", {})
+        if power_cap is not None and (isinstance(power_cap, bool) or not isinstance(power_cap, int)
+                                      or power_cap < 0):
+            raise ActionPolicyError("invalid_discovered_capacity")
+        if not isinstance(pools, dict) or any(isinstance(v, bool) or not isinstance(v, int) or v < 0
+                                              for v in pools.values()):
+            raise ActionPolicyError("invalid_discovered_capacity")
+        with self._lock:
+            if power_cap is not None:
+                self.power_cap = power_cap
+            self.pool_sizes = {str(k).lower(): v for k, v in pools.items()}
+            self._occupied_pools = {key: set() for key in self.pool_sizes}
+            self.capacity_source = "twin_discovered"
 
     def normalize(self, name: str) -> str:
         canonical = self.aliases.get(name, name)

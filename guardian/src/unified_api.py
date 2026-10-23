@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import time
 import hmac
+import hashlib
+import json
 import os
 import re
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import Body, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, StrictBool, StrictInt, model_validator
+from cryptography.hazmat.primitives import serialization
 from starlette.responses import JSONResponse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +29,10 @@ from action_policy import ActionPolicy, ActionPolicyError
 from audit_log import JsonlAuditLog
 from token_service import ActionTokenService, TokenError
 from twin_adapter import normalize_twin_reading
+from contract import (MCP_TOOL_AUTHORIZE_ACTION, MCP_TOOL_GET_TRUST_VERDICT,
+                      MCP_TOOL_VERIFY_ACTION_TOKEN, TRUST_STATE_MAP)
+from guardian_config import GuardianSettings
+from twin_discovery import TwinDiscoveryError, discover_twin_sync
 
 
 SensorType = Literal["traffic_cam", "water_level", "power_load", "air_quality", "emergency_call"]
@@ -110,6 +117,9 @@ class ActionAuthorizationRequest(BaseModel):
     reading_id: str = Field(min_length=1, max_length=128)
     action: str = Field(min_length=1, max_length=128)
     parameters: dict
+    targets: list[str] = Field(default_factory=list, max_length=128)
+    reading_ids: list[str] = Field(default_factory=list, max_length=128)
+    idempotency_key: str = Field(default="", max_length=256)
     risk_level: Literal["R1", "R2", "R3", "NONE"]
     domain: str | None = None
 
@@ -119,12 +129,37 @@ class TokenVerifyRequest(BaseModel):
     token: str = Field(min_length=1, max_length=8192)
     action: str = Field(min_length=1, max_length=128)
     parameters: dict
+    targets: list[str] | None = None
+    idempotency_key: str | None = None
 
 
 class RollbackPoolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     run_id: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")
     reading_id: str = Field(min_length=1, max_length=128)
+
+
+class TrustVerdictToolOutput(BaseModel):
+    trust_score: FiniteFloat
+    state: Literal["Trusted", "Degraded", "Untrusted"]
+    reasons: list[str]
+    caused_by: str
+    scale: list[float]
+    cutoffs: dict[str, float]
+
+
+class AuthorizationToolOutput(BaseModel):
+    decision: Literal["approved", "refused"]
+    token: str | None = None
+    token_id: str | None = None
+    refusal_code: str | None = None
+    expires_at: FiniteFloat | None = None
+
+
+class TokenVerificationToolOutput(BaseModel):
+    verified: bool
+    token_id: str | None = None
+    refusal_code: str | None = None
 
 
 mcp_app = mcp_server.streamable_http_app(
@@ -152,12 +187,53 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+@app.middleware("http")
+async def protect_brain_mcp(request, call_next):
+    try:
+        max_bytes = int(os.environ.get("GUARDIAN_MAX_REQUEST_BYTES", "1048576"))
+    except ValueError:
+        return JSONResponse({"detail": "invalid_request_size_configuration"}, status_code=503)
+    if max_bytes < 1:
+        return JSONResponse({"detail": "invalid_request_size_configuration"}, status_code=503)
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > max_bytes:
+                return JSONResponse({"detail": "request_body_too_large"}, status_code=413)
+        except ValueError:
+            return JSONResponse({"detail": "invalid_content_length"}, status_code=400)
+    if request.url.path == "/mcp" or request.url.path.startswith("/mcp/"):
+        if os.environ.get("DEMO_MODE", "false").casefold() not in {"1", "true", "yes"}:
+            expected = os.environ.get("GUARDIAN_BRAIN_MCP_BEARER_KEY", "")
+            supplied = request.headers.get("authorization", "")
+            if not expected:
+                return JSONResponse({"detail": "guardian_brain_mcp_auth_not_configured"}, status_code=503)
+            if not supplied.startswith("Bearer ") or not hmac.compare_digest(supplied[7:], expected):
+                return JSONResponse({"detail": "invalid_brain_bearer_key"}, status_code=401)
+    return await call_next(request)
+
 _action_policy = ActionPolicy()
 _audit_log = JsonlAuditLog()
-_token_service = ActionTokenService.from_env()
+_latest_twin_sim_time: float | None = None
+_latest_twin_run_id: str | None = None
+_twin_delivery_cache: dict[tuple[str, str], str] = {}
+_last_tick_by_run: dict[str, int] = {}
+_twin_discovery_by_run: dict[str, dict[str, Any]] = {}
+
+
+def _twin_sim_clock() -> float:
+    if _latest_twin_sim_time is None:
+        raise TokenError("twin_sim_clock_unavailable")
+    return _latest_twin_sim_time
+
+
+_token_service = ActionTokenService.from_env(clock=_twin_sim_clock)
 
 
 def _require_integration_key(authorization: str | None) -> None:
+    if os.environ.get("DEMO_MODE", "false").casefold() in {"1", "true", "yes"}:
+        return
     expected = os.environ.get("GUARDIAN_API_BEARER_KEY")
     if not expected:
         raise HTTPException(status_code=503, detail="guardian_api_auth_not_configured")
@@ -193,7 +269,32 @@ def scenarios():
 
 @app.get("/api/capabilities")
 def capabilities():
-    return describe_capabilities().model_dump(mode="json")
+    result = describe_capabilities().model_dump(mode="json")
+    public = _token_service.public_key
+    result["action_token"] = {
+        "version": 1,
+        "kid": _token_service.kid,
+        "public_key_pem": (public.public_bytes(serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo).decode("ascii") if public else None),
+    }
+    result["action_capacity"] = {
+        "source": _action_policy.capacity_source,
+        "power_action_cap": _action_policy.power_cap,
+        "power_action_scope": _action_policy.power_action_scope,
+        "rollback_pool_sizes": _action_policy.pool_sizes,
+    }
+    trust_policy = service.trust_policy
+    result["guardian_verdict_policy"] = {
+        "states": TRUST_STATE_MAP,
+        "scale": [0.0, 1.0],
+        "trusted_min_inclusive": trust_policy.trusted_min,
+        "degraded_min_exclusive": trust_policy.suspect_min,
+        "risk_minimums": trust_policy.risk_minimums,
+        "risk_values_provisional": trust_policy.risk_values_provisional,
+    }
+    result["supported_actions"] = sorted(_action_policy.allowlist)
+    result["action_aliases"] = dict(_action_policy.aliases)
+    return result
 
 
 @app.post("/api/advisory")
@@ -221,13 +322,23 @@ def evaluations(limit: int = 50):
 
 
 @app.post("/api/reset")
-def reset_demo():
+def reset_demo(authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
+    global _latest_twin_sim_time, _latest_twin_run_id
     service.reset()
+    if _latest_twin_run_id is not None:
+        _action_policy.reset_run(_latest_twin_run_id)
+    _latest_twin_sim_time, _latest_twin_run_id = None, None
+    _twin_delivery_cache.clear()
+    _last_tick_by_run.clear()
+    _twin_discovery_by_run.clear()
     return {"status": "reset", "overview": service.overview()}
 
 
 @app.post("/api/simulations/{scenario_id}")
-def simulate(scenario_id: str, request: SimulationRequest | None = Body(default=None)):
+def simulate(scenario_id: str, request: SimulationRequest | None = Body(default=None),
+             authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
     request = request or SimulationRequest()
     try:
         result = run_scenario(
@@ -242,7 +353,8 @@ def simulate(scenario_id: str, request: SimulationRequest | None = Body(default=
 
 
 @app.post("/ingest")
-def ingest(request: IngestRequest):
+def ingest(request: IngestRequest, authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
     result = service.process_reading(request.model_dump())
     if result["layer_a"]["status"] == "failed":
         reason = result.get("rejection_reason", "security_rejection")
@@ -263,14 +375,71 @@ def ingest_twin_event(request: TwinEventRequest, authorization: str | None = Hea
     if (not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", run_id)
             or not isinstance(readings, list)):
         raise HTTPException(status_code=422, detail="readings event requires run_id and readings array")
+    global _latest_twin_run_id, _latest_twin_sim_time
+    if _latest_twin_run_id is not None and run_id != _latest_twin_run_id:
+        _action_policy.reset_run(_latest_twin_run_id)
+        service.reset()
+        _latest_twin_sim_time = None
+        _twin_delivery_cache.clear()
+        _last_tick_by_run.clear()
+        _twin_discovery_by_run.clear()
+    _latest_twin_run_id = run_id
+    settings = GuardianSettings()
+    if settings.twin_base_url and settings.twin_bearer_key and run_id not in _twin_discovery_by_run:
+        try:
+            _ensure_twin_discovery(run_id)
+        except HTTPException:
+            # Trust scoring remains independent; authorization will fail closed.
+            _twin_discovery_by_run[run_id] = {"_error": "twin_discovery_unavailable"}
     results = []
     skipped = []
-    for item in readings:
+    duplicates = []
+    # Evaluate emergency observations last so same-tick neighbours are available.
+    ordered_readings = sorted(readings, key=lambda v: isinstance(v, dict) and v.get("sensor") == "emergency_calls")
+    for item in ordered_readings:
         try:
             if not isinstance(item, dict) or item.get("run_id") != run_id:
                 raise ValueError("reading run_id must match its event envelope")
             payload = normalize_twin_reading(item)
+            delivery_key = (run_id, payload["reading_id"])
+            fingerprint_fields = ("run_id", "reading_id", "device_id", "node_id", "timestamp", "tick",
+                                  "sensor", "channel", "value", "unit", "lat", "lon")
+            fingerprint = hashlib.sha256(json.dumps({k: item.get(k) for k in fingerprint_fields},
+                sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")).hexdigest()
+            previous = _twin_delivery_cache.get(delivery_key)
+            if previous is not None:
+                if previous == fingerprint:
+                    duplicates.append(payload["reading_id"])
+                    service._event("duplicate_delivery", payload["reading_id"], {"run_id": run_id})
+                    _audit_log.record(run_id=run_id, event_type="duplicate_delivery",
+                        reading_id=payload["reading_id"], trust_score=None, verdict=None, action=None,
+                        decision="ignored", reason=None, caused_by=payload["reading_id"],
+                        data={"idempotency_key": payload["reading_id"]})
+                    continue
+                raise ValueError("replay_attack_reading_id_content_mismatch")
+            last_tick = _last_tick_by_run.get(run_id)
+            tolerance = int(os.environ.get("TWIN_REPLAY_TICK_TOLERANCE", "100"))
+            if tolerance < 0:
+                raise ValueError("TWIN_REPLAY_TICK_TOLERANCE must be non-negative")
+            tick = int(payload["sequence_number"])
+            if last_tick is not None and tick < last_tick - tolerance:
+                raise ValueError("replay_attack_tick_too_far_behind")
             evaluation = service.process_reading(payload)
+            if evaluation.get("layer_a", {}).get("status") == "passed":
+                _twin_delivery_cache[delivery_key] = fingerprint
+                if len(_twin_delivery_cache) > 100_000:
+                    _twin_delivery_cache.pop(next(iter(_twin_delivery_cache)))
+                if last_tick is not None and tick > last_tick + 1:
+                    service._event("tick_gap", payload["reading_id"], {
+                        "run_id": run_id, "previous_tick": last_tick, "tick": tick,
+                        "skipped_ticks": tick - last_tick - 1,
+                    })
+                    _audit_log.record(run_id=run_id, event_type="tick_gap",
+                        reading_id=payload["reading_id"], trust_score=None, verdict=None,
+                        action=None, decision="observed", reason="ticks_skipped",
+                        caused_by=payload["reading_id"], data={"previous_tick": last_tick, "tick": tick})
+                _last_tick_by_run[run_id] = max(last_tick if last_tick is not None else tick, tick)
+                _latest_twin_sim_time = max(_latest_twin_sim_time or payload["timestamp"], payload["timestamp"])
             verdict = evaluation.get("guardian") or {}
             _audit_log.record(run_id=run_id, event_type="reading_evaluated",
                 reading_id=payload["reading_id"], trust_score=verdict.get("trust_score"),
@@ -282,18 +451,99 @@ def ingest_twin_event(request: TwinEventRequest, authorization: str | None = Hea
         except (ValueError, TypeError, KeyError) as exc:
             skipped.append({"reading_id": item.get("reading_id") if isinstance(item, dict) else None,
                             "reason": str(exc)})
-    return {"run_id": run_id, "processed": len(results), "skipped": skipped, "results": results}
+    return {"run_id": run_id, "processed": len(results), "duplicates": duplicates,
+            "skipped": skipped, "results": results,
+            "twin_discovery": ("available" if run_id in _twin_discovery_by_run
+                and "_error" not in _twin_discovery_by_run[run_id] else "unavailable_or_not_configured")}
+
+
+def _fresh_verdict(reading_id: str):
+    reading = service.buffer.get_reading(reading_id)
+    if reading is None:
+        raise HTTPException(status_code=409, detail="fresh_verdict_evidence_unavailable")
+    evaluation = next((e for e in reversed(service.evaluations) if e["reading_id"] == reading_id), None)
+    from guardian.scoring import compute_trust_score
+    with service._lock:
+        flags = service.reputation.get(reading.sensor_id).flags
+        own_flag = service.reputation_flag_by_reading.get(reading_id)
+        removed_at = None
+        if own_flag is not None:
+            try:
+                removed_at = flags.index(own_flag)
+                flags.pop(removed_at)
+            except ValueError:
+                removed_at = None
+        try:
+            return compute_trust_score(reading, service.buffer, service.reputation,
+                incident_type=evaluation.get("incident_type") if evaluation else None,
+                trusted_threshold=service.trust_policy.trusted_min,
+                suspect_threshold=service.trust_policy.suspect_min,
+                record_reputation=False)
+        finally:
+            if removed_at is not None:
+                flags.insert(removed_at, own_flag)
+
+
+def _ensure_twin_discovery(run_id: str) -> dict[str, Any]:
+    if run_id in _twin_discovery_by_run:
+        cached = _twin_discovery_by_run[run_id]
+        if "_error" in cached:
+            raise HTTPException(status_code=503, detail="twin_discovery_unavailable")
+        return cached
+    try:
+        snapshot = discover_twin_sync(timeout_seconds=GuardianSettings.from_env().twin_mcp_timeout_seconds)
+    except (TwinDiscoveryError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail="twin_discovery_unavailable") from exc
+    _twin_discovery_by_run[run_id] = snapshot
+    _token_service.clock = lambda: _clock_from_discovery(snapshot)
+    capacities = snapshot.get("discovered_capacities")
+    if capacities:
+        power = capacities.get("Power", capacities.get("power", {}))
+        rollback = {domain: caps.get("rollback_pool_size") for domain, caps in capacities.items()
+                    if isinstance(caps, dict) and isinstance(caps.get("rollback_pool_size"), int)}
+        normalized = {}
+        if isinstance(power, dict) and isinstance(power.get("action_cap"), int):
+            normalized["power_action_cap"] = power["action_cap"]
+        if rollback:
+            normalized["rollback_pool_sizes"] = rollback
+        if normalized:
+            _action_policy.apply_discovered_capacity(normalized)
+    return snapshot
+
+
+def _clock_from_discovery(snapshot: dict[str, Any]) -> float:
+    value = snapshot.get("get_clock")
+    if isinstance(value, dict):
+        for key in ("simulated_time", "sim_time", "timestamp", "time"):
+            candidate = value.get(key)
+            if isinstance(candidate, (int, float)) and not isinstance(candidate, bool):
+                return float(candidate)
+            if isinstance(candidate, str):
+                from datetime import datetime
+                parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+                if parsed.utcoffset() is not None:
+                    return parsed.timestamp()
+    raise TokenError("twin_sim_clock_unavailable")
 
 
 @app.post("/api/actions/authorize")
 def authorize_action(request: ActionAuthorizationRequest, authorization: str | None = Header(default=None)):
     _require_integration_key(authorization)
+    if _latest_twin_run_id is None or request.run_id != _latest_twin_run_id:
+        raise HTTPException(status_code=409, detail="authorization_run_id_mismatch")
+    bound_reading_ids = request.reading_ids or [request.reading_id]
+    if request.reading_id not in bound_reading_ids or any(rid not in service.verdict_log for rid in bound_reading_ids):
+        raise HTTPException(status_code=409, detail="authorization_reading_ids_unavailable")
     verdict = service.verdict_log.get(request.reading_id)
     if verdict is None:
         _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
             trust_score=None, verdict=None, action=request.action, decision="denied",
-            reason="verdict_not_found", caused_by=request.reading_id)
+            reason="verdict_not_found", caused_by=request.reading_id,
+            data={"idempotency_key": request.idempotency_key} if request.idempotency_key else {})
         raise HTTPException(status_code=404, detail="verdict_not_found")
+    fresh_verdicts = [_fresh_verdict(rid) for rid in bound_reading_ids]
+    verdict = fresh_verdicts[0]
+    verdict.trust_score = min(v.trust_score for v in fresh_verdicts)
     evaluated = next((e for e in reversed(service.evaluations) if e["reading_id"] == request.reading_id), None)
     sensor_domain = {
         "traffic_cam": "Traffic", "water_level": "Water", "power_load": "Power",
@@ -307,35 +557,72 @@ def authorize_action(request: ActionAuthorizationRequest, authorization: str | N
         _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
             trust_score=verdict.trust_score, verdict=verdict.verdict, action=denied_action,
             decision="denied", reason="reading_domain_mismatch_or_unsupported_domain",
-            caused_by=request.reading_id)
+            caused_by=request.reading_id,
+            data={"idempotency_key": request.idempotency_key} if request.idempotency_key else {})
         raise HTTPException(status_code=403, detail="reading_domain_mismatch_or_unsupported_domain")
     normalized = request.action
     try:
         if _token_service.private_key is None:
             raise TokenError("signing_key_unavailable")
         normalized = _action_policy.normalize(request.action)
+        manifest = _ensure_twin_discovery(request.run_id)
+        discovered_actions = manifest.get("list_actions")
+        if isinstance(discovered_actions, dict):
+            discovered_actions = discovered_actions.get("actions", discovered_actions.get("result"))
+        if isinstance(discovered_actions, list):
+            names = {a if isinstance(a, str) else a.get("name") for a in discovered_actions
+                     if isinstance(a, (str, dict))}
+            if normalized not in names and request.action not in names:
+                raise ActionPolicyError("action_not_in_twin_manifest")
+        if normalized in {"set_valve_position", "set_grid_switch"}:
+            raise ActionPolicyError("safe_preview_tool_unconfirmed")
+        state = manifest.get("get_containment_state")
+        if isinstance(state, dict) and state.get("quarantined"):
+            targets = set(request.targets)
+            quarantined = set(state.get("quarantined", []))
+            if targets & quarantined:
+                raise ActionPolicyError("DEVICE_QUARANTINED")
         normalized, _ = _action_policy.authorize(run_id=request.run_id, action=request.action,
             parameters=request.parameters, trust_score=verdict.trust_score,
             risk_level=request.risk_level, domain=request.domain)
         token, claims = _token_service.issue(run_id=request.run_id, action=normalized,
             parameters=request.parameters, reading_id=request.reading_id,
-            trust_score=verdict.trust_score, risk_level=request.risk_level)
+            trust_score=verdict.trust_score, risk_level=request.risk_level,
+            targets=request.targets, reading_ids=bound_reading_ids,
+            idempotency_key=request.idempotency_key)
+    except HTTPException as exc:
+        reason = str(exc.detail)
+        _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
+            trust_score=verdict.trust_score, verdict=verdict.verdict, action=normalized,
+            decision="denied", reason=reason, caused_by=request.reading_id,
+            data={"idempotency_key": request.idempotency_key} if request.idempotency_key else {})
+        raise
     except ActionPolicyError as exc:
         reason = str(exc)
         _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
             trust_score=verdict.trust_score, verdict=verdict.verdict, action=normalized,
-            decision="denied", reason=reason, caused_by=request.reading_id)
-        raise HTTPException(status_code=403, detail=reason) from exc
+            decision="denied", reason=reason, caused_by=request.reading_id,
+            data={"idempotency_key": request.idempotency_key} if request.idempotency_key else {})
+        raise HTTPException(status_code=409 if reason in {"safe_preview_tool_unconfirmed", "DEVICE_QUARANTINED"}
+                            else 403, detail=reason) from exc
     except TokenError as exc:
         reason = str(exc)
         _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
             trust_score=verdict.trust_score, verdict=verdict.verdict, action=normalized,
-            decision="denied", reason=reason, caused_by=request.reading_id)
+            decision="denied", reason=reason, caused_by=request.reading_id,
+            data={"idempotency_key": request.idempotency_key} if request.idempotency_key else {})
+        raise HTTPException(status_code=503, detail=reason) from exc
+    except (TwinDiscoveryError, ValueError) as exc:
+        reason = "twin_discovery_unavailable"
+        _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
+            trust_score=verdict.trust_score, verdict=verdict.verdict, action=normalized,
+            decision="denied", reason=reason, caused_by=request.reading_id,
+            data={"idempotency_key": request.idempotency_key} if request.idempotency_key else {})
         raise HTTPException(status_code=503, detail=reason) from exc
     _audit_log.record(run_id=request.run_id, event_type="action_decision", reading_id=request.reading_id,
         trust_score=verdict.trust_score, verdict=verdict.verdict, action=normalized,
         decision="approved", reason=None, caused_by=request.reading_id,
-        data={"token_id": claims["token_id"]})
+        data={"token_id": claims["token_id"], "idempotency_key": request.idempotency_key})
     return {"decision": "approved", "reading_id": request.reading_id,
             "action": normalized, "token": token, "token_id": claims["token_id"], "expires_at": claims["exp"]}
 
@@ -345,11 +632,66 @@ def verify_action_token(request: TokenVerifyRequest, authorization: str | None =
     _require_integration_key(authorization)
     try:
         normalized = _action_policy.normalize(request.action)
-        claims = _token_service.verify(request.token, action=normalized, parameters=request.parameters)
+        claims = _token_service.verify(request.token, action=normalized, parameters=request.parameters,
+            targets=request.targets, idempotency_key=request.idempotency_key)
     except (TokenError, ActionPolicyError) as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     return {"verified": True, "token_id": claims["token_id"], "run_id": claims["run_id"],
-            "reading_id": claims["reading_id"], "expires_at": claims["exp"]}
+            "reading_ids": claims["reading_ids"], "expires_at": claims["exp"]}
+
+
+@mcp_server.tool(name=MCP_TOOL_GET_TRUST_VERDICT, title="Get Guardian trust verdict", structured_output=True)
+def brain_get_trust_verdict(reading_id: str, fresh: bool = False) -> TrustVerdictToolOutput:
+    """Return the deterministic verdict; fresh rechecks current neighbour evidence without adding flags."""
+    verdict = service.verdict_log.get(reading_id)
+    if verdict is None:
+        raise ValueError("verdict_not_found")
+    if fresh:
+        verdict = _fresh_verdict(reading_id)
+    policy = service.trust_policy
+    return TrustVerdictToolOutput(trust_score=verdict.trust_score,
+        state=TRUST_STATE_MAP[verdict.verdict], reasons=verdict.reasons, caused_by=reading_id,
+        scale=[0.0, 1.0], cutoffs={"trusted_min_inclusive": policy.trusted_min,
+            "degraded_min_exclusive": policy.suspect_min})
+
+
+@mcp_server.tool(name=MCP_TOOL_AUTHORIZE_ACTION, title="Authorize Guardian action", structured_output=True)
+def brain_authorize_action(run_id: str, reading_ids: list[str], action: str, targets: list[str],
+                           params: dict[str, Any], risk_level: Literal["R1", "R2", "R3", "NONE"],
+                           domain: str, idempotency_key: str) -> AuthorizationToolOutput:
+    """Issue an action token by calling the same authorization service used by HTTP."""
+    if not reading_ids or not idempotency_key:
+        return AuthorizationToolOutput(decision="refused", refusal_code="reading_ids_and_idempotency_key_required")
+    internal_api_key = os.environ.get("GUARDIAN_API_BEARER_KEY", "")
+    try:
+        request = ActionAuthorizationRequest(run_id=run_id, reading_id=reading_ids[0],
+            action=action, parameters=params, targets=targets, reading_ids=reading_ids,
+            idempotency_key=idempotency_key, risk_level=risk_level, domain=domain)
+        result = authorize_action(request, authorization=f"Bearer {internal_api_key}")
+        return AuthorizationToolOutput(decision="approved", token=result["token"],
+            token_id=result["token_id"], expires_at=result["expires_at"])
+    except (HTTPException, ValueError, TypeError) as exc:
+        code = exc.detail if isinstance(exc, HTTPException) else "invalid_authorization_request"
+        return AuthorizationToolOutput(decision="refused", refusal_code=str(code))
+
+
+def brain_verify_action_token(token: str, action: str, targets: list[str], params: dict[str, Any],
+                              idempotency_key: str) -> TokenVerificationToolOutput:
+    """Test-only verifier; disabled unless GUARDIAN_ENABLE_TEST_TOKEN_VERIFY is true."""
+    if os.environ.get("GUARDIAN_ENABLE_TEST_TOKEN_VERIFY", "false").casefold() not in {"1", "true", "yes"}:
+        return TokenVerificationToolOutput(verified=False, refusal_code="test_verification_disabled")
+    try:
+        normalized = _action_policy.normalize(action)
+        claims = _token_service.verify(token, action=normalized, parameters=params,
+            targets=targets, idempotency_key=idempotency_key)
+        return TokenVerificationToolOutput(verified=True, token_id=claims["token_id"])
+    except (TokenError, ActionPolicyError) as exc:
+        return TokenVerificationToolOutput(verified=False, refusal_code=str(exc))
+
+
+if os.environ.get("GUARDIAN_ENABLE_TEST_TOKEN_VERIFY", "false").casefold() in {"1", "true", "yes"}:
+    mcp_server.tool(name=MCP_TOOL_VERIFY_ACTION_TOKEN,
+        title="Verify Guardian action token (test only)", structured_output=True)(brain_verify_action_token)
 
 
 @app.post("/api/actions/rollback-pool/{domain}/{node_id}")
@@ -388,7 +730,8 @@ def get_trust_verdict(sensor_id: str, reading_id: str):
 
 
 @app.post("/report_incident")
-def report_incident(report: IncidentReport):
+def report_incident(report: IncidentReport, authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
     service.reputation.record_flag(report.device_id)
     service.known_sensors.add(report.device_id)
     service._event("incident_reported", None, {
@@ -400,21 +743,24 @@ def report_incident(report: IncidentReport):
 
 
 @app.post("/quarantine_device/{device_id}")
-def quarantine_device(device_id: str):
+def quarantine_device(device_id: str, authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
     service.reputation.set_quarantined(device_id, True)
     service.known_sensors.add(device_id)
     return {"status": "quarantined", "device_id": device_id, "timestamp": time.time(), "simulated": True}
 
 
 @app.post("/isolate_sensor/{sensor_id}")
-def isolate_sensor(sensor_id: str):
+def isolate_sensor(sensor_id: str, authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
     service.reputation.set_isolated(sensor_id, True)
     service.known_sensors.add(sensor_id)
     return {"status": "isolated", "sensor_id": sensor_id, "timestamp": time.time(), "simulated": True}
 
 
 @app.post("/rollback_reading")
-def rollback_reading(request: RollbackRequest):
+def rollback_reading(request: RollbackRequest, authorization: str | None = Header(default=None)):
+    _require_integration_key(authorization)
     reading = service.buffer.get_reading(request.reading_id)
     if not reading or reading.sensor_id != request.sensor_id:
         raise HTTPException(status_code=404, detail="reading_not_found")

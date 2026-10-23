@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
+from guardian_config import GuardianSettings, TWIN_MCP_PATH, TWIN_SSE_PATH
 
 
 class TwinConnectionError(RuntimeError):
@@ -21,13 +22,14 @@ class TwinConnectionError(RuntimeError):
 
 
 def twin_config() -> dict[str, Any]:
-    base = os.environ.get("TWIN_BASE_URL", "").rstrip("/")
-    key = os.environ.get("GUARDIAN_TWIN_BEARER_KEY", "")
+    settings = GuardianSettings()
+    base = settings.twin_base_url
+    key = settings.twin_bearer_key
     if not base:
         raise TwinConnectionError("TWIN_BASE_URL is not configured")
     if not key:
         raise TwinConnectionError("GUARDIAN_TWIN_BEARER_KEY is not configured")
-    timeout = float(os.environ.get("TWIN_TIMEOUT_SECONDS", "15"))
+    timeout = settings.twin_mcp_timeout_seconds
     max_retries = int(os.environ.get("TWIN_MAX_RETRIES", "3"))
     retry_base = float(os.environ.get("TWIN_RETRY_BASE_SECONDS", "0.5"))
     if not 0 < timeout <= 120 or not 0 <= max_retries <= 10 or not 0 <= retry_base <= 10:
@@ -105,7 +107,7 @@ class TwinSSEAdapter:
                  max_retries: int = 3, retry_base_seconds: float = .5):
         if not base_url or not bearer_key:
             raise ValueError("Twin URL and Guardian's Twin Bearer key are required")
-        self.url = base_url.rstrip("/") + "/events"
+        self.url = base_url.rstrip("/") + TWIN_SSE_PATH
         self.bearer_key, self.timeout = bearer_key, timeout
         self.max_retries, self.retry_base_seconds = max_retries, retry_base_seconds
 
@@ -181,7 +183,7 @@ class TwinSSEAdapter:
 @asynccontextmanager
 async def twin_mcp_session(*, base_url: str, bearer_key: str, timeout: float = 15):
     """Open an MCP 2.x session with Twin's own Guardian-scoped credential."""
-    url = base_url.rstrip("/") + "/mcp"
+    url = base_url.rstrip("/") + TWIN_MCP_PATH
     from mcp.client.streamable_http import httpx2
     client = create_mcp_http_client(headers={"Authorization": f"Bearer {bearer_key}"},
                                     timeout=httpx2.Timeout(timeout))
@@ -192,3 +194,4 @@ async def twin_mcp_session(*, base_url: str, bearer_key: str, timeout: float = 1
                 yield session
     finally:
         await client.aclose()
+

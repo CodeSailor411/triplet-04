@@ -3,14 +3,22 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Literal
 
 import joblib
 import pandas as pd
+from cryptography.hazmat.primitives import serialization
 from mcp.server import MCPServer
 from pydantic import BaseModel, ConfigDict
+from guardian_policy import load_trust_policy
+from action_policy import ActionPolicy
+from token_service import ActionTokenService
+from contract import (TRUST_STATE_MAP, MCP_TOOL_DESCRIBE_CAPABILITIES,
+                      MCP_TOOL_EVALUATE_READING_ADVISORY, MCP_PUBLIC_TOOL_NAMES,
+                      MCP_TOOL_VERIFY_ACTION_TOKEN)
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 
@@ -94,7 +102,11 @@ class CapabilitiesOutput(BaseModel):
     domains: dict[str, DomainCapability]
     trust_cutoffs: TrustCutoffs
     reference_rules: ReferenceRuleConfig
+    guardian_verdict_policy: dict
     supported_tools: list[str]
+    supported_actions: list[str]
+    action_aliases: dict[str, str]
+    action_token: dict
     advisory_only: Literal[True]
 
 
@@ -205,6 +217,7 @@ def predict_reading(record: dict) -> AdvisoryOutput:
 
 
 @server.tool(
+    name=MCP_TOOL_EVALUATE_READING_ADVISORY,
     title="Evaluate reading advisory",
     description=(
         "Return an advisory Random Forest suspicious probability for one sensor reading. "
@@ -233,10 +246,14 @@ def evaluate_reading_advisory(
     })
 
 
-@server.tool(title="Describe Guardian playground capabilities", structured_output=True)
+@server.tool(name=MCP_TOOL_DESCRIBE_CAPABILITIES, title="Describe Guardian playground capabilities", structured_output=True)
 def describe_capabilities() -> CapabilitiesOutput:
     """List model and configuration capabilities so clients can configure the playground."""
     model_available = load_model() is not None
+    trust_policy = load_trust_policy()
+    action_policy = ActionPolicy()
+    token_service = ActionTokenService.from_env()
+    public_key = token_service.public_key
     return CapabilitiesOutput(
         protocol_version="2026-07-28",
         model_version=str(METADATA.get("model_version", "unknown")),
@@ -246,7 +263,24 @@ def describe_capabilities() -> CapabilitiesOutput:
         domains={key: DomainCapability(**value) for key, value in DOMAINS.items()},
         trust_cutoffs=TrustCutoffs(**REFERENCE_RULES["trust_cutoffs"]),
         reference_rules=ReferenceRuleConfig(**REFERENCE_RULES["penalties"]),
-        supported_tools=["describe_capabilities", "evaluate_reading_advisory"],
+        guardian_verdict_policy={
+            "states": TRUST_STATE_MAP,
+            "trusted_min_inclusive": trust_policy.trusted_min,
+            "degraded_min_exclusive": trust_policy.suspect_min,
+            "risk_minimums": trust_policy.risk_minimums,
+        },
+        supported_tools=[*MCP_PUBLIC_TOOL_NAMES, *(
+            [MCP_TOOL_VERIFY_ACTION_TOKEN]
+            if os.environ.get("GUARDIAN_ENABLE_TEST_TOKEN_VERIFY", "false").casefold() in {"1", "true", "yes"}
+            else [])],
+        supported_actions=sorted(action_policy.allowlist),
+        action_aliases=dict(action_policy.aliases),
+        action_token={
+            "version": 1,
+            "kid": token_service.kid,
+            "public_key_pem": (public_key.public_bytes(serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo).decode("ascii") if public_key else None),
+        },
         advisory_only=True,
     )
 
@@ -254,6 +288,8 @@ def describe_capabilities() -> CapabilitiesOutput:
 @server.custom_route("/debug/predict", methods=["POST"], include_in_schema=False)
 async def local_debug_predict(request: Request) -> Response:
     """Local debugging only. Inter-layer evaluation must use the MCP tool."""
+    if os.environ.get("DEMO_MODE", "false").casefold() not in {"1", "true", "yes"}:
+        return JSONResponse({"error": "not_found"}, status_code=404)
     try:
         body = await request.json()
         if not isinstance(body, dict):
