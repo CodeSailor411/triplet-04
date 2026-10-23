@@ -9,3 +9,5 @@ sse-starlette==3.5.0
 PyYAML==6.0.3
 cryptography==50.0.2   # Ed25519 token check, used from 18 Oct
 nicegui==3.18.0       # the dashboard (python -m twin.dashboard), R3
+psycopg[binary]==3.3.6   # PostgreSQL / TimescaleDB client (history store). [binary] brings its own libpq, nothing to install
+redis==8.1.0           # Redis client (action state: used token IDs, idempotency answers). Only imported when storage.state is 'redis'

@@ -49,6 +49,7 @@ class RunLog:
         self._run_id = ""
         self._n = 0                              # last event number in the part file
         self._warned = False
+        self.sink = None                         # optional: called with every line written (the history writer)
 
     # ------------------------------------------------------------------ files
     def part_path(self, run_id: str) -> Path:
@@ -82,9 +83,14 @@ class RunLog:
         tick = self.sim.tick if tick is None else tick        # a reading event carries the tick it describes
         self._n += 1
         eid = f"twin-{self._n:06d}"
-        self._append(self.part_path(self._run_id), {
-            "run_id": self._run_id, "event_id": eid, "timestamp": self.sim.clock.iso_of(tick), "tick": tick, "wall": _wall(),
-            "layer": "twin", "event_type": event_type, "caused_by": caused_by or [], "data": data})
+        line = {"run_id": self._run_id, "event_id": eid, "timestamp": self.sim.clock.iso_of(tick), "tick": tick,
+                "wall": _wall(), "layer": "twin", "event_type": event_type, "caused_by": caused_by or [], "data": data}
+        self._append(self.part_path(self._run_id), line)
+        if self.sink is not None:
+            try:
+                self.sink(line)                                  # the queue only: never waits for a database
+            except Exception:                                    # history must never break the run log
+                log.exception("history sink failed")
         return eid
 
     def _open_run_if_new(self) -> None:

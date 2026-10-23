@@ -21,7 +21,7 @@ def side_colors(domains: list[str], active: set[str] | None = None) -> list[str]
     if not act:
         return None
     n = len(act)
-    return [DOMAIN_COLORS.get(act[min(n - 1, side * n // 6)], "#94A3B8") for side in range(6)]
+    return [DOMAIN_COLORS.get(act[min(n - 1, side * n // 6)], "#A0A0A0") for side in range(6)]
 
 
 def glyph(cx: float, cy: float, width: float, domains: list[str], state: str = "trusted", active: set[str] | None = None,
@@ -38,9 +38,11 @@ def glyph(cx: float, cy: float, width: float, domains: list[str], state: str = "
     core = SWITCHED_OFF if dim else (SHARED_CORE if shared else main)
     x_col = SHARED_CORE if shared else main
     g = [f'<g transform="translate({cx - 24 * s:.1f} {cy - 24 * s:.1f}) scale({s:.4f})"' + (' opacity="0.7"' if unknown and not dim else "") + ">"]
-    if not dim:                                                       # halo: two faint hexagon-shaped glows
-        for k, op in ((1.4, 0.06), (1.2, 0.14)):
+    if not dim:                                                       # glow: four soft hexagon-shaped halos, then a bloom around the outline
+        for k, op in ((2.0, 0.035), (1.7, 0.06), (1.45, 0.10), (1.22, 0.17)):
             g.append(f'<polygon points="{_PTS}" fill="{main}" fill-opacity="{op}" transform="translate(24 24) scale({k}) translate(-24 -24)"/>')
+        for i, ((x1, y1), (x2, y2)) in enumerate(SIDES):                 # bloom: each side glows in its own colour (a shared node has two)
+            g.append(f'<line x1="{x1:g}" y1="{y1:g}" x2="{x2:g}" y2="{y2:g}" stroke="{colors[i]}" stroke-opacity="0.35" stroke-width="9" stroke-linecap="round"/>')
     g.append(f'<polygon points="{_PTS}" fill="{fill}"/>')
     if state == "degraded":                                           # sides 0 (top) and 3 (bottom) are not drawn
         for i in (1, 2, 4, 5):

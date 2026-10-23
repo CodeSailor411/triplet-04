@@ -54,7 +54,7 @@ def write_sample(out_dir: Path) -> str:
     book.recorder = cont.recorder = sc.recorder = rl
 
     clock = {"n": 0}
-    base = datetime(2026, 10, 7, 12, 0, 0, tzinfo=timezone.utc)
+    base = datetime.now(timezone.utc) - timedelta(minutes=3)     # the sample looks like a run that ended a couple of minutes ago
 
     def fake_wall() -> str:                                   # one steady clock for all layers, so the merge order is right
         clock["n"] += 1
@@ -110,6 +110,7 @@ def write_sample(out_dir: Path) -> str:
                                                     "approved_action": "set_valve_position"})
                 partner("brain", "decision", {"incident": "flood risk near the port", "chosen_action": "set_valve_position",
                                               "idempotency_key": "sample-k1"}, [g])
+                book.preview(Identity.CITY_BRAIN, "set_valve_position", ["WAT-03"], {"position": 40})     # the valve needs a preview first
                 book.actuate(Identity.CITY_BRAIN, "set_valve_position", ["WAT-03"], {"position": 40},
                              token("t-sample-1", "set_valve_position", ["WAT-03"], {"position": 40}), "sample-k1")
             if t == 20:                                                                                              # a refused command
@@ -129,7 +130,7 @@ def write_sample(out_dir: Path) -> str:
                 partner("brain", "escalation", {"reason": "No trusted water sensor at the port. A person must check the valve.",
                                                 "incident": "flood risk near the port"}, [d])
         sim.tick = 30
-        stop = _run(sc.run("stop", {"scenario_id": "sc-0001"}))
+        # the attack is NOT stopped: the sample ends in the middle of an incident ("a person must check the valve")
         rl.end_run()
     finally:
         runlog._wall = real_wall
