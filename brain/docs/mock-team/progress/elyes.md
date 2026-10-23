@@ -1,49 +1,28 @@
-# Elyes progress: S03 Power, S04 Air Quality and shared core
+# Integration update, 11 October 2026
 
-Branch: `codex/civis-elyes`. Status: assigned, not implemented.
+shared core is integrated and corrected locally on codex/civis-elyes. See [individual review and test evidence](../INTEGRATION_REVIEW_2026-10-11.md). All five modules now pass the shared workflow checks. No remote upload or final partner approval has been made.
 
-## Steps
+The earlier progress record below describes the submitted branch before this integration and is superseded where it refers to missing shared code, fixtures or scenario delivery.
 
-- [ ] Windows setup, member access and partner gaps checked
-- [ ] Shared fixture format/peers, normalization, state and registry
-- [ ] Power/AQ detectors with unit tests
-- [ ] Alert-only plans, shared Gemini adapter and guarded execution
-- [ ] Five scenario base/refusal integration proof and safeguards
-- [ ] Sequential reviews, live checks and release handover
+# Elyes progress
 
-## Implemented functions
+Updated 9 October 2026. Branch: codex/civis-elyes.
 
-Record shared functions and S03/S04 separately. Stubs are not completed work.
+| Work | Status | Evidence |
+| --- | --- | --- |
+| Windows environment | Verified | Python 3.12.13; all 55 applicable package pins match; common pins match inspected Twin requirements |
+| S03 Power | Complete for reduced mock | Threshold/uncertainty tests; base/refusal runs through the actual runtime |
+| S04 Air Quality | Complete for reduced mock | Persistence/null/unit/run tests; base/refusal runs through the actual runtime |
+| Shared core and peers | Implemented | Trust, exact token, preview, parameters, caps, idempotency, pending and containment tests |
+| Direct Gemini | Live verified | Flash-Lite JSON Plan; approved demo committed one simulated effect; Guardian refusal produced zero effects |
+| Debug console | Browser verified | Editable standard readings; actual request/response trace and export; desktop/mobile; no JavaScript errors or horizontal overflow |
+| MCP/auth/read views | Implemented | Actual local HTTP/MCP smoke and SDK schema/refusal tests |
+| Release readiness | Incomplete | S01/S02/S05 and live Guardian/preview/caps/log agreements pending |
 
-## Assumptions and partner decisions
+Local verification: 104 tests, Ruff and the local MCP transport smoke passed. All 55 applicable locked packages match and the environment dependency check found no conflicts. Four offline S03/S04 presets passed. The shared action demo passed with recorded plans and live Gemini; changing its high reading to a baseline value produced zero AI calls and zero effects. Real SDK tests verify that HTTP 429/503 are not retried. CI uses no real keys or partner endpoints.
 
-Record thresholds as mock-only and distinguish confirmed evidence from candidates.
-Guardian schema/tool agreement:
-Twin preview support:
-Pending/commit support:
-Cap discovery:
-Current partner branch/commit:
+OpenRouter has been removed. Gemini configuration stays in ignored brain/.env; no credentials appear in the inspected request/response traces. See [debugging instructions](../DEBUGGING.md) and [handover](../HANDOVER.md).
 
-## Test results
+Main, partner branches and member-owned scenario implementations were not changed. The synthetic action detector does not replace the member-owned S01. Fixture thresholds, cut-offs, unsigned approvals and synthetic candidates do not establish live partner integration.
 
-Record exact command, date and passed/failed counts. Bootstrap success is setup evidence only.
-
-## Scenario integration status
-
-S01 Traffic:
-S02 Water:
-S03 Power:
-S04 Air Quality:
-S05 Medical:
-
-## Live smoke and release evidence
-
-Synthetic Gemini smoke:
-Actual partner discovery/auth smoke:
-Redacted base/refusal traces:
-Release commit:
-Release PR, opened by Maram:
-
-## Remaining dependencies and next action
-
-Record precise unavailable schemas/tools/functions without bypassing gates.
+Next: review member PRs sequentially into this branch, confirm partner contracts and finish the five-row acceptance matrix before release into brain.

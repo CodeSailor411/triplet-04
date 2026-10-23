@@ -4,7 +4,7 @@ Read docs/mock-team/README.md, SCENARIOS.md, CONTRACT.md and the card matching t
 
 - The current plan is five scenario modules, superseding detector/planner/fixtures team ownership.
 - Work only on current assigned branch and paths in scripts/ownership.json. Implement only that member's tasks, one step at a time.
-- Elyes owns shared models/ports, normalization, fixed registry, single Gemini provider, fake peers, live clients, approval/execution, settings, dependencies, CI and release.
+- Elyes owns shared models/ports, normalization, fixed registry, single direct Gemini provider, fake peers, live clients, approval/execution, settings, dependencies, CI and release.
 - Members own their scenario detector/response, fixtures, tests and progress. Never duplicate the common runtime or implement another member's files.
 - Preserve class IDs and frozen method signatures. Report gaps to Elyes before changing shared interfaces.
 - Use Windows PowerShell and brain/.venv Python 3.12 with the committed lock. Do not upgrade packages independently.
@@ -16,3 +16,5 @@ Read docs/mock-team/README.md, SCENARIOS.md, CONTRACT.md and the card matching t
 - Keep API/peer calls out of CI. Never expose/commit .env, keys or tokens.
 - Run meaningful member tests plus full suite/Ruff. Do not skip required failures or hide an incomplete shared runtime.
 - Member PRs target codex/civis-elyes, reviewed by CodeSailor411. No force push or blind conflict resolution.
+
+- Keep the local debug page plain: light background, standard controls, tables and JSON. No decorative dashboard or frontend framework.

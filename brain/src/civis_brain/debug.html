@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CIVIS Brain debug</title>
+<style nonce="__NONCE__">
+:root { color-scheme: light; }
+body { margin: 20px; max-width: 1100px; color: #111; background: white; font: 14px/1.5 Arial, sans-serif; }
+h1 { font-size: 22px; } h2 { font-size: 17px; } h3 { font-size: 14px; }
+section { margin: 24px 0; padding-top: 8px; border-top: 1px solid #ccc; }
+button, select { margin: 3px 5px 3px 0; padding: 4px 8px; max-width: 100%; }
+button { cursor: pointer; } button:disabled { cursor: default; }
+table { border-collapse: collapse; text-align: left; }
+th, td { padding: 6px 10px; border: 1px solid #ccc; overflow-wrap: anywhere; }
+.table-wrap { overflow-x: auto; }
+pre { background: #f5f5f5; border: 1px solid #ddd; padding: 10px; max-height: 400px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea { box-sizing: border-box; width: 100%; height: 300px; font: 13px/1.4 Consolas, monospace; }
+details { margin: 10px 0; } summary { cursor: pointer; }
+.notice { border: 1px solid #999; padding: 8px; }
+[hidden] { display: none !important; }
+@media (max-width: 600px) { body { margin: 12px; } }
+</style>
+</head>
+<body>
+<h1>CIVIS Brain console</h1>
+<p>Mock peers only in this page. Traffic, Water, Power, Air Quality and Medical emergency are implemented.</p>
+<div id="notice" class="notice" role="alert" hidden></div>
+<div class="table-wrap"><table aria-label="Service configuration">
+<tr><th>Environment</th><td><span id="python">Loading</span><br><span id="versions"></span></td></tr>
+<tr><th>Active service peers</th><td id="peer-mode">Loading</td></tr>
+<tr><th>AI</th><td><span id="ai-mode">Loading</span>; <span id="key-status"></span><br><span id="model"></span></td></tr>
+<tr><th>Remaining debug AI calls</th><td id="budget">Loading</td></tr>
+</table></div>
+<section>
+<h2>1. Load and edit a request</h2>
+<label for="preset">Case:</label>
+<select id="preset" aria-label="Case"></select>
+<label for="provider-mode">Planning:</label>
+<select id="provider-mode"><option value="fixture">Recorded response (offline)</option><option value="gemini">Gemini API</option></select>
+<button id="load">Reload standard readings</button>
+<p>Traffic tests an R1 signal request after two high percent readings; its refusal denies approval. Water tests an R3 valve request with a safe-preview fixture; its refusal has an unsafe preview. Medical tests R2 ambulance dispatch; its refusal denies approval. Power and Air Quality produce alerts without AI.</p>
+<label for="request">POST /debug/run body:</label>
+<textarea id="request" spellcheck="false" aria-label="Scenario request JSON"></textarea>
+<p>Edit the readings in this JSON to test changes. Each reading keeps its run, tick, UTC timestamp, node, device, sensor, unit and original ID.</p>
+<button id="run">Run request</button><span id="run-status" role="status"></span>
+</section>
+<section id="results" hidden>
+<h2>2. Result</h2>
+<p id="result-summary"></p>
+<p id="acceptance"></p>
+<div class="table-wrap"><table><thead><tr><th>Tick</th><th>Status</th><th>Action</th><th>Reason / code</th></tr></thead><tbody id="decisions"></tbody></table></div>
+<details><summary>Submitted readings</summary><pre id="readings"></pre></details>
+<details><summary>Mock nodes, action manifest and policies</summary><pre id="configuration"></pre></details>
+<details><summary>Simulated Twin effects</summary><pre id="effects"></pre></details>
+<h2>3. Request and response trace</h2>
+<p>Requests are listed in execution order. Approval tokens are redacted. Gemini entries include the request, final output and locally validated Plan.</p>
+<div id="exchanges"></div>
+<details><summary>Decision events</summary><pre id="events"></pre></details>
+<details><summary>Complete result JSON</summary><pre id="result-json"></pre></details>
+<a href="/debug/export" download>Download this debug run as JSON</a>
+</section>
+<section>
+<h2>AI connection only</h2>
+<p>One synthetic Plan request, without peer calls. Use Run request above for the full action workflow.</p>
+<button id="ai-smoke">Check Gemini connection</button>
+<pre id="ai-result" hidden></pre>
+</section>
+<section>
+<h2>Active service events</h2>
+<p id="active-run">No active run</p>
+<pre id="service-events">No service decisions yet.</pre>
+</section>
+<script nonce="__NONCE__">
+const $ = id => document.getElementById(id);
+let busy = false;
+let cases = [];
+function json(value) { return JSON.stringify(value, null, 2); }
+function notice(message) { $("notice").textContent = message; $("notice").hidden = !message; }
+async function api(path, body) {
+  const response = await fetch(path, {
+    method: body === undefined ? "GET" : "POST", credentials: "same-origin",
+    headers: {"Content-Type": "application/json"},
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const detail = data.detail;
+    throw Error("HTTP " + response.status + ": " + (typeof detail === "string" ? detail : json(detail)));
+  }
+  return data;
+}
+async function task(button, action) {
+  if (busy) return;
+  busy = true;
+  button.disabled = true;
+  notice("");
+  $("run-status").textContent = "Running...";
+  try { await action(); }
+  catch (error) { notice(error.message); }
+  finally {
+    busy = false;
+    button.disabled = false;
+    $("run-status").textContent = "";
+    await refresh();
+  }
+}
+function loadRequest() {
+  const preset = cases.find(item => item.request.scenario + ":" + item.request.variant === $("preset").value);
+  if (!preset) return;
+  $("request").value = json({...preset.request, provider_mode: $("provider-mode").value});
+}
+function pre(parent, title, value) {
+  const label = document.createElement("h3");
+  label.textContent = title;
+  const content = document.createElement("pre");
+  content.textContent = typeof value === "string" ? value : json(value);
+  parent.append(label, content);
+}
+function showResult(result) {
+  $("results").hidden = false;
+  $("result-summary").textContent = result.scenario + " / " + result.variant + ": " +
+    result.provider_calls + " planning calls, " + result.effects + " simulated actuator effects.";
+  const check = result.acceptance;
+  $("acceptance").textContent = check.passed === null
+    ? "Custom readings: compare the decisions and effects below; preset acceptance is not applied."
+    : "Standard case acceptance: " + (check.passed ? "PASS" : "FAIL") +
+      ". Expected " + json(check.expected) + "; actual " + json(check.actual) + ".";
+  $("decisions").textContent = "";
+  for (const batch of result.batches) {
+    const rows = batch.decisions.length ? batch.decisions : [{status: "no incident", action: "", reason: "No action needed"}];
+    for (const decision of rows) {
+      const row = document.createElement("tr");
+      for (const value of [batch.tick, decision.status, decision.action || "", decision.reason + (decision.peer_code ? " / " + decision.peer_code : "")]) {
+        const cell = document.createElement("td"); cell.textContent = value; row.append(cell);
+      }
+      $("decisions").append(row);
+    }
+  }
+  $("readings").textContent = json(result.readings);
+  $("configuration").textContent = json(result.mock_configuration);
+  $("effects").textContent = json(result.effect_details);
+  $("events").textContent = json(result.events);
+  $("result-json").textContent = json(result);
+  $("exchanges").textContent = "";
+  for (const entry of result.requests) {
+    const detail = document.createElement("details");
+    const label = document.createElement("summary");
+    label.textContent = entry.step + ". " + entry.target + "." + entry.operation + " (" + entry.elapsed_ms + " ms)";
+    detail.append(label);
+    pre(detail, "Request", entry.request);
+    if (entry.target === "gemini" && entry.request.input) {
+      try { pre(detail, "Gemini input, decoded", JSON.parse(entry.request.input)); } catch (_) {}
+    }
+    pre(detail, entry.error ? "Error" : "Response", entry.error || entry.response);
+    if (entry.provider_response && Object.keys(entry.provider_response).length) pre(detail, "Provider final output", entry.provider_response);
+    $("exchanges").append(detail);
+  }
+}
+async function refresh() {
+  try {
+    const state = await api("/debug/state");
+    $("python").textContent = "Python " + state.python;
+    $("versions").textContent = "FastAPI " + state.versions.fastapi + " / MCP " + state.versions.mcp;
+    $("peer-mode").textContent = state.peer_mode;
+    $("ai-mode").textContent = state.llm_mode;
+    $("key-status").textContent = state.key_configured ? "key configured" : "no live key selected";
+    $("model").textContent = state.model;
+    $("budget").textContent = state.debug_ai_calls_remaining;
+    $("active-run").textContent = state.run_id || "No active run";
+    $("service-events").textContent = json(state.events);
+    $("ai-smoke").disabled = busy || state.llm_mode !== "gemini" || state.debug_ai_calls_remaining === 0;
+    return state;
+  } catch (error) { notice(error.message); }
+}
+$("preset").addEventListener("change", loadRequest);
+$("load").addEventListener("click", loadRequest);
+$("provider-mode").addEventListener("change", () => {
+  try {
+    const body = JSON.parse($("request").value);
+    body.provider_mode = $("provider-mode").value;
+    $("request").value = json(body);
+  } catch (_) { notice("Fix the request JSON or reload the standard readings first."); }
+});
+$("run").addEventListener("click", () => task($("run"), async () => {
+  const result = await api("/debug/run", JSON.parse($("request").value));
+  showResult(result);
+}));
+$("ai-smoke").addEventListener("click", () => task($("ai-smoke"), async () => {
+  $("ai-result").textContent = json(await api("/debug/ai-smoke", {}));
+  $("ai-result").hidden = false;
+}));
+async function init() {
+  const state = await refresh();
+  try {
+    cases = (await api("/debug/templates")).templates;
+    for (const item of cases) {
+      const option = document.createElement("option");
+      option.value = item.request.scenario + ":" + item.request.variant;
+      option.textContent = item.label;
+      $("preset").append(option);
+    }
+    $("preset").value = "S05:base";
+    $("provider-mode").value = state && state.llm_mode === "gemini" ? "gemini" : "fixture";
+    loadRequest();
+  } catch (error) { notice(error.message); }
+}
+init();
+setInterval(() => { if (!busy) refresh(); }, 5000);
+</script>
+</body>
+</html>

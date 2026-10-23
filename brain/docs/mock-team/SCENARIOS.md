@@ -77,7 +77,7 @@ The shared factory accepts the following keys in features. These are CIVIS inter
 
 Enabled selection never bypasses common validation, preview, approval or caps. Preview has no implicit safe default. Shared fixtures expose methods through ToolPeer.call_tool; only the common core invokes them.
 
-Elyes freezes these inner fixture fields before peer execution tests: guardian has score, score_scale, thresholds, approve, token_lifetime_ticks and optional refusal_code; preview has available, safe and reason; twin_outcome has status, optional code/details. Values and scale/lifetimes are explicitly test-only. Fake Guardian generates a token in memory bound to the normalized request. No token string belongs in fixture JSON. Full real token format remains a live partner gap.
+Elyes freezes these inner fixture fields before peer execution tests: guardian has score, score_scale, thresholds, approve, token_lifetime_seconds and optional refusal_code; preview has available, safe and reason; twin_outcome has status, optional code/details. Score values/thresholds are explicitly test-only. Token lifetime is in simulated seconds, capped at the agreed 60 seconds. Fake Guardian generates a token in memory bound to the normalized request. No token string belongs in fixture JSON. Full real token format remains a live partner gap.
 
 The parameter manifest uses current Twin ParamInfo keys: name, type, choices, min_value, max_value, unit. Actual current dispatch inputs are unit_type, destination and units. Allowed carriers/choices/bounds are provided in the case, never guessed by the AI.
 
@@ -86,3 +86,38 @@ Water config may include safe_valve_choices, a list of explicitly supported fixt
 Medical Incident.facts carries destination and ambulance_available_by_carrier derived from actual units_free readings at dispatch carriers. Preserve those availability reading IDs as well as the call reading IDs. Units are calls/min for emergency_calls and units for units_free. Unavailable/unknown availability cannot justify dispatch.
 
 PlanningContext.evidence_readings carries trusted-selected original readings, including earlier persistence ticks; current batch stays unchanged. The shared ledger resolves old source IDs. No reconstruction or invented value replaces missing historical evidence.
+
+## Implementation revision, 11 October
+
+The shared factory, peers, MCP tools and all five scenario modules are integrated locally. See HANDOVER.md for actual support and limitations.
+
+Case format additions:
+
+- caps maps every touched domain to a discovered fixture action limit (integer or explicit null). Shared nodes require each domain's limit.
+- guardian.thresholds contains reading and each exercised risk tier, all on guardian.score_scale. These numbers are synthetic fixture configuration, never live defaults.
+- guardian.scores optionally overrides score by reading ID; claim_overrides is a test fault-injection field.
+- twin_outcome.commit_available explicitly advertises fixture_commit. Missing support leaves pending.
+- expected.final_statuses is the ordered list of last-batch decision statuses; effects, provider_calls and actuate_calls are optional exact counts. reason_contains optionally checks a refusal explanation.
+
+~~~json
+{
+  "guardian": {
+    "score": 95.0,
+    "score_scale": 100.0,
+    "thresholds": {"reading": 60.0, "R1": 65.0, "R2": 80.0, "R3": 90.0},
+    "approve": true,
+    "token_lifetime_seconds": 60
+  },
+  "preview": {"available": true, "safe": true, "reason": "Declared synthetic preview"},
+  "twin_outcome": {"status": "committed"},
+  "expected": {"final_statuses": ["committed"], "effects": 1, "provider_calls": 1, "actuate_calls": 1}
+}
+~~~
+
+Fake Guardian generates unsigned JWS in memory with iss, aud, jti, run_id, iat, exp, action, targets, params, score and score_scale. It is test-only; real token claims/signature verification require confirmation with 9antra/Twin. Tokens never belong in case JSON.
+
+Additional internal features: peer_timeout_seconds, ai_timeout_seconds, ai_max_calls_per_run and guardian_contract_confirmed. Existing five feature keys and frozen factory/signatures are preserved. Decision.peer_details is an additive redacted object that retains cap/refusal detail.
+
+Some shared-core regression tests use synthetic detector stubs. Member acceptance now separately runs all actual S01-S05 modules, including a mixed five-scenario test and real HTTP/MCP transport.
+
+11 October alignment: signal params use plan (choice); valve uses position (number, %); dispatch uses unit_type (choice), destination (node), units (integer). Ambulance availability requires channel=ambulance, unit=units and a current whole count. Every persistence reading ID is retained. expected may also assert action, targets, params, source_reading_ids and peer_code.

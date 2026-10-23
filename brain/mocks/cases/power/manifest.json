@@ -1,0 +1,9 @@
+{
+  "scenario_id": "S03",
+  "fixture_only": true,
+  "cases": [
+    "base_case.json",
+    "refusal_case.json"
+  ],
+  "effects": 0
+}

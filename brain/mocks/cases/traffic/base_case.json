@@ -1,31 +1,167 @@
 {
   "scenario_id": "S01",
   "fixture_only": true,
-  "case_id": "base_case",
   "assumptions": [
-    "Illustrative congestion readings use the configured percent unit.",
-    "Two distinct consecutive ticks exceed the illustrative threshold.",
-    "The signal-plan action is advertised and permitted by the fixture policy."
+    "Synthetic percent readings and fixture-only threshold, not approved live safety limits.",
+    "Two distinct consecutive high ticks are required by TrafficScenario.",
+    "Partner logic and approval tokens in this case are test stand-ins."
   ],
-  "nodes": [],
-  "actions": [],
-  "batches": [],
+  "nodes": [
+    {
+      "node_id": "TRAFFIC-01",
+      "domains": [
+        "traffic"
+      ],
+      "role": "fixture",
+      "actuators": [
+        "set_signal_plan"
+      ],
+      "neighbours": []
+    }
+  ],
+  "actions": [
+    {
+      "action": "set_signal_plan",
+      "domain": "traffic",
+      "risk": "R1",
+      "preview_required": false,
+      "params": [
+        {
+          "name": "plan",
+          "type": "choice",
+          "choices": [
+            "normal",
+            "favor_main_road",
+            "all_red"
+          ]
+        }
+      ],
+      "target_nodes": [
+        "TRAFFIC-01"
+      ],
+      "action_cap": 1
+    }
+  ],
   "policy": {
+    "status": "illustrative fixture policy, not triplet-approved safety thresholds",
+    "fixture_only": true,
+    "scenario_id": "S01",
     "sensor": "congestion_index",
     "unit": "percent",
     "threshold_min": 80.0,
     "persistence_ticks": 2,
-    "allowed_actions": ["set_signal_plan"],
+    "allowed_actions": [
+      "set_signal_plan"
+    ],
     "risk": "R1"
   },
   "guardian": {
-    "expected_decision": "approve_exact_action"
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_seconds": 60
+  },
+  "preview": {
+    "available": false,
+    "safe": false
+  },
+  "caps": {
+    "traffic": 1
   },
   "twin_outcome": {
-    "expected": "success"
+    "status": "committed",
+    "code": "FIXTURE_COMMITTED"
   },
-  "preview": {},
   "ai_plan": {
-    "expected": "one_supported_signal_plan"
-  }
+    "proposals": [
+      {
+        "action": "set_signal_plan",
+        "targets": [
+          "TRAFFIC-01"
+        ],
+        "params": {
+          "plan": "favor_main_road"
+        },
+        "risk": "R1",
+        "preview_required": false,
+        "source_reading_ids": [
+          "traffic-1",
+          "traffic-2"
+        ],
+        "reason": "Sustained congestion supports the advertised priority plan."
+      }
+    ],
+    "alerts": []
+  },
+  "expected": {
+    "final_statuses": [
+      "committed"
+    ],
+    "effects": 1,
+    "provider_calls": 1,
+    "actuate_calls": 1,
+    "action": "set_signal_plan",
+    "targets": [
+      "TRAFFIC-01"
+    ],
+    "params": {
+      "plan": "favor_main_road"
+    },
+    "source_reading_ids": [
+      "traffic-1",
+      "traffic-2"
+    ],
+    "peer_code": "FIXTURE_COMMITTED"
+  },
+  "batches": [
+    {
+      "run_id": "traffic-primary-mock",
+      "tick": 1,
+      "time": "2026-10-09T08:00:01.000Z",
+      "tick_seconds": 1,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "traffic-primary-mock",
+          "reading_id": "traffic-1",
+          "tick": 1,
+          "timestamp": "2026-10-09T08:00:01.000Z",
+          "node_id": "TRAFFIC-01",
+          "device_id": "traffic.sensor",
+          "sensor": "congestion_index",
+          "channel": null,
+          "value": 85,
+          "unit": "percent"
+        }
+      ]
+    },
+    {
+      "run_id": "traffic-primary-mock",
+      "tick": 2,
+      "time": "2026-10-09T08:00:02.000Z",
+      "tick_seconds": 1,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "traffic-primary-mock",
+          "reading_id": "traffic-2",
+          "tick": 2,
+          "timestamp": "2026-10-09T08:00:02.000Z",
+          "node_id": "TRAFFIC-01",
+          "device_id": "traffic.sensor",
+          "sensor": "congestion_index",
+          "channel": null,
+          "value": 95,
+          "unit": "percent"
+        }
+      ]
+    }
+  ],
+  "case_id": "base_case"
 }

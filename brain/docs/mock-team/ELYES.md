@@ -1,5 +1,7 @@
 # Elyes: S03 Power, S04 Air Quality and the shared Brain core
 
+Implementation update, 9 October: your reduced scenarios and shared core are implemented. See [handover](HANDOVER.md) and [verification/progress](progress/elyes.md). The steps below remain the task checklist; live Gemini is verified; live partner checks and member review are still pending.
+
 Branch: `codex/civis-elyes`, the protected integration branch. You review the three member PRs. Your two alert-focused scenarios leave time for the shared integration work.
 
 The release contains five selected scenarios. The October checkpoint's eight incident rows remain the broader catalog; the chosen five names are a planning subset, not a claim of recorded triplet approval. Accident, low water and fire are deferred.
@@ -15,7 +17,7 @@ Your own scenarios:
 - `config/scenarios/power.json`, `config/scenarios/air_quality.json`.
 - `docs/mock-team/progress/elyes.md`.
 
-Shared core: normalization, per-scenario/run state, static registry, models/ports/settings, one Gemini adapter, reusable fake peers, MCP/auth, trust/preview/action validation, execution, logs, CI and release evidence. Paths are relative to `brain/`. Leave traffic/water/emergency implementations, tests, fixtures and policies to their owners. Do not implement `twin/` or `guardian/`.
+Shared core: normalization, per-scenario/run state, static registry, models/ports/settings, one configured AI adapter, reusable fake peers, MCP/auth, trust/preview/action validation, execution, logs, CI and release evidence. Paths are relative to `brain/`. Leave traffic/water/emergency implementations, tests, fixtures and policies to their owners. Do not implement `twin/` or `guardian/`.
 
 Fixed scenario signatures:
 
@@ -87,7 +89,7 @@ Your Power/AQ `draft_plan` methods return alert-only typed Plans by default. The
 
 Implement the shared core in this order:
 
-1. One `GeminiPlanProvider` using the pinned SDK, schema-constrained `Plan`, bounded context, timeout and call budget. No tools/search/paid fallback. A failed free API call becomes blocked, never random substitute success.
+1. One active `GeminiPlanProvider` using the pinned Google GenAI SDK Interactions API, structured JSON output and local schema-constrained `Plan` validation, bounded context, timeout and call budget. Use the selected free-tier model gemini-3.5-flash-lite. Keep requests stateless, bounded and without external search tools. No tools/search/paid fallback. A failed free API call becomes blocked, never random substitute success.
 2. Live `ToolPeer` adapters use configured endpoints/caller keys and discovered protocol/tool schemas. Missing Guardian mappings block the joint workflow.
 3. Select usable evidence through Guardian's actual checks. Use agreed numeric cut-offs only. A score/cached score is not exact-action permission.
 4. Invoke each applicable scenario's constrained `draft_plan` with a restricted action manifest. Physical proposals still receive shared checks for known action, carriers, params, evidence, risk and preview.
@@ -178,4 +180,4 @@ Review Elyes-owned staged changes and all scenario integration evidence. Check s
 - **9 October, 18:00:** all five scenario success/refusal checks, safeguards and live smoke checks complete.
 - **9 October, 20:00:** release candidate handed over before 10 October.
 
-The core is the schedule's critical dependency. If partner preview/Guardian schemas cannot be confirmed, report the blocked live pathways and fixture-only demonstrations accurately. No last-minute extra scenario, dashboard or AI framework belongs in this checkpoint.
+The core is the schedule's critical dependency. If partner preview/Guardian schemas cannot be confirmed, report the blocked live pathways and fixture-only demonstrations accurately. No extra scenario or AI framework belongs in this checkpoint. The requested local debugging console reuses the shared runtime and existing dependencies; it adds no member task or partner interface.

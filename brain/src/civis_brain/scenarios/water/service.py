@@ -1,5 +1,7 @@
 from civis_brain.contracts import DetectionResult, Node, Plan, PlanningContext, ReadingsBatch
 from civis_brain.ports import PlanProvider
+from civis_brain.scenarios.water.detector import detect_high_water
+from civis_brain.scenarios.water.planner import plan_response
 
 
 class WaterScenario:
@@ -8,7 +10,7 @@ class WaterScenario:
     def detect(
         self, batch: ReadingsBatch, nodes: list[Node], policy: dict, state: dict
     ) -> DetectionResult:
-        raise NotImplementedError("Meriem: S02 detection; see docs/mock-team/MERIEM.md")
+        return detect_high_water(batch, nodes, policy, state)
 
     async def draft_plan(self, context: PlanningContext, provider: PlanProvider) -> Plan:
-        raise NotImplementedError("Meriem: S02 response; see docs/mock-team/MERIEM.md")
+        return await plan_response(context, provider)

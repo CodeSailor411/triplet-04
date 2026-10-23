@@ -1,5 +1,8 @@
+import os
+from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,8 +21,34 @@ class Settings(BaseSettings):
     guardian_score_tool: str = "CONFIRM_WITH_9ANTRA"
     guardian_token_tool: str = "CONFIRM_WITH_9ANTRA"
     llm_mode: Literal["fixture", "gemini"] = "fixture"
-    gemini_api_key: str = ""
+    gemini_api_key: str = Field(default="", repr=False)
     gemini_model: str = "gemini-3.5-flash-lite"
-    ai_timeout_seconds: float = 15
-    ai_max_calls_per_run: int = 3
-    peer_timeout_seconds: float = 5
+    ai_timeout_seconds: float = Field(default=60, gt=0, le=60)
+    ai_max_calls_per_run: int = Field(default=3, ge=1, le=20)
+    peer_timeout_seconds: float = Field(default=3, gt=0, le=30)
+    max_evidence_age_seconds: float = Field(default=10, gt=0, le=60)
+    twin_feed_enabled: bool = False
+    twin_events_url: str = "http://127.0.0.1:8000/events"
+    mock_integration_profile: bool = False
+    scenario_policy_file: str = ""
+
+    peer_mode: Literal["fixture", "live"] = "fixture"
+    brain_config_root: str = str(Path(__file__).resolve().parents[2])
+    brain_fixture_case: str = "mocks/cases/air_quality/base_case.json"
+    guardian_contract_confirmed: bool = False
+    guardian_mapping_file: str = ""
+    twin_preview_tool: str | None = "preview_action"
+    twin_commit_tool: str | None = None
+
+    brain_debug_enabled: bool = True
+
+
+def load_settings() -> Settings:
+    """An explicit partner environment must never fall back to the offline .env."""
+    selected = os.environ.get("CIVIS_ENV_FILE")
+    if selected:
+        path = Path(selected).expanduser().resolve()
+        if not path.is_file():
+            raise ValueError("Selected CIVIS_ENV_FILE does not exist")
+        return Settings(_env_file=path)
+    return Settings()

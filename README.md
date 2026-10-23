@@ -61,6 +61,6 @@ Each team works inside its assigned layer folder and coordinates shared changes 
 
 ## Current status
 
-The shared layout is scaffolded. CIVIS's primary mock environment, fixed interfaces and four-person work plan are in [brain/](brain/README.md). Its business functions remain assigned to the team. Twin development currently exists on Trinity's separate development branches; do not assume unmerged branch features are already on the layer branch.
+CIVIS's five primary mock scenarios and shared runtime are integrated on codex/civis-elyes for the limited brain-mock-1 checkpoint. The published Trinity twin-mock-1 source is present unchanged in twin/. Guardian has not supplied its mock. Full partner readiness remains false. See the [mock checkpoint index](mockups/testing/README.md), [Brain handover](brain/docs/mock-team/HANDOVER.md) and [audit](brain/docs/mock-team/HANDOVER_AUDIT_2026-10-11.md) for startup, verification and unresolved dependencies.
 
 Reports, pitch, shared integration/Test Book and Compose placeholders remain for the triplet's later work. The repository is named `triplet-04`.

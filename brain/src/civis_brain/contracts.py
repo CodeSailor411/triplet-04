@@ -8,11 +8,18 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 
-Domain = Literal["traffic", "water", "power", "air_quality", "emergency"]
+# Discovery is extensible; the explicit scenario registry controls what we execute.
+Domain = str
 Risk = Literal["R1", "R2", "R3"]
 IncidentKind = Literal[
-    "congestion", "road_accident", "flood", "low_water", "power_fault",
-    "air_pollution", "fire", "medical",
+    "congestion",
+    "road_accident",
+    "flood",
+    "low_water",
+    "power_fault",
+    "air_pollution",
+    "fire",
+    "medical",
 ]
 
 
@@ -42,6 +49,8 @@ class Reading(WireModel):
     channel: str | None
     value: FiniteFloat | None
     unit: str
+    lat: FiniteFloat | None = Field(default=None, ge=-90, le=90)
+    lon: FiniteFloat | None = Field(default=None, ge=-180, le=180)
 
 
 class ReadingsBatch(WireModel):
@@ -59,6 +68,8 @@ class Node(WireModel):
     role: str
     actuators: list[str] = Field(default_factory=list)
     neighbours: list[str] = Field(default_factory=list)
+    lat: FiniteFloat | None = Field(default=None, ge=-90, le=90)
+    lon: FiniteFloat | None = Field(default=None, ge=-180, le=180)
 
 
 class ActionInfo(WireModel):
@@ -140,6 +151,7 @@ class Decision(WireModel):
     targets: list[str] = Field(default_factory=list)
     params: dict[str, Any] = Field(default_factory=dict)
     peer_code: str | None = None
+    peer_details: dict[str, Any] = Field(default_factory=dict)
 
 
 class DecisionBatch(WireModel):

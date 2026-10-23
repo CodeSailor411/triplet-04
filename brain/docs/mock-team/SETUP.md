@@ -97,15 +97,15 @@ In VS Code open brain/civis.code-workspace or select interpreter brain/.venv/Scr
 | pydantic-settings | 2.15.0 | Local environment settings |
 | Official MCP SDK | 2.3.0 | Shared server/client; protocol 2026-07-28 |
 | httpx / httpx2 | 0.28.1 / 2.13.1 | HTTP tests/AI SDK and MCP transport |
-| google-genai | 2.28.0 | Shared free Gemini adapter |
+| google-genai | 2.28.0 | Direct Gemini Interactions API |
 | pytest / pytest-asyncio | 9.1.1 / 1.4.0 | Unit and async workflow tests |
 | Ruff | 0.16.10 | Lint checks |
 
-requirements-lock.txt includes transitive dependencies. The lock is unchanged for this reassignment. Only Elyes approves dependency changes. Do not let an AI assistant regenerate the environment to fix a scenario bug.
+requirements-lock.txt includes transitive dependencies. The lock remains pinned. jsonschema 4.26.0 is also declared directly for discovered request validation; it was already in the lock. Only Elyes approves dependency changes. Do not let an AI assistant regenerate the environment to fix a scenario bug.
 
 | Person | Extra requirement | Focus |
 | --- | --- | --- |
-| Elyes | Own Google AI Studio key for shared adapter/live smoke; GitHub CLI optional | Common runtime, free API, MCP, auth, approvals, two small scenarios |
+| Elyes | Own Gemini API key for shared adapter/live smoke; GitHub CLI optional | Common runtime, free API, MCP, auth, approvals, two small scenarios |
 | Yassine | None beyond common setup; no API key needed | Traffic detector/response, JSON fixtures, pytest |
 | Meriem | None beyond common setup; no API key needed | Water evidence/topology/preview rules, async response/tests |
 | Maram | None beyond common setup; no API key needed | Medical event/carrier/destination/availability, async response/tests |
@@ -114,7 +114,7 @@ Each scenario uses an injected provider; it does not install another framework o
 
 ## 6. Local keys and shared connections
 
-Default LLM_MODE=fixture is for repeatable tests. Elyes obtains a key at https://aistudio.google.com/apikey and edits ignored brain/.env locally. Set GEMINI_API_KEY and switch LLM_MODE=gemini only when the shared adapter is implemented. Configured model remains gemini-3.5-flash-lite; verify free-tier availability/access in the account before the live check. Quota/timeout is a blocked outcome; no paid fallback.
+Default LLM_MODE=fixture keeps automated tests offline. In ignored brain/.env, Elyes sets GEMINI_API_KEY, LLM_MODE=gemini, GEMINI_MODEL=gemini-3.5-flash-lite and AI_TIMEOUT_SECONDS=60. Keep PEER_MODE=fixture until partner contracts are confirmed. Use scripts/smoke_gemini.py for a synthetic API check, or the debug page for an entire mock action run. Requests use structured output and local validation with no search, retry loop or automatic fallback. The key belongs only in the local environment, never request JSON. See DEBUGGING.md for exact browser steps.
 
 Do not paste real keys/tokens into an AI chat, fixture, screenshot, commit or PR. Fixtures and automated tests do not need credentials.
 
@@ -122,7 +122,7 @@ Outbound TWIN_BRAIN_KEY and GUARDIAN_BRAIN_KEY must match the keys supplied priv
 
 Guardian tool names remain CONFIRM_WITH_9ANTRA until confirmed. Shared code must not start a joint workflow with guessed mappings. Partner schemas, preview and caps are tracked in PARTNER_GAPS.md.
 
-## 7. Start the transport scaffold
+## 7. Start the partial Brain mock
 
 From brain/:
 
@@ -130,15 +130,15 @@ From brain/:
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
-Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Initial ready=false and NOT_IMPLEMENTED workflow replies are expected until the team implements them. Ctrl+C stops the process.
+Debug console: http://127.0.0.1:8001/. Health: http://127.0.0.1:8001/health. MCP: http://127.0.0.1:8001/mcp. Readiness stays false until all five workflows and live checks pass. S03/S04 and shared tools work; relevant unfinished member inputs return SCENARIO_NOT_IMPLEMENTED. Ctrl+C stops the process.
 
 A second PowerShell terminal in brain/ can check the initial transport:
 
 ~~~powershell
-.\.venv\Scripts\python.exe scripts/smoke_scaffold.py
+.\.venv\Scripts\python.exe scripts/smoke_mcp.py
 ~~~
 
-This smoke script checks initial transport/auth/protocol, not completed scenarios. Elyes updates smoke expectations after implementation rather than claiming scaffold responses are final behavior.
+This script starts and closes a temporary local fixture server and verifies real MCP negotiation, auth, Air Quality evaluation, read views and Guardian-only invalidation. It calls no external peer/API. See HANDOVER.md for four actual scenario replays and the separate live AI command.
 
 ## 8. Your first AI-assistant prompt
 
@@ -153,8 +153,9 @@ Then use the separate prompt at each step of your own card. Read the explanation
 - [uv installation, including WinGet](https://docs.astral.sh/uv/getting-started/installation/)
 - [VS Code Python setup](https://code.visualstudio.com/docs/python/python-tutorial)
 - [MCP SDK mounting](https://py.sdk.modelcontextprotocol.io/run/asgi/)
-- [Gemini API setup](https://ai.google.dev/gemini-api/docs/get-started)
-- [Gemini free-tier pricing](https://ai.google.dev/gemini-api/docs/pricing)
-- [Configured model](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
+- [Gemini key management](https://aistudio.google.com/apikey)
+- [Gemini Interactions API](https://ai.google.dev/gemini-api/docs/interactions-overview)
+- [Structured JSON output](https://ai.google.dev/gemini-api/docs/structured-output)
+- [Free-tier pricing](https://ai.google.dev/gemini-api/docs/pricing)
 
-Windows preparation checks run in GitHub Actions too. No live AI request has been made by this setup.
+Windows checks run in GitHub Actions with no live API/peer calls. Python and package versions remain as recorded in VERSIONS.md. Live evidence and remaining partner gaps are recorded in HANDOVER.md.
