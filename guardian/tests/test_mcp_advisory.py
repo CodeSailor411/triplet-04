@@ -120,3 +120,17 @@ def test_capabilities_publish_the_configured_protocol_threshold_and_band():
     assert output["decision_threshold"] == app.DECISION_THRESHOLD
     assert output["uncertainty_band"] == app.UNCERTAINTY_BAND
     assert {"describe_capabilities", "evaluate_reading_advisory"} <= set(output["supported_tools"])
+
+
+def test_brain_contract_tools_are_registered_with_stable_names():
+    import unified_api
+    from contract import MCP_PUBLIC_TOOL_NAMES, MCP_TOOL_VERIFY_ACTION_TOKEN
+
+    async def _list_tools():
+        async with Client(unified_api.mcp_server) as client:
+            return await client.list_tools()
+
+    tools = asyncio.run(_list_tools()).tools
+    names = {tool.name for tool in tools}
+    assert set(MCP_PUBLIC_TOOL_NAMES) <= names
+    assert MCP_TOOL_VERIFY_ACTION_TOKEN not in names

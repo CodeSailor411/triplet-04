@@ -22,6 +22,7 @@ def compute_trust_score(
     *,
     trusted_threshold: float = TRUSTED_THRESHOLD,
     suspect_threshold: float = SUSPECT_THRESHOLD,
+    record_reputation: bool = True,
 ) -> TrustVerdict:
     if (isinstance(trusted_threshold, bool) or isinstance(suspect_threshold, bool)
             or not isinstance(trusted_threshold, (int, float))
@@ -68,14 +69,14 @@ def compute_trust_score(
 
     score = max(0.0, min(1.0, score))
 
-    if score > trusted_threshold:
+    if score >= trusted_threshold:
         verdict = "trusted"
     elif score > suspect_threshold:
         verdict = "suspect"
     else:
         verdict = "compromised"
 
-    if verdict != "trusted":
+    if record_reputation and verdict != "trusted":
         reputation.record_flag(reading.sensor_id)
 
     return TrustVerdict(

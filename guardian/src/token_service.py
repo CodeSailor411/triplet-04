@@ -48,7 +48,7 @@ class ActionTokenService:
     def __init__(self, private_key: Ed25519PrivateKey | None = None,
                  public_key: Ed25519PublicKey | None = None, *, issuer: str = "guardian",
                  audience: str = "twin", clock=time.time, replay_store: ReplayStore | None = None,
-                 lifetime_seconds: int = 60):
+                 lifetime_seconds: int = 60, kid: str | None = None):
         self.private_key = private_key
         self.public_key = public_key or (private_key.public_key() if private_key else None)
         if private_key is not None and not isinstance(private_key, Ed25519PrivateKey):
@@ -61,6 +61,9 @@ class ActionTokenService:
             if derived != configured:
                 raise ValueError("configured Ed25519 public key does not match the private key")
         self.issuer, self.audience, self.clock = issuer, audience, clock
+        self.kid = kid or os.environ.get("GUARDIAN_TOKEN_KID", "guardian-ed25519-v1")
+        if not self.kid or len(self.kid) > 128:
+            raise ValueError("key id must be a non-empty string of at most 128 characters")
         self.replay_store = replay_store or ReplayStore()
         self.lifetime_seconds = lifetime_seconds
         if lifetime_seconds != 60:
@@ -82,26 +85,35 @@ class ActionTokenService:
                 raise ValueError("public key must be Ed25519")
         return cls(private, public, issuer=os.environ.get("GUARDIAN_TOKEN_ISSUER", "guardian"),
                    audience=os.environ.get("GUARDIAN_TOKEN_AUDIENCE", "twin"), clock=clock,
+                   kid=os.environ.get("GUARDIAN_TOKEN_KID", "guardian-ed25519-v1"),
                    replay_store=replay_store)
 
     def issue(self, *, run_id: str, action: str, parameters: dict[str, Any], reading_id: str,
-              trust_score: float, risk_level: str) -> tuple[str, dict[str, Any]]:
+              trust_score: float, risk_level: str, targets: list[str] | None = None,
+              idempotency_key: str = "", reading_ids: list[str] | None = None,
+              preview_id: str | None = None) -> tuple[str, dict[str, Any]]:
         if self.private_key is None:
             raise TokenError("signing_key_unavailable")
         now = self.clock()
         if isinstance(now, bool) or not isinstance(now, (int, float)) or not math.isfinite(now):
             raise TokenError("invalid_clock_value")
         claims = {
-            "v": 1, "token_id": str(uuid.uuid4()), "iss": self.issuer, "aud": self.audience,
-            "run_id": run_id, "action": action, "parameters": parameters,
-            "iat": now, "exp": now + 60, "reading_id": reading_id,
+            "v": 1, "kid": self.kid, "token_id": str(uuid.uuid4()),
+            "run_id": run_id, "action": action,
+            "targets": list(targets or []), "params": parameters,
+            "idempotency_key": idempotency_key,
+            "reading_ids": list(reading_ids or [reading_id]),
+            "preview_id": preview_id,
+            "iss": self.issuer, "aud": self.audience,
+            "iat": now, "exp": now + 60,
             "trust_score": trust_score, "risk_level": risk_level,
         }
         payload = _b64(canonical_json(claims))
         signing_input = f"g1.{payload}".encode("ascii")
         return f"g1.{payload}.{_b64(self.private_key.sign(signing_input))}", claims
 
-    def verify(self, token: str, *, action: str, parameters: dict[str, Any], consume: bool = True) -> dict[str, Any]:
+    def verify(self, token: str, *, action: str, parameters: dict[str, Any], consume: bool = True,
+               targets: list[str] | None = None, idempotency_key: str | None = None) -> dict[str, Any]:
         if self.public_key is None:
             raise TokenError("verification_key_unavailable")
         try:
@@ -116,9 +128,10 @@ class ActionTokenService:
                 raise TokenError("malformed_claims")
             if canonical_json(claims) != payload_bytes:
                 raise TokenError("noncanonical_token")
-            expected_claims = {"v", "token_id", "iss", "aud", "run_id", "action", "parameters",
-                               "iat", "exp", "reading_id", "trust_score", "risk_level"}
-            if set(claims) != expected_claims or not isinstance(claims["parameters"], dict):
+            expected_claims = {"v", "kid", "token_id", "iss", "aud", "run_id", "action", "targets",
+                               "params", "idempotency_key", "reading_ids", "preview_id",
+                               "iat", "exp", "trust_score", "risk_level"}
+            if set(claims) != expected_claims or not isinstance(claims["params"], dict):
                 raise TokenError("malformed_claims")
             self.public_key.verify(signature, f"g1.{parts[1]}".encode("ascii"))
         except TokenError:
@@ -126,9 +139,14 @@ class ActionTokenService:
         except (ValueError, TypeError, json.JSONDecodeError, InvalidSignature) as exc:
             raise TokenError("invalid_signature_or_malformed_token") from exc
         if (isinstance(claims.get("v"), bool) or claims.get("v") != 1
+                or claims.get("kid") != self.kid
                 or claims.get("iss") != self.issuer or claims.get("aud") != self.audience):
-            raise TokenError("wrong_issuer_or_audience")
-        if (not all(isinstance(claims.get(k), str) and claims[k] for k in ("token_id", "run_id", "action", "reading_id", "risk_level"))
+            raise TokenError("wrong_kid_issuer_or_audience")
+        if (not all(isinstance(claims.get(k), str) and claims[k] for k in ("token_id", "run_id", "action", "risk_level"))
+                or not isinstance(claims.get("targets"), list)
+                or not isinstance(claims.get("reading_ids"), list)
+                or not all(isinstance(v, str) and v for v in claims["reading_ids"])
+                or not isinstance(claims.get("idempotency_key"), str)
                 or isinstance(claims.get("trust_score"), bool)
                 or not isinstance(claims.get("trust_score"), (int, float))
                 or not math.isfinite(claims["trust_score"]) or not 0 <= claims["trust_score"] <= 1):
@@ -140,8 +158,11 @@ class ActionTokenService:
             raise TokenError("invalid_expiry")
         if self.clock() >= claims["exp"]:
             raise TokenError("expired_token")
-        if claims.get("action") != action or canonical_json(claims.get("parameters")) != canonical_json(parameters):
+        if claims.get("action") != action or canonical_json(claims.get("params")) != canonical_json(parameters):
             raise TokenError("action_or_parameters_mismatch")
+        if ((targets is not None and canonical_json(claims.get("targets")) != canonical_json(targets))
+                or (idempotency_key is not None and claims.get("idempotency_key") != idempotency_key)):
+            raise TokenError("targets_or_idempotency_mismatch")
         if consume and not self.replay_store.consume(str(claims.get("token_id", ""))):
             raise TokenError("replayed_token")
         return claims

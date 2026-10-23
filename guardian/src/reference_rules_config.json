@@ -1,8 +1,8 @@
 {
   "trust_cutoffs": {
     "trusted_min": 0.70,
-    "degraded_min": 0.40,
-    "confirmation": "Working defaults from the triplet prompt; partner confirmation pending"
+    "degraded_min": 0.30,
+    "confirmation": "# CONFIRM: CIVIS to approve published verdict cut-offs"
   },
   "penalties": {
     "out_of_bounds": 0.50,

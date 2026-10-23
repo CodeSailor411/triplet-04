@@ -1,7 +1,7 @@
 """Bridge configured Twin SSE into the local Guardian API process.
 
-Run with: python guardian/src/twin_runner.py
-Optional one-off MCP call: python guardian/src/twin_runner.py --tool get_clock --arguments '{}'
+Run with: python .\src\twin_runner.py
+Optional one-off MCP call: pass a configured tool name with --tool and JSON arguments.
 """
 from __future__ import annotations
 

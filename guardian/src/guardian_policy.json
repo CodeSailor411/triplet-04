@@ -15,6 +15,7 @@
     "action_domains": {"set_priority_mode": "Telecom", "send_collection_truck": "Waste", "set_signal_plan": "Traffic", "set_valve_position": "Water", "set_grid_switch": "Power", "dispatch": "Emergency"},
     "power_action_cap": 3,
     "power_action_scope": "per_run",
-    "rollback_pool_sizes": {"Telecom": 3, "Waste": 3}
+    "rollback_pool_sizes": {"Telecom": 3, "Waste": 3},
+    "capacity_source": "offline_fallback"
   }
 }
