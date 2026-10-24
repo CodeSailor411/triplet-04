@@ -62,11 +62,8 @@ async def test_low_base_commits_exactly_one_valve_change(tmp_path):
 
 
 async def test_low_refusal_unsafe_preview_blocks(tmp_path):
-    # Reuse the S02 refusal fixture's unsafe-preview shape and expectations.
-    refusal = load_case("refusal")
-    case = load_case("low_base")
-    case["preview"] = refusal["preview"]
-    exp = refusal["expected"]
+    case = load_case("low_refusal")
+    exp = case["expected"]
     results, twin, guardian, provider = await run_case(case, tmp_path)
     decisions = results[-1].decisions
     assert len(decisions) == 1 and decisions[0].status == exp["decision_status"]
@@ -95,6 +92,15 @@ async def test_guardian_denial_blocks(tmp_path):
     results, twin, guardian, provider = await run_case(case, tmp_path)
     assert results[-1].decisions[0].status == "blocked"
     assert count(twin.calls, "actuate") == 0 and not twin.effects
+
+
+async def test_expired_approval_never_actuates(tmp_path):
+    # A zero-second token lifetime means the approval is already expired when used.
+    case = load_case("low_base")
+    case["guardian"]["token_lifetime_seconds"] = 0
+    results, twin, guardian, provider = await run_case(case, tmp_path)
+    assert all(row.status != "committed" for row in results[-1].decisions)
+    assert not twin.effects
 
 
 async def test_normal_water_does_nothing(tmp_path):

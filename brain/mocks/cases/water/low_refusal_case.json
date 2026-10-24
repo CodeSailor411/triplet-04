@@ -1,0 +1,202 @@
+{
+  "scenario_id": "S07",
+  "fixture_only": true,
+  "assumptions": [
+    "Synthetic topology: valve-02 is declared a supply-preserving valve choice for reservoir-01 (fixture only, not live topology).",
+    "threshold_max 30 cm, recovery_level 45 cm and persistence 2 ticks are mock values, not hydraulic safety limits.",
+    "The valve direction and the value 80 are fixture values, deliberately not copied from S02.",
+    "The datum cannot be checked from a Reading (no datum field); it is declared in policy only.",
+    "Preview, Guardian approval and Twin commit are fixture answers and do not prove live support.",
+    "Refusal variant: unsafe preview must block before approval and actuation (fixture only)."
+  ],
+  "nodes": [
+    {
+      "node_id": "reservoir-01",
+      "domains": [
+        "water"
+      ],
+      "role": "reservoir",
+      "actuators": [],
+      "neighbours": [
+        "valve-02"
+      ]
+    },
+    {
+      "node_id": "valve-02",
+      "domains": [
+        "water"
+      ],
+      "role": "valve",
+      "actuators": [
+        "set_valve_position"
+      ],
+      "neighbours": [
+        "reservoir-01"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "action": "set_valve_position",
+      "domain": "water",
+      "risk": "R3",
+      "preview_required": true,
+      "params": [
+        {
+          "name": "position",
+          "type": "number",
+          "choices": null,
+          "min_value": 0,
+          "max_value": 100,
+          "unit": "%"
+        }
+      ],
+      "target_nodes": [
+        "valve-02"
+      ],
+      "action_cap": 1
+    }
+  ],
+  "caps": {
+    "water": 1
+  },
+  "batches": [
+    {
+      "run_id": "run-low-1",
+      "tick": 10,
+      "time": "2026-10-08T10:10:00Z",
+      "tick_seconds": 60.0,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "run-low-1",
+          "reading_id": "wl-r10",
+          "tick": 10,
+          "timestamp": "2026-10-08T10:10:00Z",
+          "node_id": "reservoir-01",
+          "device_id": "lvl-02",
+          "sensor": "water_level",
+          "channel": null,
+          "value": 18.0,
+          "unit": "cm"
+        }
+      ]
+    },
+    {
+      "run_id": "run-low-1",
+      "tick": 11,
+      "time": "2026-10-08T10:11:00Z",
+      "tick_seconds": 60.0,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "run-low-1",
+          "reading_id": "wl-r11",
+          "tick": 11,
+          "timestamp": "2026-10-08T10:11:00Z",
+          "node_id": "reservoir-01",
+          "device_id": "lvl-02",
+          "sensor": "water_level",
+          "channel": null,
+          "value": 15.0,
+          "unit": "cm"
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "fixture_only": true,
+    "scenario_id": "S07",
+    "sensor": "water_level",
+    "unit": "cm",
+    "datum": "reservoir floor (fixture)",
+    "supply_nodes": [
+      "reservoir-01"
+    ],
+    "threshold_max": 30.0,
+    "recovery_level": 45.0,
+    "persistence_ticks": 2,
+    "allowed_actions": [
+      "set_valve_position"
+    ],
+    "risk": "R3",
+    "requires_topology": true,
+    "requires_preview": true,
+    "safe_valve_choices": [
+      {
+        "incident_node_id": "reservoir-01",
+        "targets": [
+          "valve-02"
+        ],
+        "params": {
+          "position": 80
+        },
+        "supply_preserving": true,
+        "reviewed_topology_ref": "FIXTURE-TOPO-S07-01 (synthetic, not live)"
+      }
+    ]
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_seconds": 60
+  },
+  "preview": {
+    "available": true,
+    "safe": false,
+    "reason": "fixture: preview shows an unsafe downstream effect"
+  },
+  "ai_plan": {
+    "proposals": [
+      {
+        "action": "set_valve_position",
+        "targets": [
+          "valve-02"
+        ],
+        "params": {
+          "position": 80
+        },
+        "risk": "R3",
+        "preview_required": true,
+        "source_reading_ids": [
+          "wl-r10",
+          "wl-r11"
+        ],
+        "reason": "Water level stayed below the mock low threshold on two consecutive ticks and a reviewed supply-preserving valve choice exists."
+      }
+    ],
+    "alerts": []
+  },
+  "twin_outcome": {
+    "status": "committed"
+  },
+  "expected": {
+    "decision_status": "blocked",
+    "final_statuses": [
+      "blocked"
+    ],
+    "reason_contains": "preview",
+    "provider_calls": 1,
+    "actuate_calls": 0,
+    "effects": 0,
+    "action": "set_valve_position",
+    "targets": [
+      "valve-02"
+    ],
+    "params": {
+      "position": 80
+    },
+    "source_reading_ids": [
+      "wl-r10",
+      "wl-r11"
+    ],
+    "peer_code": "PREVIEW_UNSAFE"
+  }
+}
