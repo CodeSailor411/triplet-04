@@ -33,6 +33,7 @@ class Capabilities(BaseModel):
     protocol_version: str
     authenticated_as: str | None     # None means the key was missing or unknown
     tools_you_can_call: list[str]
+    features: dict[str, Any] = {}    # what this Twin supports and what is not built (added 23 Oct, CIVIS acceptance list)
 
 
 class NodeList(BaseModel):
@@ -80,7 +81,14 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
         return Capabilities(
             layer="twin", layer_version=__version__, mcp_sdk_version=pkg_version("mcp"),
             protocol_version=ctx.request_context.protocol_version,
-            authenticated_as=who.value if who else None, tools_you_can_call=visible)
+            authenticated_as=who.value if who else None, tools_you_can_call=visible,
+            features={
+                "token_formats": ["g1", "jws-eddsa"], "token_mode": book.cfg.tokens.mode,
+                "token_max_lifetime_seconds": 60, "token_score_range": [0, 1],
+                "preview_action": True, "two_step_commit": False, "idempotency": True,
+                "containment_tools": ["isolate_sensor", "quarantine_device", "rollback_reading", "release_device"],
+                "live_feed": "sse:/events", "sensors": sorted(sim.sensor_names),
+                "not_built": ["commit_action (two-step)", "get_flagged_readings", "Telecom and Waste domains"]})
 
     @mcp.tool()
     def list_nodes(ctx: Context, domain: Domain | None = None) -> NodeList:
