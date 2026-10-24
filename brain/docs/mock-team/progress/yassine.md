@@ -1,30 +1,61 @@
-﻿# Yassine — S01 Traffic progress
+# Integration update, 11 October 2026
+
+S01 is integrated and corrected locally on codex/civis-elyes. See [individual review and test evidence](../INTEGRATION_REVIEW_2026-10-11.md). All five modules now pass the shared workflow checks. No remote upload or final partner approval has been made.
+
+The earlier progress record below describes the submitted branch before this integration and is superseded where it refers to missing shared code, fixtures or scenario delivery.
+
+# Yassine — S01 progress
 
 ## Current status
 
-S01 Traffic is present in the current shared integration branch.
-The local branch has been synchronized with `origin/codex/civis-elyes`.
-The shared workflow tests pass locally. The branch update has not yet been pushed.
+Unit-complete / integration-pending.
 
-## Validation results
+## Step 4 — constrained planning and local scenario tests
 
-- Traffic scenario tests: 30 passed.
-- Full test suite: 336 passed.
-- Ruff checks: all checks passed.
+* Traffic detection and planning tests pass locally.
+* Traffic scenario test suite: 9 passed.
+* Full test suite: 24 passed.
+* Ruff: all checks passed.
+* These results do not prove shared-core workflow integration.
 
-These results confirm local automated test success. They do not establish live Guardian/Twin support or final partner approval.
+## Step 5 — shared-core workflow
 
-## Git and PR status
+Status: BLOCKED by shared runtime implementation.
 
-- Working branch: `codex/civis-yassine`
-- PR: #17
-- Base branch: `codex/civis-elyes`
-- The latest local merge and test results still need to be published to the remote branch.
-- Keep the local patch backup untracked; do not include it in the PR.
+Missing shared functions owned by Elyes:
 
-## Next steps
+* `civis_brain.integration.runtime.build_runtime(...)`
+* `BrainRuntime.evaluate_tick(batch)`
 
-1. Review the final diff and Git status.
-2. Commit the progress report update and test import fix.
-3. Push the validated branch to update PR #17.
-4. Notify Elyes and request review.
+Both currently raise `NotImplementedError` in `src/civis_brain/integration/runtime.py`.
+
+Missing scenario test:
+
+* `tests/scenarios/traffic/test_workflow.py`
+
+Required next work:
+
+* Reuse shared `FixtureTwin`, `FixtureGuardian` and `FixturePlanProvider`.
+* Follow the frozen features schema in `CONTRACT.md` and `SCENARIOS.md`.
+* Prove supported success and refusal through the shared runtime.
+* Assert final decisions, exact peer call counts and exact actuator effect counts.
+* Cover applicable persistence, duplicate tick, run change, null, wrong unit, unavailable metric, unknown evidence/action and missing approval variants.
+* Do not catch `NotImplementedError` as a passing test.
+* Do not implement or modify Elyes-owned shared runtime or peer fixtures.
+
+## Fixture limitations
+
+* `base_case.json` and `refusal_case.json` currently have empty `nodes`, `actions` and `batches`.
+* Align the fixtures with `SCENARIOS.md` before attempting workflow proof.
+* Define expected peer call counts and actuator effect counts from the shared contract.
+* Do not invent unresolved peer wire schemas or put tokens in fixture files.
+
+## Integration and live-support limitations
+
+* Fixture behavior is not proof of live Guardian or Twin support.
+* No live API calls or secrets in automated tests.
+* Keep the PR draft and mark integration pending until the shared workflow is implemented and proven.
+
+## Next action
+
+Notify Elyes that `build_runtime` and `BrainRuntime.evaluate_tick` are unimplemented, and request the shared runtime/fixture harness before completing Step 5 workflow proof.
