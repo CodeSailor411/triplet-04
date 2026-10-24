@@ -39,6 +39,7 @@ partners:
 sensors:
   vehicle_count:    { unit: "cars/min" }
   avg_speed:        { unit: "km/h" }
+  congestion_index: { unit: "percent" }     # added 23 Oct: CIVIS and 9antra both expect it (0 = empty road, 100 = standstill)
   water_level:      { unit: "cm" }
   flow_rate:        { unit: "L/s" }
   load_kw:          { unit: "kW" }
@@ -83,7 +84,8 @@ actuators:
       units: { type: integer, min_value: 1, max_value: 10 }     # the 10 is our sanity limit, change freely
 
 # ---------------------------------------------------------------------------
-# Tokens (Guardian's signed permission for one exact action). Format: JWS compact, header.payload.signature.
+# Tokens (Guardian's signed permission for one exact action). Two formats are read: Guardian's own `g1.<payload>.<sig>` (since 23 Oct)
+# and our first proposal, JWS compact `header.payload.signature`. guardian_public_key: raw base64, PEM text, or a path to a PEM file.
 # mode is decided HERE, never by the token: a token cannot talk its way into "unsigned".
 #   unsigned  signature part must be empty (v0 hand-over, mock Guardian). The Twin logs a loud warning.
 #   signed    only EdDSA (Ed25519) accepted, checked against guardian_public_key. Planned default from 24 Oct.
@@ -196,7 +198,7 @@ generator:
     traffic:
       prefix: TRF
       count: 11
-      sensors: [vehicle_count, avg_speed]
+      sensors: [vehicle_count, avg_speed, congestion_index]
       actuator: set_signal_plan
       actuator_nodes: 6            # my starting guess, change freely
     water:
@@ -269,6 +271,7 @@ sensor_model:
   profiles:
     vehicle_count:   { base: 40,   wave_amp: 14,  wave_period_ticks: 600, wander_amp: 5,   noise_sd: 2.0,  bias_sd: 1.5,  min_value: 0,   max_value: 250, decimals: 0 }
     avg_speed:       { base: 38,   wave_amp: 1.5, wave_period_ticks: 600, wander_amp: 1.5, noise_sd: 1.2,  bias_sd: 1.0,  min_value: 0,   max_value: 130, decimals: 1, follows: { sensor: vehicle_count, gain: -0.3 } }
+    congestion_index: { base: 30,  wave_amp: 4,   wave_period_ticks: 600, wander_amp: 2,   noise_sd: 1.5,  bias_sd: 1.0,  min_value: 0,   max_value: 100, decimals: 1, follows: { sensor: vehicle_count, gain: 1.0 } }
     water_level:     { base: 40,   wave_amp: 5,   wave_period_ticks: 900, wander_amp: 2,   noise_sd: 0.6,  bias_sd: 1.5,  min_value: 0,   max_value: 400, decimals: 1 }
     flow_rate:       { base: 25,   wave_amp: 5,   wave_period_ticks: 700, wander_amp: 2,   noise_sd: 0.8,  bias_sd: 0.5,  min_value: 0,   max_value: 200, decimals: 1 }
     load_kw:         { base: 450,  wave_amp: 90,  wave_period_ticks: 800, wander_amp: 25,  noise_sd: 8.0,  bias_sd: 5.0,  min_value: 0,   max_value: 2000, decimals: 0 }

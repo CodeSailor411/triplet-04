@@ -10,7 +10,7 @@ _n = itertools.count(1)
 
 def token_for(action, targets, params, **over):
     c = {"iss": "guardian", "aud": "twin", "jti": f"mcp-tk-{next(_n)}", "run_id": "run-42-001",
-         "iat": "2026-10-05T08:00:00.000Z", "exp": "2026-10-05T08:05:00.000Z",
+         "iat": "2026-10-05T08:00:00.000Z", "exp": "2026-10-05T08:00:59.000Z",
          "action": action, "targets": targets, "params": params, "score": 0.9}
     c.update(over)
     return make_token(c)
