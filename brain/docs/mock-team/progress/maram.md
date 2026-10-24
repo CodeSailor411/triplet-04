@@ -70,3 +70,22 @@ Draft PR URL:
 Unit-ready status:
 Integration-ready status:
 Next step and deadline: once Elyes implements the shared normalizer, plan validator, runtime, and reusable fixture peers, add the base/refusal workflow assertions with exact decision/effect counts. Keep integration pending until those assertions pass. Send the unresolved Guardian fixture and manifest/expected schema details to Elyes before a shared case loader consumes them.
+
+## S08 Step 2: reported-fire fixtures only
+
+- [x] Read the merged shared contract, models, dispatch planner and current emergency availability logic before creating fixtures.
+- [x] Added six fixture-only S08 cases and a separate S08 fixture inventory; existing S05 fixtures, S05 manifest, tests and scenario code are unchanged.
+- [x] Validated fixture-shaped nodes, actions, batches and plans through the shared Pydantic models; checked report source IDs and carrier/destination separation.
+- [x] No `FireScenario`, detector, planner, shared runtime, provider, peer or live integration code was written. No case includes a key, token or real partner call.
+
+The shared `Reading` model confirms the generic `run_id`, `reading_id`, `tick`, `timestamp`, `node_id`, `device_id`, `sensor`, `channel`, `value` and `unit` fields. Shared documentation names a reported-fire incident and generic R2 dispatch, with carriers as targets and the incident location as `params.destination`. It does not define a reported-fire event schema or the exact advertised firefighter unit value. S08 fixtures use conspicuous `PROVISIONAL_*` sentinels for those unknowns; these are not proposed partner values. The positive examples also keep carrier and destination identifiers distinct, and retain the report reading ID and location node.
+
+## S08 dependencies for Elyes
+
+- **Reported-fire event fields:** unresolved. No exact fire-report sensor/event name, channel, event value/unit, or report-to-location/source-reference mapping was found in the merged shared model, scenario code or current mock contract. The S08 report fields are marked `PROVISIONAL_*` and must be replaced only from confirmed interface evidence.
+- **Exact firefighter unit type:** unresolved. Shared dispatch uses a `unit_type` choice parameter, but current code only validates `"ambulance"` for S05. The S08 advertised choice is the explicit `PROVISIONAL_FIREFIGHTER_UNIT_TYPE` sentinel, not a guess.
+- **Shared dispatch helper:** unresolved for S08. Existing shared dispatch/planning checks are specific to the `"medical"` incident and ambulance; they do not validate a reported-fire incident or firefighter dispatch. Confirm the shared helper contract before implementation.
+- **Current availability checks:** unresolved for firefighters. Existing S05 checks `units_free`, `channel="ambulance"`, `unit="units"`, a whole non-negative current-tick value, and retained source evidence. No equivalent firefighter channel/unit validation is confirmed; S08 availability channels are provisional.
+- **Optional ambulance or police evidence:** unresolved. No confirmed injury evidence schema or fire-linked ambulance/police availability and dispatch mapping is present. The separate-injury fixture therefore makes no secondary dispatch proposal; injury is its own reading and does not authorize an action by itself.
+
+The S08 expected counts are fixture expectations, not exercised workflow results. They distinguish provider generation, Guardian score/approval, Twin action calls and effects; no live peer calls were made. Only the requested emergency tests and Ruff check on changed Python files are to be reported for this step.

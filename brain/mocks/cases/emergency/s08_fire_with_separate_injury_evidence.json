@@ -1,0 +1,199 @@
+{
+  "scenario_id": "S08",
+  "fixture_only": true,
+  "assumptions": [
+    "All nodes, readings, reports, approvals, and outcomes are synthetic and fixture-only.",
+    "The reported-fire event fields, separate injury-report fields, firefighter availability channel, and manifest unit type are explicit provisional placeholders.",
+    "The injury evidence has its own reading identity and is not inferred from an aggregate call rate; no emergency_calls aggregate is present.",
+    "No optional ambulance or police proposal is made because its own confirmed evidence mapping, carrier resources, and exact manifest unit types are unresolved. Injury evidence alone does not authorize either action.",
+    "The only proposal is the primary firefighter response. The synthetic manifest marks preview not required; live support is unconfirmed."
+  ],
+  "nodes": [
+    {
+      "node_id": "FIRE-LOCATION-06",
+      "domains": ["emergency"],
+      "role": "reported_fire_location",
+      "actuators": [],
+      "neighbours": ["FIRE-CARRIER-06"]
+    },
+    {
+      "node_id": "FIRE-CARRIER-06",
+      "domains": ["emergency"],
+      "role": "dispatch_carrier",
+      "actuators": ["dispatch"],
+      "neighbours": ["FIRE-LOCATION-06"]
+    }
+  ],
+  "actions": [
+    {
+      "action": "dispatch",
+      "domain": "emergency",
+      "risk": "R2",
+      "preview_required": false,
+      "params": [
+        {
+          "name": "unit_type",
+          "type": "choice",
+          "choices": ["PROVISIONAL_FIREFIGHTER_UNIT_TYPE"],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "destination",
+          "type": "node",
+          "choices": [],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "units",
+          "type": "integer",
+          "choices": [],
+          "min_value": 1,
+          "max_value": 1,
+          "unit": "units"
+        }
+      ],
+      "target_nodes": ["FIRE-CARRIER-06"],
+      "action_cap": 1
+    }
+  ],
+  "batches": [
+    {
+      "run_id": "fixture-s08-injury",
+      "tick": 1,
+      "time": "2026-10-24T09:25:00Z",
+      "tick_seconds": 60.0,
+      "count": 3,
+      "readings": [
+        {
+          "run_id": "fixture-s08-injury",
+          "reading_id": "s08-injury-fire-report-01",
+          "tick": 1,
+          "timestamp": "2026-10-24T09:25:00Z",
+          "node_id": "FIRE-LOCATION-06",
+          "device_id": "FIRE-LOCATION-06.PROVISIONAL_FIRE_REPORT_DEVICE",
+          "sensor": "PROVISIONAL_REPORTED_FIRE_SENSOR",
+          "channel": "PROVISIONAL_FIRE_REPORT_CHANNEL",
+          "value": 1.0,
+          "unit": "PROVISIONAL_FIRE_EVENT_UNIT"
+        },
+        {
+          "run_id": "fixture-s08-injury",
+          "reading_id": "s08-injury-separate-report-01",
+          "tick": 1,
+          "timestamp": "2026-10-24T09:25:00Z",
+          "node_id": "FIRE-LOCATION-06",
+          "device_id": "FIRE-LOCATION-06.PROVISIONAL_INJURY_REPORT_DEVICE",
+          "sensor": "PROVISIONAL_INJURY_REPORT_SENSOR",
+          "channel": "PROVISIONAL_INJURY_REPORT_CHANNEL",
+          "value": 1.0,
+          "unit": "PROVISIONAL_INJURY_REPORT_UNIT"
+        },
+        {
+          "run_id": "fixture-s08-injury",
+          "reading_id": "s08-injury-firefighter-availability-01",
+          "tick": 1,
+          "timestamp": "2026-10-24T09:25:00Z",
+          "node_id": "FIRE-CARRIER-06",
+          "device_id": "FIRE-CARRIER-06.units_free",
+          "sensor": "units_free",
+          "channel": "PROVISIONAL_FIREFIGHTER_CHANNEL",
+          "value": 1.0,
+          "unit": "units"
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "status": "provisional S08 fixture policy; no optional dispatch is enabled",
+    "fixture_only": true,
+    "scenario_id": "S08",
+    "report_sensor": "PROVISIONAL_REPORTED_FIRE_SENSOR",
+    "report_channel": "PROVISIONAL_FIRE_REPORT_CHANNEL",
+    "report_unit": "PROVISIONAL_FIRE_EVENT_UNIT",
+    "injury_sensor": "PROVISIONAL_INJURY_REPORT_SENSOR",
+    "injury_channel": "PROVISIONAL_INJURY_REPORT_CHANNEL",
+    "allowed_actions": ["dispatch"],
+    "unit_type": "PROVISIONAL_FIREFIGHTER_UNIT_TYPE",
+    "risk": "R2",
+    "availability_sensor": "units_free",
+    "availability_channel": "PROVISIONAL_FIREFIGHTER_CHANNEL",
+    "availability_unit": "units"
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_seconds": 60
+  },
+  "preview": {
+    "available": false,
+    "safe": false,
+    "reason": "The synthetic dispatch manifest does not require preview; live support is unconfirmed."
+  },
+  "ai_plan": {
+    "proposals": [
+      {
+        "action": "dispatch",
+        "targets": ["FIRE-CARRIER-06"],
+        "params": {
+          "unit_type": "PROVISIONAL_FIREFIGHTER_UNIT_TYPE",
+          "destination": "FIRE-LOCATION-06",
+          "units": 1
+        },
+        "risk": "R2",
+        "preview_required": false,
+        "source_reading_ids": [
+          "s08-injury-fire-report-01",
+          "s08-injury-firefighter-availability-01"
+        ],
+        "reason": "The fire report and firefighter availability support the primary response; separate injury evidence does not add an unsupported secondary proposal."
+      }
+    ],
+    "alerts": [
+      "Separate synthetic injury evidence recorded; no optional ambulance or police proposal is supported in this fixture."
+    ]
+  },
+  "twin_outcome": {
+    "status": "committed"
+  },
+  "expected": {
+    "final_statuses": ["committed"],
+    "action": "dispatch",
+    "targets": ["FIRE-CARRIER-06"],
+    "params": {
+      "unit_type": "PROVISIONAL_FIREFIGHTER_UNIT_TYPE",
+      "destination": "FIRE-LOCATION-06",
+      "units": 1
+    },
+    "report_reading_id": "s08-injury-fire-report-01",
+    "location_node_id": "FIRE-LOCATION-06",
+    "source_reading_ids": [
+      "s08-injury-fire-report-01",
+      "s08-injury-firefighter-availability-01"
+    ],
+    "injury_evidence_reading_ids": ["s08-injury-separate-report-01"],
+    "optional_dispatches": 0,
+    "primary_dispatch_order": 1,
+    "provider_calls": 1,
+    "guardian_calls": 2,
+    "guardian_score_calls": 1,
+    "guardian_approval_calls": 1,
+    "twin_calls": 1,
+    "twin_actuate_calls": 1,
+    "effects": 1,
+    "peer_code": null
+  },
+  "caps": {
+    "emergency": 1
+  }
+}
