@@ -710,7 +710,7 @@ class BrainRuntime:
                 )
         return results
 
-    async def _check_execution_state(self, batch, capabilities, generation, proposal):
+    async def _check_execution_state(self, batch, capabilities, generation, proposal, sid):
         clock = await self._call(self.twin, "get_clock", {})
         current = self._validate_clock(batch, clock, execution=True)
         await self._sync_containment(batch, capabilities)
@@ -729,7 +729,6 @@ class BrainRuntime:
                     raise BrainError("EVIDENCE_CHANGED", "Latest feed no longer supports the plan evidence")
                 if row.sensor == "units_free" and row.value < proposal.params.get("units", 1):
                     raise BrainError("EVIDENCE_CHANGED", "Latest feed has insufficient ambulance availability")
-                sid = next((sid for sid, action in ACTION_BY_SCENARIO.items() if action == proposal.action), None)
                 policy = self.policies.get(sid, {})
                 if (row.sensor == policy.get("sensor")
                         and row.value < policy.get("threshold_min", float("-inf"))):
@@ -803,7 +802,7 @@ class BrainRuntime:
         if receipt and receipt["status"] == "uncertain":
             request = self.sent_requests.get(key)
             if request and key not in self.reconciliation_attempts:
-                current = await self._check_execution_state(batch, capabilities, generation, proposal)
+                current = await self._check_execution_state(batch, capabilities, generation, proposal, sid)
                 self._token_binding(request["token"], intent, current, cutoff, scale)
                 self.reconciliation_attempts.add(key)
                 try:
@@ -843,7 +842,7 @@ class BrainRuntime:
                 raise BrainError(
                     "PREVIEW_UNSAFE", "Required preview did not confirm a safe command"
                 )
-        authorization_clock = await self._check_execution_state(batch, capabilities, generation, proposal)
+        authorization_clock = await self._check_execution_state(batch, capabilities, generation, proposal, sid)
         approval = await self._call(
             self.guardian,
             self.features.get("guardian_token_tool"),
@@ -864,7 +863,7 @@ class BrainRuntime:
                     "guardian_code": approval.get("code"),
                 },
             )
-        current = await self._check_execution_state(batch, capabilities, generation, proposal)
+        current = await self._check_execution_state(batch, capabilities, generation, proposal, sid)
         token = self._token_binding(approval.get("token"), intent, current, cutoff, scale)
         if preview is not None and self.features.get("preview_tool") == "preview_action":
             until = preview.get("valid_until_tick")
@@ -935,7 +934,7 @@ class BrainRuntime:
                 break
             try:
                 async with asyncio.timeout(remaining):
-                    current = await self._check_execution_state(batch, capabilities, generation, proposal)
+                    current = await self._check_execution_state(batch, capabilities, generation, proposal, sid)
                     request = self.sent_requests.get(key)
                     if request:
                         self._token_binding(request["token"],

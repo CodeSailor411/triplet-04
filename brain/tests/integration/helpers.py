@@ -26,7 +26,7 @@ def make_case(sid="S01"):
             "flood",
             "set_valve_position",
             "R3",
-            {"position": 0.5},
+            {"position": 50.0},
         ),
         "S05": (
             "emergency",
@@ -54,7 +54,7 @@ def make_case(sid="S01"):
     target = "N2" if sid == "S05" else "N1"
     specs = [{"name": "plan", "type": "choice", "choices": ["priority", "normal"]}]
     if sid == "S02":
-        specs = [{"name": "position", "type": "number", "min_value": 0.0, "max_value": 1.0}]
+        specs = [{"name": "position", "type": "number", "min_value": 0.0, "max_value": 100.0, "unit": "%"}]
     if sid == "S05":
         specs = [
             {"name": "unit_type", "type": "choice", "choices": ["ambulance"]},
