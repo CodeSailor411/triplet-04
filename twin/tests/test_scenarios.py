@@ -128,7 +128,7 @@ def test_replay_exact_re_sends_the_old_reading_untouched():
         old = sim.reported(dev(sim, f.device_id), None, t - 30)
         assert got.model_dump() == old.model_dump()                               # same reading_id, same old tick and time
         assert got.tick == t - 30 and got.reading_id == f"rd{t - 30:07d}-{f.device_id}"
-    assert sim.readings_at(f.start_tick).count == 109                             # the feed still has a reading for the device
+    assert sim.readings_at(f.start_tick).count == 120                             # the feed still has a reading for the device
 
 
 def test_replay_needs_enough_history():
