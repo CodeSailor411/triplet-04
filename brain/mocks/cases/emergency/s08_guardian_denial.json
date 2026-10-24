@@ -13,7 +13,9 @@
       "domains": ["emergency"],
       "role": "reported_fire_location",
       "actuators": [],
-      "neighbours": ["FIRE-CARRIER-05"]
+      "neighbours": ["FIRE-CARRIER-05"],
+      "lat": 51.505,
+      "lon": -0.125
     },
     {
       "node_id": "FIRE-CARRIER-05",

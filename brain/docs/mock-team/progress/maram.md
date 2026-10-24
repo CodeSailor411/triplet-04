@@ -89,3 +89,21 @@ The shared `Reading` model confirms the generic `run_id`, `reading_id`, `tick`, 
 - **Optional ambulance or police evidence:** unresolved. No confirmed injury evidence schema or fire-linked ambulance/police availability and dispatch mapping is present. The separate-injury fixture therefore makes no secondary dispatch proposal; injury is its own reading and does not authorize an action by itself.
 
 The S08 expected counts are fixture expectations, not exercised workflow results. They distinguish provider generation, Guardian score/approval, Twin action calls and effects; no live peer calls were made. Only the requested emergency tests and Ruff check on changed Python files are to be reported for this step.
+
+## S08 Step 3: detector and detection tests
+
+- [x] Added `FireScenario` in `src/civis_brain/scenarios/emergency/fire.py` with `scenario_id="S08"`; it is intentionally not registered.
+- [x] Detection reads the configured provisional report sensor/channel/unit, unit type, and firefighter availability sensor/channel/unit from policy. It accepts only matching non-null report evidence on a discovered Emergency node with a usable location coordinate, and retains report identity, node/location, and availability reading references.
+- [x] PM2.5 alone is ignored. Null, mismatched, coordinate-less, unknown-destination and locally marked untrusted report readings do not create incidents. Repeated report IDs deduplicate within a batch and retain a stable run/report incident ID; run changes reset detector state.
+- [x] Separate injury evidence is not interpreted as a fire fact and is not added to the fire candidate's sources. `draft_plan` remains an empty Step 4 stub.
+- [x] Added S08 detection coverage in `tests/scenarios/emergency/test_fire_detection.py`; no S05 code or tests changed.
+- [x] Final requested checks: `.\.venv\Scripts\python.exe -m pytest tests/scenarios/emergency -q` — **32 passed** (the pre-existing S05 coverage remains 20 tests); `.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts` — passed.
+
+## S08 dependencies still open for Elyes
+
+- **Reviewed fire-report contract:** still absent. Confirm exact report sensor/event, channel, unit/value semantics, event identity and report-to-location/source mapping. `IncidentKind="fire"` and the October report's broad mention of reported type/location/transcript do not define those fields. The string `channel="fire"` found in shared integration tests is a negative mutation against S05 medical input, not a fire contract.
+- **Location mapping and coordinates:** the fixture detector uses the report `Reading.node_id` as destination and requires coordinates on that reading or its discovered node. Confirm this mapping and coordinate requirement from the reviewed event contract.
+- **Trust eligibility:** shared runtime removes invalid/quarantined readings before detector invocation, but no fire report source/trust mapping is defined. The local `_s08_untrusted_reading_ids` detector-state exclusion is only a defensive unit-test hook, not a shared trust contract; future integration must preserve prefiltering and add confirmed fire evidence to shared trust eligibility.
+- **Exact firefighter unit type and availability:** remain provisional. Detection records configured policy values but does not implement shared firefighter resource validation.
+- **Fire dispatch validation:** the shared dispatch planner/validator and scenario routing currently support medical/ambulance S05 only. Fire dispatch validation, registry registration and planning remain Elyes/Step 4 work; none was added here.
+- **Optional ambulance or police evidence:** remains unresolved. No injury schema is inferred, and the detector does not propose or infer optional dispatches.
