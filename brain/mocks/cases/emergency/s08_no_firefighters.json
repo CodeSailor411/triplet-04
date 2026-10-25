@@ -1,0 +1,159 @@
+{
+  "scenario_id": "S08",
+  "fixture_only": true,
+  "assumptions": [
+    "All nodes, readings, and expected outcomes are synthetic and fixture-only.",
+    "The reported-fire sensor, channel, and event unit are explicit provisional placeholders; no shared fire-report event schema is confirmed.",
+    "The firefighter availability channel and manifest unit type are explicit provisional placeholders, not advertised partner values.",
+    "A zero availability reading is not sufficient for a dispatch; the expected behavior is an alert with no proposal, approval, Twin actuation, or effect.",
+    "The synthetic manifest does not require preview and makes no claim about live partner support."
+  ],
+  "nodes": [
+    {
+      "node_id": "FIRE-LOCATION-03",
+      "domains": ["emergency"],
+      "role": "reported_fire_location",
+      "actuators": [],
+      "neighbours": ["FIRE-CARRIER-03"],
+      "lat": 51.503,
+      "lon": -0.123
+    },
+    {
+      "node_id": "FIRE-CARRIER-03",
+      "domains": ["emergency"],
+      "role": "dispatch_carrier",
+      "actuators": ["dispatch"],
+      "neighbours": ["FIRE-LOCATION-03"]
+    }
+  ],
+  "actions": [
+    {
+      "action": "dispatch",
+      "domain": "emergency",
+      "risk": "R2",
+      "preview_required": false,
+      "params": [
+        {
+          "name": "unit_type",
+          "type": "choice",
+          "choices": ["PROVISIONAL_FIREFIGHTER_UNIT_TYPE"],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "destination",
+          "type": "node",
+          "choices": [],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "units",
+          "type": "integer",
+          "choices": [],
+          "min_value": 1,
+          "max_value": 1,
+          "unit": "units"
+        }
+      ],
+      "target_nodes": ["FIRE-CARRIER-03"],
+      "action_cap": 1
+    }
+  ],
+  "batches": [
+    {
+      "run_id": "fixture-s08-no-firefighters",
+      "tick": 1,
+      "time": "2026-10-24T09:10:00Z",
+      "tick_seconds": 60.0,
+      "count": 2,
+      "readings": [
+        {
+          "run_id": "fixture-s08-no-firefighters",
+          "reading_id": "s08-no-units-fire-report-01",
+          "tick": 1,
+          "timestamp": "2026-10-24T09:10:00Z",
+          "node_id": "FIRE-LOCATION-03",
+          "device_id": "FIRE-LOCATION-03.PROVISIONAL_FIRE_REPORT_DEVICE",
+          "sensor": "PROVISIONAL_REPORTED_FIRE_SENSOR",
+          "channel": "PROVISIONAL_FIRE_REPORT_CHANNEL",
+          "value": 1.0,
+          "unit": "PROVISIONAL_FIRE_EVENT_UNIT"
+        },
+        {
+          "run_id": "fixture-s08-no-firefighters",
+          "reading_id": "s08-no-units-availability-01",
+          "tick": 1,
+          "timestamp": "2026-10-24T09:10:00Z",
+          "node_id": "FIRE-CARRIER-03",
+          "device_id": "FIRE-CARRIER-03.units_free",
+          "sensor": "units_free",
+          "channel": "PROVISIONAL_FIREFIGHTER_CHANNEL",
+          "value": 0.0,
+          "unit": "units"
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "status": "provisional S08 fixture policy; not partner-confirmed",
+    "fixture_only": true,
+    "scenario_id": "S08",
+    "report_sensor": "PROVISIONAL_REPORTED_FIRE_SENSOR",
+    "report_channel": "PROVISIONAL_FIRE_REPORT_CHANNEL",
+    "report_unit": "PROVISIONAL_FIRE_EVENT_UNIT",
+    "allowed_actions": ["dispatch"],
+    "unit_type": "PROVISIONAL_FIREFIGHTER_UNIT_TYPE",
+    "risk": "R2",
+    "availability_sensor": "units_free",
+    "availability_channel": "PROVISIONAL_FIREFIGHTER_CHANNEL",
+    "availability_unit": "units"
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_seconds": 60
+  },
+  "preview": {
+    "available": false,
+    "safe": false,
+    "reason": "No action is proposed without a positive current firefighter availability reading."
+  },
+  "ai_plan": {
+    "proposals": [],
+    "alerts": ["Synthetic reported fire; no available firefighter units."]
+  },
+  "twin_outcome": {},
+  "expected": {
+    "final_statuses": ["alert"],
+    "action": null,
+    "targets": [],
+    "params": {},
+    "report_reading_id": "s08-no-units-fire-report-01",
+    "location_node_id": "FIRE-LOCATION-03",
+    "source_reading_ids": [
+      "s08-no-units-fire-report-01",
+      "s08-no-units-availability-01"
+    ],
+    "provider_calls": 0,
+    "guardian_calls": 0,
+    "guardian_score_calls": 0,
+    "guardian_approval_calls": 0,
+    "twin_calls": 0,
+    "twin_actuate_calls": 0,
+    "effects": 0,
+    "peer_code": null
+  },
+  "caps": {
+    "emergency": 1
+  }
+}

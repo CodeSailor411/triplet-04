@@ -1,0 +1,132 @@
+{
+  "scenario_id": "S08",
+  "fixture_only": true,
+  "assumptions": [
+    "All nodes, readings, and expected outcomes are synthetic and fixture-only.",
+    "This batch contains only a pm25 spike; it contains no reported-fire event or fire-report placeholder.",
+    "The dispatch manifest's firefighter unit value and channel are provisional sentinels and are not exercised.",
+    "Expected scenario-level planning/approval/actuation counts are zero; there is no fire response to send. Discovery traffic is outside these action-call counts."
+  ],
+  "nodes": [
+    {
+      "node_id": "AIR-SENSOR-01",
+      "domains": ["air_quality"],
+      "role": "air_quality_sensor",
+      "actuators": [],
+      "neighbours": []
+    },
+    {
+      "node_id": "FIRE-CARRIER-02",
+      "domains": ["emergency"],
+      "role": "dispatch_carrier",
+      "actuators": ["dispatch"],
+      "neighbours": []
+    }
+  ],
+  "actions": [
+    {
+      "action": "dispatch",
+      "domain": "emergency",
+      "risk": "R2",
+      "preview_required": false,
+      "params": [
+        {
+          "name": "unit_type",
+          "type": "choice",
+          "choices": ["PROVISIONAL_FIREFIGHTER_UNIT_TYPE"],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "destination",
+          "type": "node",
+          "choices": [],
+          "min_value": null,
+          "max_value": null,
+          "unit": null
+        },
+        {
+          "name": "units",
+          "type": "integer",
+          "choices": [],
+          "min_value": 1,
+          "max_value": 1,
+          "unit": "units"
+        }
+      ],
+      "target_nodes": ["FIRE-CARRIER-02"],
+      "action_cap": 1
+    }
+  ],
+  "batches": [
+    {
+      "run_id": "fixture-s08-air-only",
+      "tick": 1,
+      "time": "2026-10-24T09:05:00Z",
+      "tick_seconds": 60.0,
+      "count": 1,
+      "readings": [
+        {
+          "run_id": "fixture-s08-air-only",
+          "reading_id": "s08-air-only-pm25-01",
+          "tick": 1,
+          "timestamp": "2026-10-24T09:05:00Z",
+          "node_id": "AIR-SENSOR-01",
+          "device_id": "AIR-SENSOR-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 180.0,
+          "unit": "ug/m3"
+        }
+      ]
+    }
+  ],
+  "policy": {
+    "status": "S08 no-fire negative control; no fire threshold is configured",
+    "fixture_only": true,
+    "scenario_id": "S08",
+    "report_sensor": "PROVISIONAL_REPORTED_FIRE_SENSOR",
+    "allowed_actions": ["dispatch"],
+    "unit_type": "PROVISIONAL_FIREFIGHTER_UNIT_TYPE",
+    "risk": "R2"
+  },
+  "guardian": {
+    "score": 95,
+    "score_scale": 100,
+    "thresholds": {
+      "reading": 60,
+      "R1": 65,
+      "R2": 80,
+      "R3": 90
+    },
+    "approve": true,
+    "token_lifetime_seconds": 60
+  },
+  "preview": {
+    "available": false,
+    "safe": false,
+    "reason": "No reported-fire action is proposed; no preview call is expected."
+  },
+  "ai_plan": {
+    "proposals": [],
+    "alerts": []
+  },
+  "twin_outcome": {},
+  "expected": {
+    "final_statuses": [],
+    "fire_detected": false,
+    "firefighter_dispatches": 0,
+    "provider_calls": 0,
+    "guardian_calls": 0,
+    "guardian_score_calls": 0,
+    "guardian_approval_calls": 0,
+    "twin_calls": 0,
+    "twin_actuate_calls": 0,
+    "effects": 0,
+    "peer_code": null
+  },
+  "caps": {
+    "emergency": 1
+  }
+}
