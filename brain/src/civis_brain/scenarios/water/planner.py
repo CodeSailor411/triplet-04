@@ -1,4 +1,4 @@
-"""S02 constrained response. Proposes only; never approves, previews or executes."""
+"""Water constrained response (S02 high water, S07 low water). Proposes only; never approves, previews or executes."""
 
 from civis_brain.contracts import (
     ActionInfo,
@@ -15,8 +15,12 @@ ACTION = "set_valve_position"
 RISK = "R3"
 
 
+def incidents_of_kind(context: PlanningContext, kind: str) -> list[Incident]:
+    return [i for i in context.incidents if i.kind == kind]
+
+
 def flood_incidents(context: PlanningContext) -> list[Incident]:
-    return [i for i in context.incidents if i.kind == "flood"]
+    return incidents_of_kind(context, "flood")
 
 
 def find_manifest(context: PlanningContext) -> ActionInfo | None:
@@ -60,8 +64,13 @@ def rejection_reason(
     return "targets or params are not a supported valve choice"
 
 
-async def plan_response(context: PlanningContext, provider: PlanProvider) -> Plan:
-    incidents = flood_incidents(context)
+async def plan_response(
+    context: PlanningContext,
+    provider: PlanProvider,
+    kind: str = "flood",
+    label: str = "High-water candidate",
+) -> Plan:
+    incidents = incidents_of_kind(context, kind)
     if not incidents:
         return Plan(proposals=[], alerts=[])
 
@@ -76,7 +85,7 @@ async def plan_response(context: PlanningContext, provider: PlanProvider) -> Pla
             actionable.append((incident, choices))
         else:
             alerts.append(
-                f"High-water candidate at {node}: no supported valve action; "
+                f"{label} at {node}: no supported valve action; "
                 "alert only, no valve change proposed."
             )
 
