@@ -1,4 +1,8 @@
-﻿from civis_brain.contracts import Node, Reading, ReadingsBatch
+from types import SimpleNamespace
+
+import pytest
+
+from civis_brain.contracts import Node, Reading, ReadingsBatch
 from civis_brain.scenarios.traffic.accident import RoadAccidentScenario
 
 
@@ -13,6 +17,7 @@ def make_reading(
     unit="report",
     run_id="run-1",
     tick=1,
+    channel=None,
 ):
     return Reading(
         run_id=run_id,
@@ -22,7 +27,7 @@ def make_reading(
         node_id="TRAFFIC-01",
         device_id="device-01",
         sensor=sensor,
-        channel=None,
+        channel=channel,
         value=value,
         unit=unit,
     )
@@ -115,3 +120,66 @@ def test_unknown_injury_status_does_not_authorize_ambulance():
     incident = result.incidents[0]
     assert incident.facts["injury_status"] == "unknown"
     assert incident.facts["dispatch_authorized"] is False
+
+
+
+@pytest.mark.asyncio
+async def test_draft_plan_never_dispatches_without_reviewed_action():
+    scenario = RoadAccidentScenario()
+    incident = scenario.detect(
+        make_batch([make_reading()]),
+        make_nodes(),
+        {},
+        {},
+    ).incidents[0]
+
+    context = SimpleNamespace(incidents=[incident])
+
+    class ProviderMustNotBeCalled:
+        async def generate(self, context):
+            pytest.fail("S06 must not call the provider without a reviewed action")
+
+    plan = await scenario.draft_plan(context, ProviderMustNotBeCalled())
+
+    assert plan.proposals == []
+    assert any("no reviewed road-accident dispatch action" in alert for alert in plan.alerts)
+
+
+@pytest.mark.asyncio
+async def test_draft_plan_without_incident_does_not_propose_dispatch():
+    scenario = RoadAccidentScenario()
+    context = SimpleNamespace(incidents=[])
+
+    class ProviderMustNotBeCalled:
+        async def generate(self, context):
+            pytest.fail("S06 must not call the provider without an incident")
+
+    plan = await scenario.draft_plan(context, ProviderMustNotBeCalled())
+
+    assert plan.proposals == []
+    assert plan.alerts == []
+
+def test_wrong_report_unit_is_rejected():
+    scenario = RoadAccidentScenario()
+    reading = make_reading(unit="km/h")
+
+    result = scenario.detect(
+        make_batch([reading]), make_nodes(), {}, {}
+    )
+
+    assert result.incidents == []
+    assert result.observations[0].usable is False
+    assert result.observations[0].reason == "unsupported_report_unit"
+
+
+def test_unsupported_report_channel_is_rejected():
+    scenario = RoadAccidentScenario()
+    reading = make_reading(channel="speed")
+
+    result = scenario.detect(
+        make_batch([reading]), make_nodes(), {}, {}
+    )
+
+    assert result.incidents == []
+    assert result.observations[0].usable is False
+    assert result.observations[0].reason == "unsupported_report_channel"
