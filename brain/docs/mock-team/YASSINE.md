@@ -1,5 +1,7 @@
 # Yassine: S01 persistent traffic congestion
 
+For the current S06 assignment, use [YASSINE_S06_HANDOFF.md](YASSINE_S06_HANDOFF.md). S06 stays inside the existing Traffic folder. The S01 release instructions below remain useful for regression checks.
+
 Branch: `codex/civis-yassine`. PR base: `codex/civis-elyes`. Reviewer: Elyes, `CodeSailor411`.
 
 You own one complete scenario: its candidate detector, constrained response, local fixtures and tests. You do not build a separate Brain server. The five release scenarios are the selected planning subset; the October checkpoint's eight incident rows are a broader catalog.

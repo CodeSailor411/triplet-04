@@ -2,7 +2,7 @@
 
 Read docs/mock-team/README.md, SCENARIOS.md, CONTRACT.md and the card matching the current branch. User instructions take precedence.
 
-- Five domain modules own the scenario detector/planner/fixture work. Current development extends their existing folders to S06-S08; read the next-stage role cards and the 25 October shared-core handover.
+- Five domain modules own the scenario detector/planner/fixture work. Current development extends their existing folders to S06-S08. Read docs/mock-team/ELYES_SHARED_CORE_2026-10-25.md; Yassine's current S06 instructions are in docs/mock-team/YASSINE_S06_HANDOFF.md. These handoffs are committed to the development branch.
 - Work only on current assigned branch and paths in scripts/ownership.json. Implement only that member's tasks, one step at a time.
 - Elyes owns shared models/ports, normalization, fixed registry, single direct Gemini provider, fake peers, live clients, approval/execution, settings, dependencies, CI and release.
 - Members own their scenario detector/response, fixtures, tests and progress. Never duplicate the common runtime or implement another member's files.
