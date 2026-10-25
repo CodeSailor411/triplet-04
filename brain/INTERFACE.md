@@ -1,3 +1,11 @@
+# Development update, 25 October 2026
+
+Branch `codex/civis-elyes` adds optional `GUARDIAN_TRANSPORT=mcp_v3`, adapting Guardian's actual `describe_capabilities`, `get_trust_verdict` and `authorize_action` tools. Brain forwards the original Guardian `g1` token, binds its claims to the exact action/evidence/idempotency key and Twin clock, and leaves signature verification/consumption to Twin. The five public Brain MCP tools and Reading wire schema remain unchanged.
+
+S07 low-water fixture workflows now use the shared R3 preview/authorization/execution path. S06 is detection plus explained alert; S08 is detection with its member response still pending. These new live scenarios default to disabled until report/topology policy is reviewed. The geographic graph is internal planning/debug context from existing discovery, with reference distances and no inferred infrastructure links. No new public graph API is required.
+
+Current results, exact partner tags and remaining failures: [25 October review](docs/mock-team/PR_REVIEW_AND_V3_ACCEPTANCE_2026-10-25.md). [Shared helper and handover](docs/mock-team/ELYES_SHARED_CORE_2026-10-25.md). Full joint action acceptance remains blocked. The published `brain-mock-2` checkpoint remains unchanged; the older release interface follows.
+
 # CIVIS Brain mock interface
 
 20 October 2026, brain-mock-2. Python 3.12; MCP SDK 2.3.0; protocol 2026-07-28. Partners run `scripts/start_partner.ps1` with the private `.env.partner`; see [handover](docs/mock-team/BRAIN_MOCK_2.md). MCP: http://127.0.0.1:8001/mcp. Developer console: http://127.0.0.1:8001/. Dependencies remain pinned in requirements-lock.txt.
@@ -57,11 +65,3 @@ Set `GUARDIAN_TRANSPORT=http_v2`, `GUARDIAN_HTTP_URL` and `GUARDIAN_HTTP_POLICY_
 This internal adapter reads existing `/health` and `/api/evaluations?limit=200` endpoints. It binds verdicts to original content and preserves rejections. `guardian_http_scores` and `guardian_http_approval` are internal port operation names, not new MCP tools or public endpoints. Existing Guardian MCP mode remains unchanged. An explicit HTTP evidence-mapping confirmation does not certify action-token compatibility.
 
 Current tagged Guardian approvals use an incompatible `g1` format without exact Twin targets and use wall time. This adapter therefore refuses physical actions with `GUARDIAN_TOKEN_CONTRACT_UNSUPPORTED`; it never translates or re-signs a token. Missing evidence, bounded-window expiry and run changes are also explicit blockers. Preflight remains unready. See `docs/mock-team/INTEROPERABILITY_2026-10-23.md` for reproduction and partner fixes.
-# Development update, 25 October 2026
-
-Branch `codex/civis-elyes` adds optional `GUARDIAN_TRANSPORT=mcp_v3`, adapting Guardian's actual `describe_capabilities`, `get_trust_verdict` and `authorize_action` tools. Brain forwards the original Guardian `g1` token, binds its claims to the exact action/evidence/idempotency key and Twin clock, and leaves signature verification/consumption to Twin. The five public Brain MCP tools and Reading wire schema remain unchanged.
-
-S07 low-water fixture workflows now use the shared R3 preview/authorization/execution path. S06 is detection plus explained alert; S08 is detection with its member response still pending. These new live scenarios default to disabled until report/topology policy is reviewed. The geographic graph is internal planning/debug context from existing discovery, with reference distances and no inferred infrastructure links. No new public graph API is required.
-
-Current results, exact partner tags and remaining failures: [25 October review](docs/mock-team/PR_REVIEW_AND_V3_ACCEPTANCE_2026-10-25.md). [Shared helper and handover](docs/mock-team/ELYES_SHARED_CORE_2026-10-25.md). Full joint action acceptance remains blocked. The published `brain-mock-2` checkpoint remains unchanged; the older release interface follows.
-
