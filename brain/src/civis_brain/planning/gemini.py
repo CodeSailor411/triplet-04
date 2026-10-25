@@ -124,6 +124,7 @@ class GeminiPlanProvider:
             "tick": context.batch.tick,
             "incidents": [item.model_dump(mode="json") for item in context.incidents],
             "nodes": [item.model_dump(mode="json") for item in context.nodes],
+            "geographic_context": context.graph_context,
             "allowed_actions": [item.model_dump(mode="json") for item in context.actions],
             "selected_evidence": [
                 item.model_dump(mode="json") for item in context.evidence_readings

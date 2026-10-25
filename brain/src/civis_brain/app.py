@@ -14,7 +14,7 @@ from civis_brain.integration.bootstrap import configured_runtime
 from civis_brain.integration.feed import TwinFeed
 from civis_brain.integration.runtime import BrainRuntime
 from civis_brain.integration.service import bind_runtime
-from civis_brain.scenarios.registry import IMPLEMENTED_SCENARIOS
+from civis_brain.scenarios.registry import DETECTION_ONLY_SCENARIOS, IMPLEMENTED_SCENARIOS
 from civis_brain.settings import Settings, load_settings
 
 IMPLEMENTED_TOOLS = [
@@ -141,7 +141,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "guardian_contract_confirmed": settings.guardian_contract_confirmed,
             "browser_presets": "isolated fixtures, not the live feed",
             "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),
-            "awaiting_scenarios": [],
+            "awaiting_scenarios": list(DETECTION_ONLY_SCENARIOS),
             "feed": feed.status if feed else {"state": "disabled"},
             "mock_integration_profile": settings.mock_integration_profile,
         }

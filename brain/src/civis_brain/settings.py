@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     twin_brain_key: str = "dev-brain-to-twin"
     guardian_mcp_url: str = "http://127.0.0.1:8002/mcp"
     guardian_brain_key: str = "dev-brain-to-guardian"
-    guardian_transport: Literal["mcp", "http_v2"] = "mcp"
+    guardian_transport: Literal["mcp", "http_v2", "mcp_v3"] = "mcp"
     guardian_http_url: str = "http://127.0.0.1:5000"
     guardian_http_policy_file: str = ""
     guardian_score_tool: str = "CONFIRM_WITH_9ANTRA"

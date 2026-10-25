@@ -8,11 +8,7 @@ from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, Fixture
 
 from civis_brain.contracts import ReadingsBatch
 from civis_brain.integration.runtime import build_runtime
-from civis_brain.scenarios.registry import IMPLEMENTED_SCENARIOS
 
-pytestmark = pytest.mark.skipif(
-    "S07" not in IMPLEMENTED_SCENARIOS, reason="S07 not registered yet (Elyes owns registry)"
-)
 CASES = Path(__file__).resolve().parents[3] / "mocks" / "cases" / "water"
 
 

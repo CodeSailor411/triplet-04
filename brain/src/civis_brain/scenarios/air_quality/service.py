@@ -46,12 +46,18 @@ class AirQualityScenario:
         return DetectionResult(observations=rows, incidents=incidents, warnings=warnings)
 
     async def draft_plan(self, context: PlanningContext, provider: PlanProvider) -> Plan:
-        return Plan(
-            proposals=[],
-            alerts=[
-                f"Sustained reported air pollution at {', '.join(incident.node_ids)}. "
-                "No Air Quality actuator; no corroborated emergency dispatch."
-                for incident in context.incidents
-                if incident.kind == "air_pollution"
-            ],
-        )
+        alerts = []
+        for incident in context.incidents:
+            if incident.kind != "air_pollution":
+                continue
+            text = (f"Sustained reported air pollution at {', '.join(incident.node_ids)}. "
+                    "No Air Quality actuator; no corroborated emergency dispatch.")
+            nearby = [item for key in incident.node_ids
+                      for item in context.graph_context.get("nearby", {}).get(key, [])
+                      if item.get("distance_m") is not None][:3]
+            if nearby:
+                text += " Geographic reference neighbours: " + ", ".join(
+                    f"{item['node_id']} ({item['distance_m']:.0f} m)" for item in nearby
+                ) + ". This does not establish pollution spread or affected people."
+            alerts.append(text)
+        return Plan(proposals=[], alerts=alerts)

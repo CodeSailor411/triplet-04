@@ -89,6 +89,8 @@ class FireScenario:
                 reason = "reading value is null"
 
             if reading.sensor == report_sensor:
+                if reason is None and reading.value != 1:
+                    reason = "report must explicitly confirm fire"
                 if reason is None and reading.channel != report_channel:
                     reason = "unexpected reported-fire channel"
                 elif reason is None and reading.unit != report_unit:

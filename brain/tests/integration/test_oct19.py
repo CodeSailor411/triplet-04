@@ -304,7 +304,7 @@ def test_bad_policy_override_stops_startup(contents, tmp_path):
 
     path = tmp_path / "policies.json"
     path.write_text(contents)
-    with pytest.raises(ValueError, match="known S01-S05"):
+    with pytest.raises(ValueError, match="known S01-S08"):
         configured_runtime(Settings(_env_file=None, peer_mode="live", scenario_policy_file=str(path)))
 
 

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 from pydantic import ValidationError
 
+from civis_brain.context_graph import ContextGraph
 from civis_brain.contracts import (
     ActionInfo,
     ContainmentNotice,
@@ -35,6 +36,9 @@ RELEVANCE = {
     "S03": ("power", {"load_kw", "voltage_v"}),
     "S04": ("air_quality", {"pm25"}),
     "S05": ("emergency", {"emergency_calls"}),
+    "S06": ("traffic", {"road_accident_report"}),
+    "S07": ("water", {"water_level"}),
+    "S08": ("emergency", {"emergency_calls"}),
 }
 ACTION_BY_SCENARIO = {
     "S01": "set_signal_plan",
@@ -42,6 +46,9 @@ ACTION_BY_SCENARIO = {
     "S03": None,
     "S04": None,
     "S05": "dispatch",
+    "S06": None,
+    "S07": "set_valve_position",
+    "S08": "dispatch",
 }
 PROTOCOL = "2026-07-28"
 
@@ -86,10 +93,15 @@ class BrainRuntime:
         self.twin, self.guardian, self.provider = twin, guardian, provider
         self.policies, self.features = policies, features
         self.scenarios = tuple(scenarios)
-        enabled = features.get("enabled_scenario_ids", list(RELEVANCE))
+        enabled = features.get("enabled_scenario_ids", [sid for sid, p in policies.items() if p.get("enabled", True)])
         if not isinstance(enabled, list) or not set(enabled).issubset(RELEVANCE):
             raise ValueError("enabled_scenario_ids must contain known scenario IDs")
         self.enabled = set(enabled)
+        if {"S02", "S07"}.issubset(self.enabled) and policies.get("S07", {}).get("supply_nodes"):
+            from civis_brain.scenarios.water.low_water import pair_error
+            problem = pair_error(policies["S02"], policies["S07"])
+            if problem:
+                raise ValueError("Invalid paired Water policies: " + problem)
         self.lock = asyncio.Lock()
         self.journal = Journal(
             artifact_dir / "trace.jsonl" if artifact_dir else None,
@@ -113,6 +125,7 @@ class BrainRuntime:
         self.last_tick = -1
         self.cached_ticks = {}
         self.active = {}
+        self.graph_context = {}
         self.decisions = {}
         self.intents = {}
         self.trust_attempts = {}
@@ -122,6 +135,7 @@ class BrainRuntime:
         self.pending_started = {}
         self.sent_requests = {}
         self.reconciliation_attempts = set()
+        self.dispatch_allocations = {}
         self.observed_feed_generation = self.feed_generation
 
     def observe_feed(self, batch=None, *, discontinuity=False, connected=True):
@@ -130,6 +144,7 @@ class BrainRuntime:
         if discontinuity or not connected or (
             batch and self.run_id and batch.run_id != self.run_id
         ):
+            self.graph_context = {}
             self.feed_generation += 1
             self.generation += 1
         if batch is not None:
@@ -268,23 +283,39 @@ class BrainRuntime:
         self.polled_devices = current
 
     def _eligible(self, source_ids):
-        return all(
-            source in self.ledger
-            and source not in self.invalid_ids
-            and self.ledger[source].device_id not in self.blocked_devices
-            and self.ledger[source].value is not None
-            and self.ledger[source].unit in {
-                "congestion_index": {"percent", "%"},
-                "water_level": {"cm"}, "load_kw": {"kW"}, "voltage_v": {"V"},
-                "pm25": {"ug/m3"}, "emergency_calls": {"calls/min"}, "units_free": {"units"},
-            }.get(self.ledger[source].sensor, set())
-            and self.ledger[source].channel
-            == {
-                "emergency_calls": "medical",
-                "units_free": "ambulance",
-            }.get(self.ledger[source].sensor)
-            for source in source_ids
-        )
+        rules = {
+            "congestion_index": ({"percent", "%"}, {None}),
+            "water_level": ({"cm"}, {None}), "load_kw": ({"kW"}, {None}),
+            "voltage_v": ({"V"}, {None}), "pm25": ({"ug/m3"}, {None}),
+            "emergency_calls": ({"calls/min"}, {"medical", "fire", "accident"}),
+            "units_free": ({"units"}, {"ambulance", "fire", "police"}),
+        }
+        # Proposed report conventions are usable only in explicit offline fixtures.
+        if getattr(self.twin, "is_fixture", False):
+            rules["road_accident_report"] = ({"report"}, {None})
+            fire = self.policies.get("S08", {})
+            if fire.get("fixture_only") and fire.get("report_sensor"):
+                rules[fire["report_sensor"]] = ({fire.get("report_unit")}, {fire.get("report_channel")})
+                rules["units_free"][1].add(fire.get("availability_channel"))
+        for source in source_ids:
+            row = self.ledger.get(source)
+            if (row is None or source in self.invalid_ids or row.device_id in self.blocked_devices
+                    or row.value is None or row.sensor not in rules):
+                return False
+            units, channels = rules[row.sensor]
+            if row.unit not in units or row.channel not in channels:
+                return False
+        return True
+
+    @staticmethod
+    def _incident_cleared(row, policy, sid):
+        if (row.value is None or row.sensor != policy.get("sensor")
+                or (policy.get("unit") is not None and row.unit != policy["unit"])
+                or row.channel != policy.get("channel")):
+            return False
+        if sid == "S07":
+            return row.value >= policy.get("recovery_level", float("inf"))
+        return row.value < policy.get("threshold_min", float("-inf"))
 
     def _parse_scores(self, response, scale):
         rows = response.get("scores")
@@ -388,7 +419,7 @@ class BrainRuntime:
             self.trust_attempts.pop(key, None)
         return [self.ledger[source] for source in ids], scores, thresholds, scale
 
-    def _token_binding(self, token, intent, clock, floor, scale):
+    def _token_binding(self, token, intent, clock, floor, scale, *, idempotency_key=None, reading_ids=None, risk=None):
         if not isinstance(token, str) or not token:
             raise BrainError("TOKEN_MISSING", "Guardian supplied no exact-action approval token")
         self.journal.remember_secret(token)
@@ -398,6 +429,34 @@ class BrainRuntime:
             if len(token) > 4096 or len(parts) != 3:
                 raise ValueError
             claims = json.loads(base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4)))
+            if parts[0] == "g1":
+                now = utc_time(clock.time).timestamp()
+                valid = (
+                    bool(parts[2]) and type(claims.get("v")) is int and claims["v"] == 1
+                    and isinstance(claims.get("kid"), str) and bool(claims["kid"])
+                    and claims.get("iss") == "guardian" and claims.get("aud") == "twin"
+                    and claims.get("run_id") == clock.run_id
+                    and type(claims.get("iat")) in (int, float)
+                    and type(claims.get("exp")) in (int, float)
+                    and math.isfinite(claims["iat"]) and math.isfinite(claims["exp"])
+                    and claims["iat"] <= now < claims["exp"]
+                    and 0 < claims["exp"] - claims["iat"] <= 60
+                    and isinstance(claims.get("token_id"), str) and bool(claims["token_id"])
+                    and all(claims.get(f) == intent[f] for f in ("action", "targets", "params"))
+                    and isinstance(claims.get("params"), dict)
+                    and not any(isinstance(v, bool) for v in claims["params"].values())
+                    and type(claims.get("trust_score")) in (int, float)
+                    and math.isfinite(claims["trust_score"])
+                    and floor / scale <= claims["trust_score"] <= 1
+                    and idempotency_key is not None and claims.get("idempotency_key") == idempotency_key
+                    and isinstance(claims.get("reading_ids"), list)
+                    and reading_ids is not None and len(set(claims["reading_ids"])) == len(claims["reading_ids"])
+                    and set(claims["reading_ids"]) == set(reading_ids)
+                    and risk is not None and claims.get("risk_level") == risk
+                )
+                if not valid:
+                    raise BrainError("TOKEN_BINDING_INVALID", "g1 approval does not bind this command and clock")
+                return token
             valid = (
                 claims["iss"] == "guardian"
                 and claims["aud"] == "twin"
@@ -538,6 +597,10 @@ class BrainRuntime:
         for scenario in self.scenarios:
             sid = scenario.scenario_id
             domain, sensors = RELEVANCE[sid]
+            if sid == "S08":
+                sensors = {self.policies.get(sid, {}).get("report_sensor", "emergency_calls")}
+            if sid in {"S06", "S08"} and not getattr(self.twin, "is_fixture", False) and not self.policies.get(sid, {}).get("report_contract_confirmed"):
+                continue
             relevant = [
                 row
                 for row in available_batch.readings
@@ -568,9 +631,7 @@ class BrainRuntime:
                 # Only usable observations can close an episode. Silence/null/gaps
                 # are not evidence that the incident ended.
                 clear_nodes = {row.reading.node_id for row in detected.observations
-                               if row.usable and row.reading.sensor == policy.get("sensor")
-                               and row.reading.value is not None
-                               and row.reading.value < policy.get("threshold_min", float("-inf"))}
+                               if row.usable and self._incident_cleared(row.reading, policy, sid)}
                 for episode_key in list(self.episodes):
                     if (episode_key[0] == sid and episode_key not in current_episode_keys
                             and set(episode_key[2]).issubset(clear_nodes)):
@@ -605,6 +666,13 @@ class BrainRuntime:
                     continue
                 generation = self.generation
                 evidence, scores, thresholds, scale = await self._trusted(batch, incidents, nodes)
+                graph = ContextGraph(nodes)
+                self.graph_context = graph.explain(
+                    run_id=batch.run_id, tick=batch.tick, evidence=evidence,
+                    focus_ids=[key for incident in incidents for key in incident.node_ids],
+                    invalid_ids=self.invalid_ids, blocked_devices=self.blocked_devices,
+                )
+                self.journal.append({"event": "graph_context", "scenario_id": sid, **self.graph_context})
                 allowed = [row for row in actions if row.action == ACTION_BY_SCENARIO[sid]]
                 context = PlanningContext(
                     batch=available_batch,
@@ -612,6 +680,7 @@ class BrainRuntime:
                     nodes=nodes,
                     actions=allowed,
                     evidence_readings=evidence,
+                    graph_context=copy.deepcopy(self.graph_context),
                 )
                 plan = await scenario.draft_plan(
                     context.model_copy(deep=True), BudgetProvider(self)
@@ -716,6 +785,19 @@ class BrainRuntime:
         await self._sync_containment(batch, capabilities)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
             raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
+        if proposal.action == "dispatch":
+            key = self._operation_key(batch, sid, proposal)
+            for carrier in proposal.targets:
+                readings = [self.ledger[source] for source in proposal.source_reading_ids
+                            if self.ledger[source].node_id == carrier
+                            and self.ledger[source].sensor == "units_free"
+                            and self.ledger[source].channel == proposal.params.get("unit_type")]
+                used = sum(qty for other, (node, unit, qty, sent_tick) in self.dispatch_allocations.items()
+                           if other != key and node == carrier and unit == proposal.params["unit_type"]
+                           and (self.intents.get(other, {}).get("status") != "committed"
+                                or not readings or min(r.tick for r in readings) <= sent_tick))
+                if not readings or min(r.value for r in readings) - used < proposal.params["units"]:
+                    raise BrainError("RESOURCE_RESERVED", "Unit is already allocated to another action")
         latest = self.latest_feed
         if latest is not None and latest.run_id != batch.run_id:
             raise BrainError("CLOCK_MISMATCH", "Twin reset while planning")
@@ -728,10 +810,12 @@ class BrainRuntime:
                 if row is None or row.value is None or row.unit != old.unit:
                     raise BrainError("EVIDENCE_CHANGED", "Latest feed no longer supports the plan evidence")
                 if row.sensor == "units_free" and row.value < proposal.params.get("units", 1):
-                    raise BrainError("EVIDENCE_CHANGED", "Latest feed has insufficient ambulance availability")
+                    raise BrainError("EVIDENCE_CHANGED", "Latest feed has insufficient matching-unit availability")
                 policy = self.policies.get(sid, {})
-                if (row.sensor == policy.get("sensor")
-                        and row.value < policy.get("threshold_min", float("-inf"))):
+                withdrawn = self._incident_cleared(row, policy, sid)
+                if sid == "S07" and row.sensor == policy.get("sensor"):
+                    withdrawn = row.value >= policy.get("threshold_max", float("-inf"))
+                if withdrawn:
                     raise BrainError("EVIDENCE_CHANGED", "Latest feed no longer shows this incident")
         return current
 
@@ -760,7 +844,9 @@ class BrainRuntime:
         check_caps(proposal, nodes, caps)
         if proposal.action == "set_valve_position":
             if not any(
-                sorted(choice.get("targets", [])) == proposal.targets
+                (sid != "S07" or (choice.get("supply_preserving") is True
+                                  and bool(choice.get("reviewed_topology_ref"))))
+                and sorted(choice.get("targets", [])) == proposal.targets
                 and choice.get("params") == proposal.params
                 and any(
                     self.ledger[source].node_id == choice.get("incident_node_id")
@@ -803,7 +889,8 @@ class BrainRuntime:
             request = self.sent_requests.get(key)
             if request and key not in self.reconciliation_attempts:
                 current = await self._check_execution_state(batch, capabilities, generation, proposal, sid)
-                self._token_binding(request["token"], intent, current, cutoff, scale)
+                self._token_binding(request["token"], intent, current, cutoff, scale,
+                                    idempotency_key=key, reading_ids=proposal.source_reading_ids, risk=proposal.risk)
                 self.reconciliation_attempts.add(key)
                 try:
                     response = await self._call(self.twin, "actuate", request)
@@ -853,6 +940,7 @@ class BrainRuntime:
                 "time": authorization_clock.time,
                 "risk": proposal.risk,
                 "source_reading_ids": proposal.source_reading_ids,
+                **({"idempotency_key": key} if self.features.get("guardian_exact_idempotency") else {}),
             },
         )
         if approval.get("approved") is not True:
@@ -864,7 +952,8 @@ class BrainRuntime:
                 },
             )
         current = await self._check_execution_state(batch, capabilities, generation, proposal, sid)
-        token = self._token_binding(approval.get("token"), intent, current, cutoff, scale)
+        token = self._token_binding(approval.get("token"), intent, current, cutoff, scale,
+                                    idempotency_key=key, reading_ids=proposal.source_reading_ids, risk=proposal.risk)
         if preview is not None and self.features.get("preview_tool") == "preview_action":
             until = preview.get("valid_until_tick")
             if type(until) is not int or current.tick > until:
@@ -872,7 +961,7 @@ class BrainRuntime:
         self.journal.set_clock(current)
         claims = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=" * (-len(token.split(".")[1]) % 4)))
         self.journal.append({"event": "guardian_approval", "run_id": batch.run_id,
-                             "tick": current.tick, "token_id": claims["jti"],
+                             "tick": current.tick, "token_id": claims.get("jti", claims.get("token_id")),
                              "source_reading_ids": proposal.source_reading_ids,
                              "idempotency_key": key})
         self.journal.append(
@@ -887,6 +976,8 @@ class BrainRuntime:
         )
         try:
             self.pending_started.setdefault(key, time.monotonic())
+            if proposal.action == "dispatch":
+                self.dispatch_allocations[key] = (proposal.targets[0], proposal.params["unit_type"], proposal.params["units"], current.tick)
             self.sent_requests[key] = {**intent, "token": token, "idempotency_key": key}
             self.intents[key] = {"status": "uncertain"}
             response = await self._call(
@@ -906,6 +997,7 @@ class BrainRuntime:
                     proposal,
                     code=error.code,
                 )
+            self.dispatch_allocations.pop(key, None)
             self.intents[key] = {"status": "rejected", "code": error.code, "details": error.details}
             return self._decision(
                 batch,
@@ -939,7 +1031,8 @@ class BrainRuntime:
                     if request:
                         self._token_binding(request["token"],
                                             {field: request[field] for field in ("action", "targets", "params")},
-                                            current, 0, 1)
+                                            current, 0, 1, idempotency_key=key,
+                                            reading_ids=proposal.source_reading_ids, risk=proposal.risk)
                     response = await asyncio.wait_for(
                         self._call(self.twin, tool, {"idempotency_key": key}), min(3, remaining))
                 return self._save_receipt(batch, sid, proposal, key, response)
@@ -988,6 +1081,8 @@ class BrainRuntime:
             response.get("code"),
             response.get("details"),
         )
+        if status == "rejected":
+            self.dispatch_allocations.pop(key, None)
         if status == "committed":
             for owner, incident in self.active.values():
                 if (owner == sid and incident.source_reading_ids
@@ -1001,6 +1096,7 @@ class BrainRuntime:
         if notice.event_id in self.containment_events:
             return {"accepted": True, "duplicate": True}
         self.containment_events.add(notice.event_id)
+        self.graph_context = {}
         self.generation += 1
         devices = set(notice.device_ids)
         affected = set(notice.reading_ids) | {

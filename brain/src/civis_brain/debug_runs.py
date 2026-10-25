@@ -20,7 +20,7 @@ from civis_brain.scenarios.registry import SCENARIOS
 
 class DebugRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    scenario: Literal["S01", "S02", "S03", "S04", "S05", "DEMO_R1"]
+    scenario: Literal["S01", "S02", "S03", "S04", "S05", "S07", "DEMO_R1"]
     variant: Literal["base", "refusal"] = "base"
     provider_mode: Literal["fixture", "gemini"] = "fixture"
     batches: list[ReadingsBatch] | None = Field(default=None, min_length=1, max_length=20)
@@ -35,6 +35,8 @@ def load_case(root: Path, scenario: str, variant: str) -> dict:
             case["guardian"]["approve"] = False
             case["expected"].update(final_statuses=["blocked"], effects=0, actuate_calls=0)
         return case
+    if scenario == "S07":
+        return json.loads((root / "mocks/cases/water" / f"low_{variant}_case.json").read_text(encoding="utf-8"))
     domain = {"S01": "traffic", "S02": "water", "S03": "power", "S04": "air_quality", "S05": "emergency"}[scenario]
     return json.loads(
         (root / "mocks/cases" / domain / f"{variant}_case.json").read_text(encoding="utf-8")
@@ -49,6 +51,7 @@ def templates(root: Path) -> list[dict]:
         ("S03", "Power"),
         ("S04", "Air Quality"),
         ("S05", "Medical emergency"),
+        ("S07", "Low water supply"),
     ]:
         for variant in ("base", "refusal"):
             case = load_case(root, scenario, variant)
@@ -214,6 +217,7 @@ async def run_debug_case(settings, request: DebugRunRequest, *, live_provider=No
                 "effect_details": twin.effects,
                 "provider_calls": traced_provider.calls,
                 "events": run.journal.events,
+                "graph_context": run.graph_context,
                 "incidents": run.get_active_incidents(run.run_id)["incidents"],
                 "mock_configuration": {
                     key: case[key] for key in ("nodes", "actions", "policy", "guardian", "caps")

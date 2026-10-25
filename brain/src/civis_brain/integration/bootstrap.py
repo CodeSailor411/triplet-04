@@ -4,6 +4,9 @@ from pathlib import Path
 from civis_mock_peers.peers import FixtureGuardian, FixturePlanProvider, FixtureTwin
 
 from civis_brain.integration.guardian_http import APPROVAL_TOOL, SCORE_TOOL, GuardianHTTPPeer
+from civis_brain.integration.guardian_v3 import APPROVAL_TOOL as V3_APPROVAL
+from civis_brain.integration.guardian_v3 import SCORE_TOOL as V3_SCORE
+from civis_brain.integration.guardian_v3 import GuardianV3Peer
 from civis_brain.integration.mcp_peer import MappedGuardianPeer, MCPPeer
 from civis_brain.integration.runtime import build_runtime
 from civis_brain.planning.gemini import GeminiPlanProvider
@@ -17,6 +20,9 @@ def configured_runtime(settings):
         "S03": "power",
         "S04": "air_quality",
         "S05": "emergency",
+        "S06": "traffic_accident",
+        "S07": "water_low",
+        "S08": "emergency_fire",
     }
     policies = {
         sid: json.loads((root / "config" / "scenarios" / f"{domain}.json").read_text())
@@ -26,7 +32,7 @@ def configured_runtime(settings):
         overrides = json.loads((root / settings.scenario_policy_file).read_text(encoding="utf-8"))
         if (not isinstance(overrides, dict) or not set(overrides).issubset(domains)
                 or any(not isinstance(value, dict) for value in overrides.values())):
-            raise ValueError("Scenario policy overrides must map known S01-S05 IDs to objects")
+            raise ValueError("Scenario policy overrides must map known S01-S08 IDs to objects")
         for sid, values in overrides.items():
             policies[sid] = {**policies[sid], **values}
     case = None
@@ -48,6 +54,7 @@ def configured_runtime(settings):
         case_path = root / settings.brain_fixture_case
         case = json.loads(case_path.read_text(encoding="utf-8"))
         policies[case["scenario_id"]] = case["policy"]
+        features["enabled_scenario_ids"] = [case["scenario_id"]]
         if not any(row["node_id"] == "POW-01" for row in case["nodes"]):
             case["nodes"].append(
                 {
@@ -91,6 +98,11 @@ def configured_runtime(settings):
             preview_tool=settings.twin_preview_tool,
             commit_tool=settings.twin_commit_tool,
         )
+        if settings.guardian_transport == "mcp_v3":
+            guardian = GuardianV3Peer(MCPPeer(settings.guardian_mcp_url, settings.guardian_brain_key,
+                                            settings.peer_timeout_seconds))
+            features.update(guardian_score_tool=V3_SCORE, guardian_token_tool=V3_APPROVAL,
+                            guardian_exact_idempotency=True)
         if settings.guardian_transport == "http_v2":
             if not settings.guardian_http_policy_file:
                 raise ValueError("HTTP Guardian needs its explicit published policy file")

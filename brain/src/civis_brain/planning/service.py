@@ -3,10 +3,12 @@ import math
 from civis_brain.contracts import ActionInfo, ActionProposal, Node, Plan, PlanningContext, Reading
 from civis_brain.errors import BrainError
 
+DISPATCH_UNITS = {"medical": {"ambulance"}, "fire": {"fire"}, "road_accident": {"police"}}
+
 PRIMARY_ACTIONS = {
-    "set_signal_plan": ("congestion", "R1", False),
-    "set_valve_position": ("flood", "R3", True),
-    "dispatch": ("medical", "R2", False),
+    "set_signal_plan": ({"congestion"}, "R1", False),
+    "set_valve_position": ({"flood", "low_water"}, "R3", True),
+    "dispatch": ({"medical", "fire", "road_accident"}, "R2", False),
 }
 
 
@@ -83,7 +85,7 @@ def validate_plan(context: PlanningContext, plan: Plan) -> Plan:
         matching = [
             incident
             for incident in context.incidents
-            if incident.kind == kind and set(incident.source_reading_ids).issubset(source_ids)
+            if incident.kind in kind and set(incident.source_reading_ids).issubset(source_ids)
         ]
         if not matching:
             raise BrainError("EVIDENCE_INCOMPLETE", "Proposal must retain the incident evidence")
@@ -111,19 +113,19 @@ def validate_plan(context: PlanningContext, plan: Plan) -> Plan:
                 )
         if proposal.action == "dispatch":
             locations = {node_id for incident in matching for node_id in incident.node_ids}
-            if params.get("destination") not in locations or params.get("unit_type") != "ambulance":
+            if params.get("destination") not in locations or params.get("unit_type") not in DISPATCH_UNITS[matching[0].kind]:
                 raise BrainError(
-                    "DESTINATION_INVALID", "Dispatch must match the reported medical location"
+                    "DESTINATION_INVALID", "Dispatch must match the incident location and unit type"
                 )
-            if params.get("units") != 1:
-                raise BrainError("UNITS_UNSUPPORTED", "Primary medical mock requests one ambulance")
+            if params.get("units") != 1 or len(proposal.targets) != 1:
+                raise BrainError("UNITS_UNSUPPORTED", "Primary mock requests one matching unit")
             for carrier in proposal.targets:
                 available = [
                     reading
                     for reading in evidence.values()
                     if reading.node_id == carrier
                     and reading.sensor == "units_free"
-                    and reading.channel == "ambulance"
+                    and reading.channel == params["unit_type"]
                     and reading.unit == "units"
                     and reading.value is not None
                     and reading.tick == context.batch.tick
@@ -132,12 +134,13 @@ def validate_plan(context: PlanningContext, plan: Plan) -> Plan:
                 ]
                 if not available or min(reading.value for reading in available) < 1:
                     raise BrainError(
-                        "UNITS_UNAVAILABLE", "No usable ambulance availability evidence"
+                        "UNITS_UNAVAILABLE", "No usable matching-unit availability evidence"
                     )
         proposals.append(
             proposal.model_copy(update={"targets": sorted(proposal.targets), "params": params})
         )
-    identities = {(item.action, tuple(item.targets)) for item in proposals}
+    identities = {(item.action, tuple(item.targets), item.params.get("destination")
+                   if item.action == "dispatch" else None) for item in proposals}
     if len(identities) != len(proposals):
         raise BrainError("DUPLICATE_PROPOSAL", "Duplicate action/carrier proposal in one plan")
     return Plan(proposals=proposals, alerts=plan.alerts)

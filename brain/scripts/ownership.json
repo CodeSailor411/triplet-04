@@ -6,21 +6,24 @@
       "brain/tests/scenarios/traffic/",
       "brain/mocks/cases/traffic/",
       "brain/config/scenarios/traffic.json",
-      "brain/docs/mock-team/progress/yassine.md"
+      "brain/docs/mock-team/progress/yassine.md",
+      "brain/config/scenarios/traffic_accident.json"
     ],
     "codex/civis-meriem": [
       "brain/src/civis_brain/scenarios/water/",
       "brain/tests/scenarios/water/",
       "brain/mocks/cases/water/",
       "brain/config/scenarios/water.json",
-      "brain/docs/mock-team/progress/meriem.md"
+      "brain/docs/mock-team/progress/meriem.md",
+      "brain/config/scenarios/water_low.json"
     ],
     "codex/civis-maram": [
       "brain/src/civis_brain/scenarios/emergency/",
       "brain/tests/scenarios/emergency/",
       "brain/mocks/cases/emergency/",
       "brain/config/scenarios/emergency.json",
-      "brain/docs/mock-team/progress/maram.md"
+      "brain/docs/mock-team/progress/maram.md",
+      "brain/config/scenarios/emergency_fire.json"
     ],
     "codex/civis-elyes": [
       "brain/",

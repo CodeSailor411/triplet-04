@@ -69,6 +69,22 @@ async def check(settings):
             return {"ready": all(row["passed"] for row in checks),
                     "scope": "HTTP evidence support does not certify signed-action interoperability",
                     "checks": checks}
+        if settings.guardian_transport == "mcp_v3":
+            try:
+                names = set(await MCPPeer(settings.guardian_mcp_url, settings.guardian_brain_key,
+                                          settings.peer_timeout_seconds).list_tool_names())
+                required = {"describe_capabilities", "get_trust_verdict", "authorize_action"}
+                record("guardian_v3_tools", required.issubset(names), {"missing": sorted(required - names)})
+                capabilities = await runtime.guardian.call_tool("get_capabilities", {})
+                record("guardian_policy", isinstance(capabilities.get("thresholds"), dict),
+                       "Published v3 inclusive reading cutoff and risk minima")
+                record("guardian_contract", settings.guardian_contract_confirmed,
+                       "Explicit confirmation is required before live evidence use")
+            except BrainError as error:
+                record("guardian_connection", False, error.code)
+            return {"ready": all(row["passed"] for row in checks),
+                    "scope": "Connection prerequisites only; actual signed actions need joint acceptance",
+                    "checks": checks}
         try:
             names = await MCPPeer(settings.guardian_mcp_url, settings.guardian_brain_key,
                                   settings.peer_timeout_seconds).list_tool_names()

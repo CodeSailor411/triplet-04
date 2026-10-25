@@ -53,6 +53,7 @@ details { margin: 10px 0; } summary { cursor: pointer; }
 <details><summary>Submitted readings</summary><pre id="readings"></pre></details>
 <details><summary>Mock nodes, action manifest and policies</summary><pre id="configuration"></pre></details>
 <details><summary>Simulated Twin effects</summary><pre id="effects"></pre></details>
+<details><summary>Geographic context (reference distances, not routes)</summary><pre id="graph-context">No geographic context yet.</pre></details>
 <h2>3. Request and response trace</h2>
 <p>Requests are listed in execution order. Approval tokens are redacted. Gemini entries include the request, final output and locally validated Plan.</p>
 <div id="exchanges"></div>
@@ -126,6 +127,7 @@ function showResult(result) {
     ? "Custom readings: compare the decisions and effects below; preset acceptance is not applied."
     : "Standard case acceptance: " + (check.passed ? "PASS" : "FAIL") +
       ". Expected " + json(check.expected) + "; actual " + json(check.actual) + ".";
+  $("graph-context").textContent = json(result.graph_context || {});
   $("decisions").textContent = "";
   for (const batch of result.batches) {
     const rows = batch.decisions.length ? batch.decisions : [{status: "no incident", action: "", reason: "No action needed"}];

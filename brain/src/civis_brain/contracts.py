@@ -130,6 +130,7 @@ class PlanningContext(WireModel):
     actions: list[ActionInfo]
     # Earlier persistence evidence is separate from the current-tick wire batch.
     evidence_readings: list[Reading] = Field(default_factory=list)
+    graph_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class TrustResult(WireModel):

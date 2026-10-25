@@ -14,7 +14,7 @@ from civis_brain.planning.gemini import GeminiPlanProvider
 from civis_brain.settings import Settings
 
 
-@pytest.mark.parametrize("scenario", ["S01", "S02", "S03", "S04", "S05", "DEMO_R1"])
+@pytest.mark.parametrize("scenario", ["S01", "S02", "S03", "S04", "S05", "S07", "DEMO_R1"])
 @pytest.mark.parametrize("variant", ["base", "refusal"])
 async def test_standard_debug_cases_run_through_actual_core(scenario, variant):
     result = await run_debug_case(
@@ -125,7 +125,7 @@ def test_request_editor_routes_and_redacted_export():
         client.get("/")
         assert client.get("/debug/export").status_code == 404
         rows = client.get("/debug/templates").json()["templates"]
-        assert len(rows) == 10
+        assert len(rows) == 12
         body = next(row["request"] for row in rows if row["request"]["scenario"] == "S01")
         assert client.post("/debug/run", json=body).status_code == 403
         response = client.post("/debug/run", json=body, headers={"Origin": "http://localhost"})

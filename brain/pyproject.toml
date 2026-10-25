@@ -11,7 +11,7 @@ dynamic = ["dependencies"]
 
 [tool.setuptools]
 packages = [
-    "civis_brain", "civis_brain.inputs", "civis_brain.planning", "civis_brain.integration",
+    "civis_brain", "civis_brain.context_graph", "civis_brain.inputs", "civis_brain.planning", "civis_brain.integration",
     "civis_brain.scenarios", "civis_brain.scenarios.traffic", "civis_brain.scenarios.water",
     "civis_brain.scenarios.power", "civis_brain.scenarios.air_quality",
     "civis_brain.scenarios.emergency", "civis_mock_peers",
