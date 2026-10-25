@@ -43,16 +43,17 @@ async def draft_dispatch(context: PlanningContext, provider, *, profile: Dispatc
     if len(evidence) != len(context.evidence_readings):
         return Plan(proposals=[])
     nodes = {n.node_id: n for n in context.nodes}
+    destination_domain = "traffic" if profile.kind == "road_accident" else "emergency"
     candidates = []
     for incident in context.incidents:
         if (incident.kind != profile.kind or incident.run_id != context.batch.run_id
-                or "emergency" not in incident.domains or len(incident.node_ids) != 1
+                or destination_domain not in incident.domains or len(incident.node_ids) != 1
                 or incident.facts.get("destination") != incident.node_ids[0]
                 or not set(incident.source_reading_ids).issubset(evidence)
                 or len(set(incident.source_reading_ids)) != len(incident.source_reading_ids)):
             continue
         destination = nodes.get(incident.node_ids[0])
-        if destination is None or "emergency" not in destination.domains:
+        if destination is None or destination_domain not in destination.domains:
             continue
         reports, available = [], {}
         valid = True

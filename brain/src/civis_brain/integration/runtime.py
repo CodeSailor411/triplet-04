@@ -46,7 +46,7 @@ ACTION_BY_SCENARIO = {
     "S03": None,
     "S04": None,
     "S05": "dispatch",
-    "S06": None,
+    "S06": "dispatch",
     "S07": "set_valve_position",
     "S08": "dispatch",
 }
