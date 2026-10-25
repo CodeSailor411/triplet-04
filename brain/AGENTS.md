@@ -1,8 +1,8 @@
-# CIVIS five-scenario development rules
+# CIVIS scenario development rules
 
 Read docs/mock-team/README.md, SCENARIOS.md, CONTRACT.md and the card matching the current branch. User instructions take precedence.
 
-- The current plan is five scenario modules, superseding detector/planner/fixtures team ownership.
+- Five domain modules own the scenario detector/planner/fixture work. Current development extends their existing folders to S06-S08; read the next-stage role cards and the 25 October shared-core handover.
 - Work only on current assigned branch and paths in scripts/ownership.json. Implement only that member's tasks, one step at a time.
 - Elyes owns shared models/ports, normalization, fixed registry, single direct Gemini provider, fake peers, live clients, approval/execution, settings, dependencies, CI and release.
 - Members own their scenario detector/response, fixtures, tests and progress. Never duplicate the common runtime or implement another member's files.
@@ -12,7 +12,7 @@ Read docs/mock-team/README.md, SCENARIOS.md, CONTRACT.md and the card matching t
 - AI proposes typed responses only. Guardian approves exact requests; Twin executes/enforces caps. Brain never contains, releases or issues approval tokens.
 - Missing evidence/approval/required safe preview means blocked, never fabricated success. Scores are not permission.
 - Keep source IDs, null, units and multi-domain membership. No guessed thresholds, outage/leak facts or safe valve directions.
-- Threshold examples are fixture-only. Three deferred incident types are not implemented for this checkpoint.
+- Threshold examples are fixture-only. Published brain-mock-2 is the five-scenario checkpoint. The development branch adds S07 offline workflows, S06 detection/alert and S08 detection; the S08 member planner remains incomplete. New live policies stay disabled until partner prerequisites are reviewed.
 - Keep API/peer calls out of CI. Never expose/commit .env, keys or tokens.
 - Run meaningful member tests plus full suite/Ruff. Do not skip required failures or hide an incomplete shared runtime.
 - Member PRs target codex/civis-elyes, reviewed by CodeSailor411. No force push or blind conflict resolution.

@@ -2,6 +2,10 @@
 
 25 October 2026. Development branch `codex/civis-elyes`. All integrations are local. `main` and published `brain-mock-2` are unchanged.
 
+## CIVIS validation
+
+Code checkpoint `c9e3a78` passes **467 Brain tests, zero failures or skips**, plus Ruff, from a fresh Windows clone. The committed setup installs all 55 locked packages with Python 3.12.13; the clean test environment contains no real API key or private partner configuration. Earlier development checks passed 466 tests before the final strict token-version regression was added. The service dependency lock is unchanged.
+
 ## Member review
 
 | PR | Delivered | Review outcome |

@@ -1,5 +1,7 @@
 # S07 Water integration handoff
 
+Historical 24 October snapshot. Mariem's PR 20 was received and S07 shared integration completed locally on 25 October. Read `ELYES_SHARED_CORE_2026-10-25.md` and `PR_REVIEW_AND_V3_ACCEPTANCE_2026-10-25.md` for current status. The receipt/registration blockers below no longer apply; live metadata prerequisites remain.
+
 24 October 2026. Owner: Elyes. S07 implementation pending receipt from Mariem.
 
 ## Confirmed inputs
