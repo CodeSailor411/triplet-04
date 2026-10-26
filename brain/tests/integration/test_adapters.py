@@ -55,6 +55,44 @@ async def test_real_sdk_in_memory_transport_and_schema_refusals(monkeypatch):
         assert error.value.code == code
 
 
+@pytest.mark.parametrize("message,tool_name,expected", [
+    ("verdict_not_found", "get_trust_verdict", "GUARDIAN_VERDICT_NOT_READY"),
+    ("verdict_not_found", "other_tool", "PEER_ERROR"),
+    ("verdict_not_found PRIVATE_KEY", "get_trust_verdict", "PEER_ERROR"),
+    ("upstream: verdict_not_found", "get_trust_verdict", "PEER_ERROR"),
+    ("CAP_EXCEEDED: fixture refusal", "get_trust_verdict", "CAP_EXCEEDED"),
+])
+async def test_real_mcp_only_exposes_allowlisted_missing_verdict_code(
+        monkeypatch, message, tool_name, expected):
+    server = MCPServer("verdict-refusal-test")
+
+    @server.tool(name=tool_name)
+    def refuse(reading_id: str, fresh: bool = False) -> dict:
+        raise ToolError(message)
+
+    monkeypatch.setattr(mcp_peer, "streamable_http_client", lambda *args, **kwargs: server)
+    with pytest.raises(BrainError) as error:
+        await MCPPeer("in-memory", "fixture-only-key").call_tool(
+            tool_name, {"reading_id": "r", "fresh": True})
+    assert error.value.code == expected
+    assert "PRIVATE_KEY" not in str(error.value)
+
+
+async def test_real_mcp_value_error_does_not_prove_verdict_is_pending(monkeypatch):
+    server = MCPServer("verdict-crash-test")
+
+    @server.tool()
+    def get_trust_verdict(reading_id: str, fresh: bool = False) -> dict:
+        raise ValueError("verdict_not_found PRIVATE_KEY")
+
+    monkeypatch.setattr(mcp_peer, "streamable_http_client", lambda *args, **kwargs: server)
+    with pytest.raises(BrainError) as error:
+        await MCPPeer("in-memory", "fixture-only-key").call_tool(
+            "get_trust_verdict", {"reading_id": "r", "fresh": True})
+    assert error.value.code == "PEER_ERROR"
+    assert "PRIVATE_KEY" not in str(error.value)
+
+
 async def test_guardian_mapping_requires_explicit_fields():
     class WirePeer:
         def __init__(self):

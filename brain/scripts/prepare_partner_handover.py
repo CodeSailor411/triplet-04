@@ -4,7 +4,7 @@ import argparse
 import secrets
 from pathlib import Path
 
-from dotenv import dotenv_values, set_key
+from dotenv import dotenv_values, set_key, unset_key
 
 ROOT = Path(__file__).resolve().parents[1]
 KEYS = ("BRAIN_TWIN_CALLER_KEY", "BRAIN_GUARDIAN_CALLER_KEY", "BRAIN_SCENARIO_KEY",
@@ -23,6 +23,26 @@ def prepare(source: Path, output: Path):
     existing = dotenv_values(target) if target.exists() else {}
     if not target.exists():
         target.write_text((ROOT / "config/partner.env.example").read_text(), encoding="utf-8")
+    for name in ("BRAIN_HOST", "BRAIN_PORT", "TWIN_MCP_URL", "TWIN_EVENTS_URL",
+                 "GUARDIAN_MCP_URL", "GEMINI_MODEL", "PEER_TIMEOUT_SECONDS",
+                 "MAX_EVIDENCE_AGE_SECONDS", "AI_TIMEOUT_SECONDS", "AI_MAX_CALLS_PER_RUN"):
+        if not existing.get(name) and config.get(name):
+            set_key(str(target), name, config[name])
+    current = dotenv_values(target)
+    # Migrate previously generated v2 bundles as well as creating usable v3 ones.
+    for name, value in {
+        "GUARDIAN_TRANSPORT": "mcp_v3",
+        "GUARDIAN_CONTRACT_CONFIRMED": "true",
+        "GUARDIAN_SCORE_TOOL": "get_trust_verdict",
+        "GUARDIAN_TOKEN_TOOL": "authorize_action",
+        "GUARDIAN_VERDICT_WAIT_SECONDS": "1.5",
+    }.items():
+        set_key(str(target), name, value)
+    if current.get("GUARDIAN_MCP_URL") in (None, "", "http://127.0.0.1:8002/mcp"):
+        set_key(str(target), "GUARDIAN_MCP_URL", "http://127.0.0.1:5000/mcp")
+    if not existing.get("SCENARIO_POLICY_FILE"):
+        set_key(str(target), "SCENARIO_POLICY_FILE",
+                config.get("SCENARIO_POLICY_FILE") or "config/integration/twin-mock-3.json")
     for name in KEYS:
         # Re-running preserves handed-over credentials. Development defaults are replaced.
         value = existing.get(name) or config.get(name)
@@ -37,29 +57,40 @@ def prepare(source: Path, output: Path):
                      "TWIN_KEY_CITY_BRAIN": values["TWIN_BRAIN_KEY"]},
         "houssem.env": {"BRAIN_MCP_URL": "http://127.0.0.1:8001/mcp",
                         "BRAIN_GUARDIAN_CALLER_KEY": values["BRAIN_GUARDIAN_CALLER_KEY"],
-                        "GUARDIAN_BRAIN_KEY": values["GUARDIAN_BRAIN_KEY"]},
+                        "GUARDIAN_BRAIN_BEARER_KEY": values["BRAIN_GUARDIAN_CALLER_KEY"],
+                        "GUARDIAN_BRAIN_MCP_BEARER_KEY": values["GUARDIAN_BRAIN_KEY"]},
     }
     for filename, fields in role_files.items():
         destination = output / filename
         destination.touch(exist_ok=True)
+        if filename == "houssem.env" and "GUARDIAN_BRAIN_KEY" in dotenv_values(destination):
+            unset_key(str(destination), "GUARDIAN_BRAIN_KEY")
         for name, value in fields.items():
             set_key(str(destination), name, value)
     (output / "README.txt").write_text(
-        "PRIVATE CIVIS brain-mock-2 configuration. Never attach these files to GitHub.\n\n"
+        "PRIVATE CIVIS development configuration, codex/civis-elyes. Never publish.\n\n"
         "Brain operator: copy .env.partner to brain/.env.partner. It includes the Gemini key.\n"
-        "Start with scripts/start_partner.ps1. Keep ordinary .env for offline debugging.\n"
+        "Windows: scripts/start_partner.ps1. Linux: from brain, set CIVIS_ENV_FILE to\n"
+        "the absolute .env.partner path and run .venv/bin/python -m civis_brain.\n"
         "Dali: use dali.env. TWIN_KEY_CITY_BRAIN must be installed on Twin or replaced\n"
         "with Dali's issued value in BOTH Twin and Brain's TWIN_BRAIN_KEY.\n"
         "BRAIN_TWIN_CALLER_KEY is the Bearer key for Twin calls to Brain.\n"
         "Houssem: use houssem.env. BRAIN_GUARDIAN_CALLER_KEY authorizes callbacks to Brain.\n"
-        "GUARDIAN_BRAIN_KEY is the proposed inbound Brain key for Guardian; Houssem must\n"
-        "install it or supply his issued value for Brain to use. This file does not\n"
-        "configure the current Guardian server automatically or create missing APIs.\n\n"
+        "Its Guardian-side name is GUARDIAN_BRAIN_BEARER_KEY. This sets a credential,\n"
+        "not a callback implementation or an HTTP verdict endpoint on Brain.\n"
+        "GUARDIAN_BRAIN_MCP_BEARER_KEY on Guardian must equal GUARDIAN_BRAIN_KEY on Brain.\n"
+        "Guardian and Brain each consume Twin's real feed independently. Neither\n"
+        "role file configures that bridge automatically. Guardian must give Twin\n"
+        "its public verification key; compare its fingerprint on both machines.\n"
+        "Never distribute Guardian's private signing key to Brain.\n\n"
         "Each peer receives only its role file unless it will host Brain itself.\n"
         "Localhost URLs assume all services run on one machine. For separate computers,\n"
         "replace URLs with the actual service addresses and bind Brain to the agreed\n"
-        "network address. Keep GUARDIAN_CONTRACT_CONFIRMED=false until the real mapping\n"
-        "is agreed. Supply reviewed Water choices via SCENARIO_POLICY_FILE.\n"
+        "network address. The selected v3 contract uses describe_capabilities,\n"
+        "get_trust_verdict and authorize_action. A missing verdict is retried briefly\n"
+        "then blocks; Brain never creates a score. The included Water policy permits\n"
+        "only a virtual WAT-01 valve command for Twin mock3 seed42. It does not\n"
+        "establish hydraulic safety or enable low-water supply actions.\n"
         "These files coordinate credentials, not proof of joint acceptance.\n",
         encoding="utf-8")
     return target

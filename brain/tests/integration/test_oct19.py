@@ -291,7 +291,8 @@ def test_live_mock_policy_override_is_explicit_and_guardian_stays_unconfirmed(tm
     ]}}))
     runtime = configured_runtime(Settings(_env_file=None, peer_mode="live",
         llm_mode="gemini", gemini_api_key="test-only-not-a-real-key",
-        scenario_policy_file=str(policy), mock_integration_profile=True))
+        scenario_policy_file=str(policy), mock_integration_profile=True,
+        guardian_contract_confirmed=False))
     assert runtime.policies["S02"]["safe_valve_choices"][0]["params"] == {"position": 30}
     assert runtime.policies["S02"]["fixture_only"] is True
     assert runtime.features["guardian_contract_confirmed"] is False

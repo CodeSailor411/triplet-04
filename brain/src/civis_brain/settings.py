@@ -16,13 +16,14 @@ class Settings(BaseSettings):
     brain_scenario_key: str = "dev-scenario-to-brain"
     twin_mcp_url: str = "http://127.0.0.1:8000/mcp"
     twin_brain_key: str = "dev-brain-to-twin"
-    guardian_mcp_url: str = "http://127.0.0.1:8002/mcp"
+    guardian_mcp_url: str = "http://127.0.0.1:5000/mcp"
     guardian_brain_key: str = "dev-brain-to-guardian"
-    guardian_transport: Literal["mcp", "http_v2", "mcp_v3"] = "mcp"
+    guardian_transport: Literal["mcp", "http_v2", "mcp_v3"] = "mcp_v3"
     guardian_http_url: str = "http://127.0.0.1:5000"
     guardian_http_policy_file: str = ""
-    guardian_score_tool: str = "CONFIRM_WITH_9ANTRA"
-    guardian_token_tool: str = "CONFIRM_WITH_9ANTRA"
+    guardian_score_tool: str = "get_trust_verdict"
+    guardian_token_tool: str = "authorize_action"
+    guardian_verdict_wait_seconds: float = Field(default=1.5, ge=0, le=10)
     llm_mode: Literal["fixture", "gemini"] = "fixture"
     gemini_api_key: str = Field(default="", repr=False)
     gemini_model: str = "gemini-3.5-flash-lite"
@@ -38,7 +39,7 @@ class Settings(BaseSettings):
     peer_mode: Literal["fixture", "live"] = "fixture"
     brain_config_root: str = str(Path(__file__).resolve().parents[2])
     brain_fixture_case: str = "mocks/cases/air_quality/base_case.json"
-    guardian_contract_confirmed: bool = False
+    guardian_contract_confirmed: bool = True
     guardian_mapping_file: str = ""
     twin_preview_tool: str | None = "preview_action"
     twin_commit_tool: str | None = None

@@ -1,8 +1,8 @@
 # CIVIS Brain primary mock
 
-Checkpoint **brain-mock-2**, 20 October 2026, on **codex/civis-elyes**. The five reduced scenarios are integrated, including continuous Twin input and bounded evidence recovery. Full joint readiness remains false because real Guardian authorization, the Traffic metric and partner security fixes are outstanding. Twin preview is integrated; Water still needs reviewed valve choices.
+Checkpoint **brain-mock-3**, 27 October 2026, branch **codex/civis-elyes**. It maps Guardian v3's `describe_capabilities`, individual `get_trust_verdict` and `authorize_action`, retaining the original Guardian `g1` token. Twin mock 3 supplies the Traffic metric. **522 CIVIS tests pass; full joint acceptance remains blocked.** See the [release handover](docs/mock-team/BRAIN_MOCK_3.md) and [setup, gate and partner findings](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md). Brain-mock-2 remains unchanged.
 
-**Partners: follow [the live handover](docs/mock-team/BRAIN_MOCK_2.md).** Use the separately supplied `.env.partner` and `scripts/start_partner.ps1`. This path uses actual peer services and Gemini. The developer commands below use the ordinary `.env`; the browser presets always use isolated simulated peers.
+**Partners: follow [the current live setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md).** Use a private `.env.partner` based on `config/partner.env.example`. Windows: `scripts/start_partner.ps1`; Linux: `.venv/bin/python -m civis_brain --env-file .env.partner` from `brain`. This path uses actual peer services and Gemini. The developer commands below use ordinary `.env`; browser presets always use isolated simulated peers. The [brain-mock-2 handover](docs/mock-team/BRAIN_MOCK_2.md) describes that historical tag only.
 
 | Scenario | Original owner | Reduced mock response |
 | --- | --- | --- |

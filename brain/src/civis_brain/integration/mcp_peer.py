@@ -90,6 +90,15 @@ class MCPPeer:
                         message = next(
                             (part.text for part in result.content if hasattr(part, "text")), ""
                         )
+                        # Only the agreed absence code permits a verdict-availability
+                        # retry. A generic tool crash must remain an ordinary failure.
+                        if name == "get_trust_verdict" and message.strip() in {
+                            "verdict_not_found",
+                            "Error executing tool get_trust_verdict: verdict_not_found",
+                            "Error calling tool 'get_trust_verdict': verdict_not_found",
+                        }:
+                            raise BrainError("GUARDIAN_VERDICT_NOT_READY",
+                                             "Guardian has not scored the required evidence")
                         match = re.search(r"(?:^|:\s)([A-Z][A-Z0-9_]{1,63}):", message)
                         code = match.group(1) if match else "PEER_ERROR"
                         raise BrainError(code, "Peer refused the configured request")

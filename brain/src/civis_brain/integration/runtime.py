@@ -26,6 +26,7 @@ from civis_brain.errors import BrainError
 from civis_brain.inputs.service import normalize_batch, utc_time
 from civis_brain.integration.journal import Journal
 from civis_brain.integration.recovery import recover
+from civis_brain.integration.water_policy import validate_water_choices
 from civis_brain.planning.service import check_caps, validate_plan
 from civis_brain.ports import PlanProvider, ToolPeer
 from civis_brain.scenarios.registry import SCENARIOS
@@ -112,6 +113,7 @@ class BrainRuntime:
         self.feed_generation = 0
         self.latest_feed = None
         self.feed_connected = None
+        self.discovery_snapshot = None
         self._reset()
 
     def _reset(self):
@@ -195,6 +197,13 @@ class BrainRuntime:
             raise BrainError(
                 "PEER_UNAVAILABLE", "Peer call failed; no success was assumed"
             ) from None
+        finally:
+            if peer is self.guardian and name == "guardian_v3_scores":
+                summary = getattr(peer, "last_retrieval", None)
+                if isinstance(summary, dict):
+                    self.journal.append({"event": "guardian_verdict_retrieval",
+                                         "run_id": arguments.get("run_id"),
+                                         "tick": arguments.get("tick"), **summary})
 
     def _decision(
         self, batch, scenario, status, reason, evidence=(), proposal=None, code=None, details=None
@@ -238,6 +247,7 @@ class BrainRuntime:
         nodes = [Node.model_validate(row) for row in nodes_response["nodes"]]
         actions = [ActionInfo.model_validate(row) for row in actions_response["actions"]]
         normalize_batch(batch, nodes)
+        self.discovery_snapshot = (copy.deepcopy(nodes_response), copy.deepcopy(actions_response))
         return nodes, actions, capabilities
 
     async def _sync_containment(self, batch, capabilities):
@@ -611,6 +621,13 @@ class BrainRuntime:
             incidents = []
             try:
                 policy = self.policies.get(sid, {})
+                if sid == "S02" and policy.get("policy_scope") == "virtual-command-test-only":
+                    if self.discovery_snapshot is None:
+                        raise BrainError("TOPOLOGY_UNAVAILABLE", "Current Water discovery is missing")
+                    validate_water_choices(
+                        policy, *self.discovery_snapshot,
+                        mock_profile=self.features.get("mock_integration_profile", False),
+                    )
                 if policy.get("fixture_only") is True and not getattr(
                     self.twin, "is_fixture", False
                 ) and not self.features.get("mock_integration_profile", False):

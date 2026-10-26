@@ -21,7 +21,7 @@ def test_explicit_environment_reaches_app_factory(tmp_path, monkeypatch):
     with TestClient(app) as client:
         health = client.get("/health").json()
         assert health["peer_mode"] == "live" and health["llm_mode"] == "gemini"
-        assert health["guardian_contract_confirmed"] is False
+        assert health["guardian_contract_confirmed"] is True
         assert "test-key-only" not in str(health)
 
 
@@ -39,6 +39,19 @@ def test_live_startup_does_not_read_any_fixture_case(tmp_path):
     assert runtime.twin.is_fixture is False
     assert runtime.guardian.is_fixture is False
     assert not (tmp_path / "mocks").exists()
+
+
+def test_live_defaults_use_published_guardian_v3_contract_with_bounded_wait():
+    from civis_brain.integration.guardian_v3 import GuardianV3Peer
+
+    runtime = configured_runtime(Settings(
+        _env_file=None, peer_mode="live", llm_mode="gemini", gemini_api_key="test-only-key",
+        peer_timeout_seconds=1, guardian_verdict_wait_seconds=5))
+    assert isinstance(runtime.guardian, GuardianV3Peer)
+    assert runtime.guardian.peer.url == "http://127.0.0.1:5000/mcp"
+    assert runtime.guardian.verdict_wait_seconds == 0.5
+    assert runtime.features["guardian_contract_confirmed"] is True
+    assert runtime.features["guardian_exact_idempotency"] is True
 
 
 @pytest.mark.parametrize("mode,key,message", [
@@ -74,10 +87,41 @@ def test_private_handover_separates_roles_and_preserves_keys(tmp_path):
     houssem = dotenv_values(target.parent / "houssem.env")
     assert dali["TWIN_KEY_CITY_BRAIN"] == full["TWIN_BRAIN_KEY"]
     assert houssem["BRAIN_GUARDIAN_CALLER_KEY"] == full["BRAIN_GUARDIAN_CALLER_KEY"]
+    assert houssem["GUARDIAN_BRAIN_BEARER_KEY"] == full["BRAIN_GUARDIAN_CALLER_KEY"]
     assert "private-test-gemini" not in str(dali) + str(houssem)
     assert full["PEER_MODE"] == "live" and full["TWIN_FEED_ENABLED"] == "true"
+    assert full["GUARDIAN_TRANSPORT"] == "mcp_v3"
+    assert full["GUARDIAN_CONTRACT_CONFIRMED"] == "true"
+    assert full["GUARDIAN_MCP_URL"] == "http://127.0.0.1:5000/mcp"
+    assert houssem["GUARDIAN_BRAIN_MCP_BEARER_KEY"] == full["GUARDIAN_BRAIN_KEY"]
+    assert "GUARDIAN_BRAIN_KEY" not in houssem
     prepare(source, target.parent)
     assert dotenv_values(target) == full
+
+
+def test_private_handover_updates_stale_contract_without_changing_custom_addresses(tmp_path):
+    import runpy
+
+    from dotenv import dotenv_values
+
+    prepare = runpy.run_path(str(ROOT / "scripts/prepare_partner_handover.py"))["prepare"]
+    source = tmp_path / "source.env"
+    source.write_text("GEMINI_API_KEY=private-test-gemini\n")
+    output = tmp_path / "handover"
+    output.mkdir()
+    (output / ".env.partner").write_text(
+        "GUARDIAN_TRANSPORT=mcp\nGUARDIAN_CONTRACT_CONFIRMED=false\n"
+        "GUARDIAN_SCORE_TOOL=CONFIRM_WITH_9ANTRA\n"
+        "GUARDIAN_MCP_URL=http://guardian.test:5000/mcp\n"
+        "TWIN_MCP_URL=http://twin.test:8000/mcp\n"
+        "SCENARIO_POLICY_FILE=.artifacts/reviewed.json\n")
+    result = dotenv_values(prepare(source, output))
+    assert result["GUARDIAN_TRANSPORT"] == "mcp_v3"
+    assert result["GUARDIAN_CONTRACT_CONFIRMED"] == "true"
+    assert result["GUARDIAN_SCORE_TOOL"] == "get_trust_verdict"
+    assert result["GUARDIAN_MCP_URL"] == "http://guardian.test:5000/mcp"
+    assert result["TWIN_MCP_URL"] == "http://twin.test:8000/mcp"
+    assert result["SCENARIO_POLICY_FILE"] == ".artifacts/reviewed.json"
 
 
 def test_private_handover_refuses_git_checkout(tmp_path):

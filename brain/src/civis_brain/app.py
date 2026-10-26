@@ -138,6 +138,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "version": __version__,
             "peer_mode": settings.peer_mode,
             "llm_mode": settings.llm_mode,
+            "guardian_transport": settings.guardian_transport,
             "guardian_contract_confirmed": settings.guardian_contract_confirmed,
             "browser_presets": "isolated fixtures, not the live feed",
             "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),

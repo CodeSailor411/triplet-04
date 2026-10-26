@@ -1,51 +1,48 @@
 # Brain and Guardian integration contract
 
-20 October 2026. This is the implemented Brain adapter contract for partner review. Guardian_Unified is uploaded, but its MCP server exposes RF advisory tools and no exact-action token issuer. Keep the mapping unconfirmed until its actual assessment and authorization interfaces are delivered. See INTEROPERABILITY_2026-10-19.md for the current test evidence.
+26 October 2026. CIVIS adopts the names and schema published in `guardian_mock_v3/guardian/INTERFACE.md`. Select `GUARDIAN_TRANSPORT=mcp_v3`. This replaces the old advisory-only description; it does not certify joint action acceptance. Older checkpoints remain reproducible in Git history.
 
-## Requests and responses
+## Existing MCP tools and mappings
 
-MCP Streamable HTTP, pinned protocol 2026-07-28. Every private call uses the receiving service's Bearer credential. Brain uses a numeric evidence assessment and a separate exact-action authorization.
+Streamable HTTP, MCP protocol `2026-07-28`. Guardian's capabilities tool is `describe_capabilities`. Brain and Twin retain `get_capabilities`; the adapter's normalized internal operation is not a wire rename.
 
-| Operation | Brain sends | Brain expects after mapping |
-| --- | --- | --- |
-| Capabilities | {} | protocol_version, positive score_scale, thresholds with reading, R1, R2, R3 |
-| Assess evidence | run_id, tick, readings with original IDs, values and units | scores: exactly one {reading_id, score} per requested reading |
-| Authorize action | run_id, tick, time, action, targets, params, risk, source_reading_ids | approved: true and token, or approved: false and an optional code |
-| Containment callback to Brain | notify_containment({notice}) | accepted, duplicate indication when applicable |
+| Guardian wire | CIVIS normalization |
+|---|---|
+| `describe_capabilities({})` | `score_scale:1`; reading cutoff from `guardian_verdict_policy.trusted_min_inclusive`; R1-R3 from `risk_minimums` |
+| `get_trust_verdict({reading_id,fresh:true})` | One call per original ID; `caused_by` must match; finite `trust_score` becomes `score`; `scale` must be `[0,1]` |
+| `authorize_action({run_id,reading_ids,action,targets,params,risk_level,domain,idempotency_key})` | Original source IDs become `reading_ids`; risk becomes `risk_level`; domain follows the existing action; approved decision requires the original token; refusal preserves `refusal_code` |
 
-time is simulated UTC from Twin, not the computer clock. Scores are finite numbers in the advertised scale, never labels or booleans. A score does not authorize an action. Missing or malformed required fields block the action.
+`guardian_v3_scores` and `guardian_v3_approval` are internal port labels, not public tools partners must implement. Wire names are `get_trust_verdict` and `authorize_action`, as in the public environment template. Other transports are historical explicit selections, not automatic fallbacks.
 
-See config/guardian-mapping.example.json. Replace the two placeholder tool names and field paths only after Houssem confirms his schemas. Request mappings rename top-level fields; response paths support nested objects. response_fields are required; optional_response_fields let a refusal omit a token. Use one mapping for approval and refusal. Configure GUARDIAN_SCORE_TOOL, GUARDIAN_TOKEN_TOOL, GUARDIAN_MAPPING_FILE and then GUARDIAN_CONTRACT_CONFIRMED=true. This setting records team confirmation, not a test result.
+Capabilities publish both reference `trust_cutoffs` and the inclusive verdict policy. CIVIS uses the latter rather than guessing floors. Guardian v3 publishes reading cutoff 0.7 and provisional action minima R1 0.5, R2 0.7, R3 0.85. A reading scored 0.65 is not trusted enough even for R1. CIVIS does not change these numbers or substitute a score.
 
-## Credentials and permissions
+## Readiness and clocks
 
-| Variable in Brain's ignored .env | Issuer and recipient |
-| --- | --- |
-| BRAIN_TWIN_CALLER_KEY | Elyes supplies to Dali if Twin calls Brain |
-| BRAIN_GUARDIAN_CALLER_KEY | Elyes supplies to Houssem for calls to Brain |
-| BRAIN_SCENARIO_KEY | Elyes supplies to the authorized scenario driver |
-| TWIN_BRAIN_KEY | Dali supplies; must match Twin's TWIN_KEY_CITY_BRAIN |
-| GUARDIAN_BRAIN_KEY | Houssem supplies for Brain calls to Guardian |
+Brain and Guardian ingest the real Twin stream independently. Brain never posts readings into Guardian during normal operation. Diagnostic tests that explicitly ingest data are separate from shipped-service acceptance.
 
-Run python scripts/setup_peer_keys.py with Brain's virtual environment to generate only missing/default inbound credentials. Custom keys and the Gemini key are preserved; no secret values are printed. Exchange credentials privately. Do not put keys in this document, release notes, command arguments or Git.
+Read-only fresh verdict retrieval retries explicit `GUARDIAN_VERDICT_NOT_READY` and generic `PEER_ERROR`, using the same IDs, at most three attempts and a bounded monotonic window. Default wait is 1.5 real seconds, clamped to half the outer peer timeout. An exhausted generic failure remains `PEER_ERROR`, cause unknown; it is never relabelled as not-ready. Denials, malformed replies and invalid scores remain terminal. Approval and actuation receive no additional retry from this adapter. Sanitized retrieval attempt counts are logged. Guardian should expose `verdict_not_found` through MCP `ToolError`; its current plain `ValueError` is hidden by MCP 2.3. A different structured availability schema needs explicit publication before use.
 
-All three authorized callers may evaluate batches and read incidents/decisions. Only Guardian may notify containment. Brain never calls Guardian-only isolation, quarantine, rollback or release operations on Twin.
+Peer timeout defaults to 3 real seconds. Recovery may request fresh scores for original and genuinely observed supporting evidence; it cannot manufacture observations. Evidence and token expiry use Twin simulated time. The mock profile permits evidence age up to 60 simulated seconds for AI latency, not an agreed physical safety threshold.
 
-## Tokens and duplicate execution
+## Authorization and execution
 
-Guardian owns the signing private key; Twin receives its public key and verifies the signature. Brain forwards the original token and checks exact action/targets/params, run, issuer/audience, token ID, normalized score and simulated validity. It never signs a real approval.
+Guardian owns its Ed25519 private key. It issues `g1.<payload>.<signature>`; Brain forwards that exact string. Brain checks binding to run, action, targets, parameters, evidence IDs, risk, key, issuer/audience and simulated validity. Twin verifies the signature with Guardian's public key, enforces its action/risk/cap policy, and consumes the token. No token translator or Brain signer exists.
 
-Current Twin draft fields: iss, aud, jti, run_id, iat, exp, action, targets, params, score. The score is 0..1. Maximum lifetime is 60 simulated seconds. Unsigned mode is an explicit mock option; it is not cryptographic authentication. Ed25519 signatures are supported by Twin and tested using a test Guardian.
+An approval describes the exact command. A score is not permission. R3 Water retains local permitted-command validation, Twin preview and real Guardian authorization. `preview_action` checks virtual caps/containment, not hydraulic benefit. Missing Guardian preview support remains a partner blocker.
 
-The draft uses RFC3339 strings for iat and exp. This is a custom JWS payload, not strict RFC 7519 JWT claims: JWT requires numeric NumericDate values for these fields. Agree custom claims or migrate both peers together; do not change one side silently. References: [JWS compact serialization](https://www.rfc-editor.org/rfc/rfc7515.html#section-3.1), [JWT expiration](https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.4), [JWT issued-at](https://www.rfc-editor.org/rfc/rfc7519.html#section-4.1.6).
+Repeated requests retain the operation key and receipt. Uncertain sends reconcile at most once with the original request/token after fresh checks. Changed payload under the same key is rejected. Restart requires a new run or explicit reconciliation.
 
-The same run/scenario/incident episode/normalized command keeps the same idempotency key. A confirmed clear followed by a new incident starts a new operation. Duplicate ticks return their saved result. Lost confirmation remains pending with the original key. A changed command needs a new key and new approval. State is in memory: use a fresh run after restart or reconcile uncertain outcomes first. Logs do not restore execution state.
+## Credentials and containment
 
-## Still requiring agreement and joint testing
+| Link | Matching variables |
+|---|---|
+| Brain → Guardian | Brain `GUARDIAN_BRAIN_KEY` = Guardian `GUARDIAN_BRAIN_MCP_BEARER_KEY` |
+| Brain → Twin | Brain `TWIN_BRAIN_KEY` = Twin `TWIN_KEY_CITY_BRAIN` |
+| Guardian → Brain | Brain `BRAIN_GUARDIAN_CALLER_KEY`, supplied privately |
+| Twin → Brain | Brain `BRAIN_TWIN_CALLER_KEY`, supplied privately |
 
-- Real Guardian discovery, verdicts, tokens, errors and callback wiring.
-- Pushed Guardian verdict stream: not implemented. Current Brain requests assessments.
-- Live recovery is implemented against this adapter: matching neighbour readings, a later tick of the same sensors within 3 real seconds, then a fresh assessment of original plus supporting evidence. Total recovery budget is 10 real seconds. Guardian must return one score for every requested reading, including historical IDs. It must reassess the originals rather than treating a neighbour as permission. No missing observations are fabricated. This remains to be accepted against real Guardian.
-- Brain now confirms immediately when the configured tool is advertised, with a 10-real-second budget from send and at most one same-key retry. Actual Twin commit_action is absent, so joint confirmation and the Guardian reaction target remain unverified.
-- Advancing-clock and concurrent SSE tests pass against real Twin with recorded plans and a test Guardian. The partner mock environment allows 60 simulated seconds of evidence age; the developer default is 10. Long Gemini plans may still be refused. The team must agree the final freshness and reaction-time policy.
-- Twin supplies Traffic vehicle_count (cars/min) and avg_speed (km/h); CIVIS expects congestion_index (%). Agree a native-metric policy or explicit conversion before enabling that response. Current Twin preview is integrated and tested; Water still requires explicitly reviewed safe topology.
+Guardian's API ingestion credential and Twin caller key differ from its inbound Brain MCP key. Guardian and Twin exchange the verification public key and compare fingerprints. Brain receives no private signing material.
+
+Brain's existing `notify_containment({notice})` MCP callback is Guardian-only. It invalidates original reading IDs and affected devices and acknowledges duplicates. Notice fields are `event_id`, `run_id`, `state`, `device_ids`, optional `reading_ids`. State is `isolated`, `quarantined`, `corrected` or `released`, as in `contracts.ContainmentNotice`. Guardian performs real containment through Twin first. Brain also polls Twin's authoritative state before acting. Brain callback support does not mean Guardian has implemented its sender.
+
+The current gate and exact partner defects are in [joint acceptance](JOINT_ACCEPTANCE_2026-10-26.md). Internal mocks do not establish interoperability.

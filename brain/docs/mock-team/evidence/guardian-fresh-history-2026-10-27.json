@@ -1,0 +1,324 @@
+{
+  "scope": "Actual Guardian MCP cached/fresh replies for identical native Twin readings; no partner source edits or manual ingestion",
+  "twin_commit": "b012c94e4a63652c7fbe9b6baf62ce59b4a1ac9c",
+  "guardian_commit": "526f8f64970ded02319cf0763cf03a8159f085f0",
+  "native_test_profile": {
+    "sensor": "pm25",
+    "base": 120,
+    "unit": "ug/m3"
+  },
+  "pairs": [
+    {
+      "reading": {
+        "run_id": "run-42-001",
+        "reading_id": "rd0000008-AIR-01.pm25",
+        "tick": 8,
+        "timestamp": "2026-10-05T08:00:07.967Z",
+        "node_id": "AIR-01",
+        "device_id": "AIR-01.pm25",
+        "sensor": "pm25",
+        "channel": null,
+        "value": 132.1,
+        "unit": "ug/m3",
+        "lat": 35.98148,
+        "lon": 9.96547
+      },
+      "cached": {
+        "trust_score": 1.0,
+        "state": "Trusted",
+        "reasons": [],
+        "caused_by": "rd0000008-AIR-01.pm25",
+        "scale": [
+          0.0,
+          1.0
+        ],
+        "cutoffs": {
+          "trusted_min_inclusive": 0.7,
+          "degraded_min_exclusive": 0.3
+        }
+      },
+      "fresh": {
+        "trust_score": 0.65,
+        "state": "Degraded",
+        "reasons": [
+          "rate_of_change_exceeded"
+        ],
+        "caused_by": "rd0000008-AIR-01.pm25",
+        "scale": [
+          0.0,
+          1.0
+        ],
+        "cutoffs": {
+          "trusted_min_inclusive": 0.7,
+          "degraded_min_exclusive": 0.3
+        }
+      },
+      "same_device_history": [
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000006-AIR-01.pm25",
+          "tick": 6,
+          "timestamp": "2026-10-05T08:00:06.039Z",
+          "node_id": "AIR-01",
+          "device_id": "AIR-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 132.7,
+          "unit": "ug/m3",
+          "lat": 35.98148,
+          "lon": 9.96547
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000007-AIR-01.pm25",
+          "tick": 7,
+          "timestamp": "2026-10-05T08:00:06.962Z",
+          "node_id": "AIR-01",
+          "device_id": "AIR-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 131.9,
+          "unit": "ug/m3",
+          "lat": 35.98148,
+          "lon": 9.96547
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000008-AIR-01.pm25",
+          "tick": 8,
+          "timestamp": "2026-10-05T08:00:07.967Z",
+          "node_id": "AIR-01",
+          "device_id": "AIR-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 132.1,
+          "unit": "ug/m3",
+          "lat": 35.98148,
+          "lon": 9.96547
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000009-AIR-01.pm25",
+          "tick": 9,
+          "timestamp": "2026-10-05T08:00:08.964Z",
+          "node_id": "AIR-01",
+          "device_id": "AIR-01.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 132.6,
+          "unit": "ug/m3",
+          "lat": 35.98148,
+          "lon": 9.96547
+        }
+      ]
+    },
+    {
+      "reading": {
+        "run_id": "run-42-001",
+        "reading_id": "rd0000008-AIR-02.pm25",
+        "tick": 8,
+        "timestamp": "2026-10-05T08:00:08.034Z",
+        "node_id": "AIR-02",
+        "device_id": "AIR-02.pm25",
+        "sensor": "pm25",
+        "channel": null,
+        "value": 138.2,
+        "unit": "ug/m3",
+        "lat": 36.01028,
+        "lon": 10.03464
+      },
+      "cached": {
+        "trust_score": 1.0,
+        "state": "Trusted",
+        "reasons": [],
+        "caused_by": "rd0000008-AIR-02.pm25",
+        "scale": [
+          0.0,
+          1.0
+        ],
+        "cutoffs": {
+          "trusted_min_inclusive": 0.7,
+          "degraded_min_exclusive": 0.3
+        }
+      },
+      "fresh": {
+        "trust_score": 0.65,
+        "state": "Degraded",
+        "reasons": [
+          "rate_of_change_exceeded"
+        ],
+        "caused_by": "rd0000008-AIR-02.pm25",
+        "scale": [
+          0.0,
+          1.0
+        ],
+        "cutoffs": {
+          "trusted_min_inclusive": 0.7,
+          "degraded_min_exclusive": 0.3
+        }
+      },
+      "same_device_history": [
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000006-AIR-02.pm25",
+          "tick": 6,
+          "timestamp": "2026-10-05T08:00:05.936Z",
+          "node_id": "AIR-02",
+          "device_id": "AIR-02.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 139.3,
+          "unit": "ug/m3",
+          "lat": 36.01028,
+          "lon": 10.03464
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000007-AIR-02.pm25",
+          "tick": 7,
+          "timestamp": "2026-10-05T08:00:06.913Z",
+          "node_id": "AIR-02",
+          "device_id": "AIR-02.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 136.9,
+          "unit": "ug/m3",
+          "lat": 36.01028,
+          "lon": 10.03464
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000008-AIR-02.pm25",
+          "tick": 8,
+          "timestamp": "2026-10-05T08:00:08.034Z",
+          "node_id": "AIR-02",
+          "device_id": "AIR-02.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 138.2,
+          "unit": "ug/m3",
+          "lat": 36.01028,
+          "lon": 10.03464
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000009-AIR-02.pm25",
+          "tick": 9,
+          "timestamp": "2026-10-05T08:00:09.037Z",
+          "node_id": "AIR-02",
+          "device_id": "AIR-02.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 136.2,
+          "unit": "ug/m3",
+          "lat": 36.01028,
+          "lon": 10.03464
+        }
+      ]
+    },
+    {
+      "reading": {
+        "run_id": "run-42-001",
+        "reading_id": "rd0000008-AIR-03.pm25",
+        "tick": 8,
+        "timestamp": "2026-10-05T08:00:08.024Z",
+        "node_id": "AIR-03",
+        "device_id": "AIR-03.pm25",
+        "sensor": "pm25",
+        "channel": null,
+        "value": 127.8,
+        "unit": "ug/m3",
+        "lat": 36.01651,
+        "lon": 10.00409
+      },
+      "cached": {
+        "trust_score": 1.0,
+        "state": "Trusted",
+        "reasons": [],
+        "caused_by": "rd0000008-AIR-03.pm25",
+        "scale": [
+          0.0,
+          1.0
+        ],
+        "cutoffs": {
+          "trusted_min_inclusive": 0.7,
+          "degraded_min_exclusive": 0.3
+        }
+      },
+      "fresh": {
+        "trust_score": 0.65,
+        "state": "Degraded",
+        "reasons": [
+          "rate_of_change_exceeded"
+        ],
+        "caused_by": "rd0000008-AIR-03.pm25",
+        "scale": [
+          0.0,
+          1.0
+        ],
+        "cutoffs": {
+          "trusted_min_inclusive": 0.7,
+          "degraded_min_exclusive": 0.3
+        }
+      },
+      "same_device_history": [
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000006-AIR-03.pm25",
+          "tick": 6,
+          "timestamp": "2026-10-05T08:00:06.011Z",
+          "node_id": "AIR-03",
+          "device_id": "AIR-03.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 128.9,
+          "unit": "ug/m3",
+          "lat": 36.01651,
+          "lon": 10.00409
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000007-AIR-03.pm25",
+          "tick": 7,
+          "timestamp": "2026-10-05T08:00:06.991Z",
+          "node_id": "AIR-03",
+          "device_id": "AIR-03.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 126.5,
+          "unit": "ug/m3",
+          "lat": 36.01651,
+          "lon": 10.00409
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000008-AIR-03.pm25",
+          "tick": 8,
+          "timestamp": "2026-10-05T08:00:08.024Z",
+          "node_id": "AIR-03",
+          "device_id": "AIR-03.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 127.8,
+          "unit": "ug/m3",
+          "lat": 36.01651,
+          "lon": 10.00409
+        },
+        {
+          "run_id": "run-42-001",
+          "reading_id": "rd0000009-AIR-03.pm25",
+          "tick": 9,
+          "timestamp": "2026-10-05T08:00:09.008Z",
+          "node_id": "AIR-03",
+          "device_id": "AIR-03.pm25",
+          "sensor": "pm25",
+          "channel": null,
+          "value": 126.9,
+          "unit": "ug/m3",
+          "lat": 36.01651,
+          "lon": 10.00409
+        }
+      ]
+    }
+  ]
+}

@@ -12,8 +12,13 @@ APPROVAL_TOOL = "guardian_v3_approval"
 class GuardianV3Peer:
     is_fixture = False
 
-    def __init__(self, peer):
+    def __init__(self, peer, *, verdict_wait_seconds=1.5):
+        if (type(verdict_wait_seconds) not in (int, float)
+                or not math.isfinite(verdict_wait_seconds) or verdict_wait_seconds < 0):
+            raise ValueError("Guardian verdict wait must be finite and nonnegative")
         self.peer = peer
+        self.verdict_wait_seconds = verdict_wait_seconds
+        self.last_retrieval = None
 
     async def call_tool(self, name, arguments):
         if name == "get_capabilities":
@@ -35,12 +40,58 @@ class GuardianV3Peer:
             if not rows or len({r["reading_id"] for r in rows}) != len(rows):
                 raise BrainError("GUARDIAN_SCHEMA_INVALID", "Distinct evidence IDs are required")
             semaphore = asyncio.Semaphore(4)
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            deadline = started + self.verdict_wait_seconds
+            summary = {"reading_count": len(rows), "calls": 0, "retries": 0,
+                       "not_ready_errors": 0, "unknown_tool_errors": 0,
+                       "outcome": "running", "failure_code": None}
+            self.last_retrieval = summary
 
             async def verdict(row):
-                async with semaphore:
-                    reply = await self.peer.call_tool("get_trust_verdict", {
-                        "reading_id": row["reading_id"], "fresh": True,
-                    })
+                last_error = None
+                for attempt in range(3):
+                    if attempt:
+                        remaining = deadline - loop.time()
+                        if remaining <= 0:
+                            raise last_error
+                        await asyncio.sleep(min(self.verdict_wait_seconds / 3, remaining))
+                    requested = False
+                    try:
+                        async with semaphore:
+                            request = {"reading_id": row["reading_id"], "fresh": True}
+                            if attempt:
+                                remaining = deadline - loop.time()
+                                if remaining <= 0:
+                                    raise last_error
+                                summary["calls"] += 1
+                                summary["retries"] += 1
+                                requested = True
+                                reply = await asyncio.wait_for(
+                                    self.peer.call_tool("get_trust_verdict", request), remaining)
+                            else:
+                                summary["calls"] += 1
+                                requested = True
+                                reply = await self.peer.call_tool("get_trust_verdict", request)
+                    except TimeoutError:
+                        if attempt == 0:
+                            raise BrainError("PEER_TIMEOUT", "Guardian request timed out") from None
+                        raise last_error from None
+                    except BrainError as error:
+                        if not requested:
+                            raise
+                        if attempt and error.code == "PEER_TIMEOUT" and last_error is not None:
+                            raise last_error from None
+                        if error.code not in {"GUARDIAN_VERDICT_NOT_READY", "PEER_ERROR"}:
+                            raise
+                        last_error = error
+                        counter = ("not_ready_errors" if error.code == "GUARDIAN_VERDICT_NOT_READY"
+                                   else "unknown_tool_errors")
+                        summary[counter] += 1
+                        if attempt == 2 or self.verdict_wait_seconds == 0:
+                            raise
+                    else:
+                        break
                 score = reply.get("trust_score")
                 if (reply.get("caused_by") != row["reading_id"] or reply.get("scale") != [0.0, 1.0]
                         or type(score) not in (int, float) or not math.isfinite(score)
@@ -48,7 +99,28 @@ class GuardianV3Peer:
                     raise BrainError("GUARDIAN_SCHEMA_INVALID", "Invalid evidence verdict from Guardian")
                 return {"reading_id": row["reading_id"], "score": score}
 
-            return {"scores": await asyncio.gather(*(verdict(row) for row in rows))}
+            tasks = [asyncio.create_task(verdict(row)) for row in rows]
+            try:
+                result = {"scores": await asyncio.gather(*tasks)}
+                summary["outcome"] = "succeeded"
+                return result
+            except BrainError as error:
+                summary["outcome"] = "failed"
+                summary["failure_code"] = (error.code if error.code in {
+                    "PEER_ERROR", "PEER_TIMEOUT", "GUARDIAN_VERDICT_NOT_READY",
+                    "GUARDIAN_SCHEMA_INVALID", "PEER_SCHEMA_INVALID", "UNAUTHENTICATED",
+                    "TRUST_INSUFFICIENT", "PEER_UNAVAILABLE", "TOOL_UNAVAILABLE",
+                } else "OTHER_PEER_FAILURE")
+                raise
+            except asyncio.CancelledError:
+                summary["outcome"] = "cancelled"
+                raise
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                summary["elapsed_real_seconds"] = round(loop.time() - started, 6)
         if name == APPROVAL_TOOL:
             domain = {"set_signal_plan": "Traffic", "set_valve_position": "Water",
                       "dispatch": "Emergency", "set_grid_switch": "Power"}.get(arguments["action"])

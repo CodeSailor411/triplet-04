@@ -100,7 +100,9 @@ def configured_runtime(settings):
         )
         if settings.guardian_transport == "mcp_v3":
             guardian = GuardianV3Peer(MCPPeer(settings.guardian_mcp_url, settings.guardian_brain_key,
-                                            settings.peer_timeout_seconds))
+                                            settings.peer_timeout_seconds),
+                                      verdict_wait_seconds=min(settings.guardian_verdict_wait_seconds,
+                                                               settings.peer_timeout_seconds / 2))
             features.update(guardian_score_tool=V3_SCORE, guardian_token_tool=V3_APPROVAL,
                             guardian_exact_idempotency=True)
         if settings.guardian_transport == "http_v2":

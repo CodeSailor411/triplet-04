@@ -1,0 +1,21 @@
+{
+  "S02": {
+    "status": "CIVIS virtual-command acceptance policy for Twin mock 3, seed 42; no hydraulic mitigation or supply-safety claim",
+    "fixture_only": true,
+    "policy_scope": "virtual-command-test-only",
+    "expected_twin_seed": 42,
+    "safe_valve_choices": [
+      {
+        "incident_node_id": "WAT-01",
+        "targets": ["WAT-01"],
+        "params": {"position": 40},
+        "reviewed_topology_ref": "CIVIS virtual command allowlist: Twin mock 3 seed 42, WAT-01 carrier; not hydraulic topology"
+      }
+    ]
+  },
+  "S07": {
+    "enabled": false,
+    "supply_nodes": [],
+    "safe_valve_choices": []
+  }
+}

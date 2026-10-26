@@ -8,6 +8,7 @@ from pathlib import Path
 from civis_brain.errors import BrainError
 from civis_brain.integration.bootstrap import configured_runtime
 from civis_brain.integration.mcp_peer import MCPPeer
+from civis_brain.integration.water_policy import validate_water_choices
 from civis_brain.settings import Settings
 
 
@@ -29,8 +30,6 @@ async def check(settings):
     try:
         record("mock_policy", settings.mock_integration_profile,
                "Enable explicit illustrative policy for partner mock runs only")
-        record("water_topology", bool(runtime.policies["S02"].get("safe_valve_choices")),
-               "Supply reviewed S02 safe_valve_choices in SCENARIO_POLICY_FILE")
         twin = MCPPeer(settings.twin_mcp_url, settings.twin_brain_key,
                        settings.peer_timeout_seconds)
         try:
@@ -39,6 +38,15 @@ async def check(settings):
             names = set(await twin.list_tool_names())
             missing = sorted(required - names)
             record("twin_tools", not missing, {"missing": missing})
+            nodes = await twin.call_tool("list_nodes", {})
+            actions = await twin.call_tool("list_actions", {})
+            try:
+                detail = validate_water_choices(runtime.policies["S02"], nodes, actions,
+                                                mock_profile=settings.mock_integration_profile)
+                record("water_topology", True, detail)
+            except (BrainError, ValueError, KeyError, TypeError) as error:
+                record("water_topology", False,
+                       error.code if isinstance(error, BrainError) else "PEER_SCHEMA_INVALID")
             # Reading clock/data is also an authentication check, unlike public discovery.
             clock = await twin.call_tool("get_clock", {})
             batch = await twin.call_tool("get_readings", {})

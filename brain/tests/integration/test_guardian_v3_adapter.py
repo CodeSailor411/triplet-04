@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from types import SimpleNamespace
@@ -25,6 +26,173 @@ class PublishedPeer:
         if name == "get_trust_verdict":
             return {"caused_by": args["reading_id"], "trust_score": self.score, "scale": [0., 1.]}
         return {"decision": "refused", "refusal_code": "safe_preview_tool_unconfirmed"}
+
+
+class DelayedVerdictPeer(PublishedPeer):
+    """Explicit test partner whose own feed makes an actual verdict available later."""
+
+    def __init__(self, pending_calls=1, error_code="GUARDIAN_VERDICT_NOT_READY"):
+        super().__init__()
+        self.pending_calls = pending_calls
+        self.error_code = error_code
+        self.attempts = {}
+
+    async def call_tool(self, name, args):
+        if name == "get_trust_verdict":
+            reading_id = args["reading_id"]
+            self.attempts[reading_id] = self.attempts.get(reading_id, 0) + 1
+            if self.attempts[reading_id] <= self.pending_calls:
+                self.calls.append((name, args))
+                raise BrainError(self.error_code, "Expected test tool failure")
+        return await super().call_tool(name, args)
+
+
+@pytest.mark.parametrize("code", ["GUARDIAN_VERDICT_NOT_READY", "PEER_ERROR"])
+async def test_v3_read_only_retrieval_retries_without_ingesting_or_fabricating(code):
+    raw = DelayedVerdictPeer(error_code=code)
+    peer = GuardianV3Peer(raw, verdict_wait_seconds=.15)
+    reply = await peer.call_tool(SCORE_TOOL, {
+        "readings": [{"reading_id": "r1"}, {"reading_id": "r2"}]})
+    assert reply == {"scores": [{"reading_id": "r1", "score": .9},
+                                {"reading_id": "r2", "score": .9}]}
+    assert raw.attempts == {"r1": 2, "r2": 2}
+    assert all(name == "get_trust_verdict" and args["fresh"] for name, args in raw.calls)
+    assert peer.last_retrieval["calls"] == 4
+    assert peer.last_retrieval["retries"] == 2
+    assert peer.last_retrieval["outcome"] == "succeeded"
+    assert peer.last_retrieval["failure_code"] is None
+    assert peer.last_retrieval["unknown_tool_errors"] == (2 if code == "PEER_ERROR" else 0)
+
+
+@pytest.mark.parametrize("budget,max_calls", [(0, 1), (.3, 3)])
+@pytest.mark.parametrize("code", ["GUARDIAN_VERDICT_NOT_READY", "PEER_ERROR"])
+async def test_v3_verdict_wait_has_real_time_and_attempt_limits(budget, max_calls, code):
+    raw = DelayedVerdictPeer(pending_calls=100, error_code=code)
+    peer = GuardianV3Peer(raw, verdict_wait_seconds=budget)
+    with pytest.raises(BrainError) as error:
+        await asyncio.wait_for(peer.call_tool(
+            SCORE_TOOL, {"readings": [{"reading_id": "r"}]}), 1)
+    assert error.value.code == code
+    # The real-time deadline may stop a loaded machine before the attempt cap.
+    assert 1 <= raw.attempts["r"] <= max_calls
+    assert peer.last_retrieval["outcome"] == "failed"
+    assert peer.last_retrieval["failure_code"] == code
+    assert "Expected test tool failure" not in str(peer.last_retrieval)
+
+
+@pytest.mark.parametrize("code", ["PEER_TIMEOUT", "UNAUTHENTICATED",
+                                   "GUARDIAN_SCHEMA_INVALID", "TRUST_INSUFFICIENT"])
+async def test_v3_never_retries_a_denial_or_initial_network_error(code):
+    class FailingPeer:
+        calls = 0
+
+        async def call_tool(self, name, args):
+            self.calls += 1
+            raise BrainError(code, "Expected test failure")
+
+    raw = FailingPeer()
+    with pytest.raises(BrainError) as error:
+        await GuardianV3Peer(raw).call_tool(SCORE_TOOL, {"readings": [{"reading_id": "r"}]})
+    assert error.value.code == code
+    assert raw.calls == 1
+
+
+async def test_v3_does_not_retry_a_malformed_actual_verdict():
+    raw = PublishedPeer()
+    raw.score = float("nan")
+    with pytest.raises(BrainError) as error:
+        await GuardianV3Peer(raw).call_tool(SCORE_TOOL, {"readings": [{"reading_id": "r"}]})
+    assert error.value.code == "GUARDIAN_SCHEMA_INVALID"
+    assert len(raw.calls) == 1
+
+
+@pytest.mark.parametrize("code", ["GUARDIAN_VERDICT_NOT_READY", "PEER_ERROR"])
+async def test_v3_retry_network_call_cannot_outlive_deadline_or_change_unknown_cause(code):
+    class SlowRetry(DelayedVerdictPeer):
+        cancelled = False
+
+        async def call_tool(self, name, args):
+            if self.attempts.get(args["reading_id"], 0):
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    self.cancelled = True
+            return await super().call_tool(name, args)
+
+    raw = SlowRetry(error_code=code)
+    with pytest.raises(BrainError) as error:
+        await asyncio.wait_for(GuardianV3Peer(raw, verdict_wait_seconds=.15).call_tool(
+            SCORE_TOOL, {"readings": [{"reading_id": "r"}]}), .5)
+    assert error.value.code == code
+    assert raw.cancelled
+
+
+async def test_v3_transport_timeout_after_unknown_tool_error_keeps_unknown_cause():
+    class TimeoutAfterFailure(DelayedVerdictPeer):
+        async def call_tool(self, name, args):
+            if self.attempts.get(args["reading_id"], 0):
+                raise BrainError("PEER_TIMEOUT", "Expected test transport timeout")
+            return await super().call_tool(name, args)
+
+    raw = TimeoutAfterFailure(error_code="PEER_ERROR")
+    with pytest.raises(BrainError) as error:
+        await GuardianV3Peer(raw, verdict_wait_seconds=.15).call_tool(
+            SCORE_TOOL, {"readings": [{"reading_id": "r"}]})
+    assert error.value.code == "PEER_ERROR"
+
+
+async def test_v3_authorization_failure_is_never_retried():
+    class UnavailableAuthorization(PublishedPeer):
+        async def call_tool(self, name, args):
+            self.calls.append((name, args))
+            raise BrainError("PEER_ERROR", "Expected unknown authorization failure")
+
+    raw = UnavailableAuthorization()
+    with pytest.raises(BrainError) as error:
+        await GuardianV3Peer(raw).call_tool(APPROVAL_TOOL, {"run_id": "run", "reading_ids": [],
+            "source_reading_ids": ["r1"], "action": "set_signal_plan", "targets": ["TRA-01"],
+            "params": {"plan": "normal"}, "risk": "R1", "idempotency_key": "exact-key"})
+    assert error.value.code == "PEER_ERROR"
+    assert len(raw.calls) == 1
+
+
+async def test_v3_retrieval_summary_reaches_runtime_journal_without_payloads_or_tokens():
+    runtime, _, _, _ = harness(make_case())
+    raw = DelayedVerdictPeer(error_code="PEER_ERROR")
+    runtime.guardian = GuardianV3Peer(raw, verdict_wait_seconds=0)
+    with pytest.raises(BrainError):
+        await runtime._call(runtime.guardian, SCORE_TOOL, {"run_id": "run", "tick": 1,
+            "readings": [{"reading_id": "r1", "value": 999, "token": "PRIVATE_TEST_TOKEN"}]})
+    summary = next(item for item in runtime.journal.events
+                   if item["event"] == "guardian_verdict_retrieval")
+    assert summary["calls"] == 1 and summary["failure_code"] == "PEER_ERROR"
+    assert summary["unknown_tool_errors"] == 1
+    assert summary["run_id"] == "run" and summary["tick"] == 1
+    assert not any(key in summary for key in ("readings", "reading_ids", "value", "token"))
+    assert "PRIVATE_TEST_TOKEN" not in json.dumps(summary)
+
+
+async def test_v3_scoring_cancels_sibling_calls_after_a_fatal_failure():
+    class FatalPeer:
+        active = 0
+        sibling_started = asyncio.Event()
+
+        async def call_tool(self, name, args):
+            if args["reading_id"] == "fatal":
+                await self.sibling_started.wait()
+                raise BrainError("UNAUTHENTICATED", "Expected test refusal")
+            self.active += 1
+            self.sibling_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                self.active -= 1
+
+    raw = FatalPeer()
+    with pytest.raises(BrainError):
+        await GuardianV3Peer(raw).call_tool(SCORE_TOOL, {
+            "readings": [{"reading_id": "fatal"}, {"reading_id": "sibling"}]})
+    assert raw.active == 0
 
 
 async def test_v3_adapter_uses_real_tool_names_scale_and_exact_key():

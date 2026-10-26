@@ -1,7 +1,9 @@
-"""Opt-in checks of exact v3 tags. Test planner, actual Guardian, actual Twin.
+"""Opt-in DIAGNOSTICS of exact v3 tags. Test planner, actual Guardian, actual Twin.
 
 Positive action acceptance assertions remain ordinary failures when partners
 refuse the workflow. No source edits, replacement scores or token conversion.
+These manually ingested controls do not establish independent live feed acceptance;
+the shipped-service gate is in test_v3_shipped_acceptance.py.
 """
 
 import asyncio
@@ -28,13 +30,15 @@ BRAIN_KEY = "integration-brain-guardian-v3"
 
 
 @contextmanager
-def actual_guardian(twin_url):
+def actual_guardian(twin_url, *, audit_dir=None):
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     env = {**os.environ, "PORT": str(port), "TWIN_BASE_URL": twin_url.removesuffix("/mcp"),
            "GUARDIAN_TWIN_BEARER_KEY": GKEY, "GUARDIAN_API_BEARER_KEY": API_KEY,
            "GUARDIAN_BRAIN_MCP_BEARER_KEY": BRAIN_KEY, "DEMO_MODE": "false"}
+    if audit_dir is not None:
+        env["GUARDIAN_AUDIT_DIR"] = str(audit_dir)
     env.pop("PYTHONPATH", None)
     with (OUT / f"guardian-v3-{port}.log").open("w") as log:
         process = subprocess.Popen([os.environ["CIVIS_TEST_GUARDIAN_PYTHON"], str(GUARDIAN / "src/run.py")],
