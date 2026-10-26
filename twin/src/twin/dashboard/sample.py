@@ -74,7 +74,7 @@ def write_sample(out_dir: Path) -> str:
 
     def token(jti: str, action: str, targets: list[str], params: dict[str, Any]) -> str:
         return make_token({"iss": "guardian", "aud": "twin", "jti": jti, "run_id": sim.run_id, "iat": sim.clock.iso_of(sim.tick),
-                           "exp": sim.clock.iso_of(sim.tick + 120), "action": action, "targets": targets, "params": params, "score": 0.93})
+                           "exp": sim.clock.iso_of(sim.tick + 45), "action": action, "targets": targets, "params": params, "score": 0.93})
 
     try:
         sim.tick = 0

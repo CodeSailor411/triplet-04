@@ -50,7 +50,7 @@ def test_isolate_cuts_the_feed_from_now_on_but_not_the_past():
     assert r.status == "applied" and r.changed == [dev] and r.unchanged == []
     assert dev not in ids_on_feed(sim, 100) and dev not in ids_on_feed(sim, 150)
     assert dev in ids_on_feed(sim, 99)                       # ticks before the cut stay as they were
-    assert sim.readings_at(100).count == 108                 # exactly this one reading is gone
+    assert sim.readings_at(100).count == 119                 # exactly this one reading is gone (120 in total since congestion_index)
 
 
 def test_isolating_twice_is_harmless():
@@ -83,15 +83,15 @@ def test_reason_is_checked():
 
 def test_isolation_cap_counts_nodes_not_devices_and_refuses_the_whole_request():
     sim, _, cont, topo = world()
-    traffic = devices_of(topo, "traffic")                    # 11 nodes, two sensors each, cap 5 nodes
+    traffic = devices_of(topo, "traffic")                    # 11 nodes, three sensors each (since 23 Oct), cap 5 nodes
     nodes = sorted(traffic)
-    five = [d for n in nodes[:5] for d in traffic[n]]        # 5 nodes, 10 devices: fine
+    five = [d for n in nodes[:5] for d in traffic[n]]        # 5 nodes, 15 devices: fine
     assert cont.contain("isolate_sensor", five).status == "applied"
     over = cont.contain("isolate_sensor", traffic[nodes[5]])
     assert over.status == "rejected" and over.code == "CAP_EXCEEDED"
     assert {k: over.details[k] for k in ("pool", "domain", "cap", "in_use", "requested", "remaining")} == \
            {"pool": "isolation", "domain": "traffic", "cap": 5, "in_use": 5, "requested": 1, "remaining": 0}
-    assert len(cont.state().devices) == 10                   # nothing from the refused request got in
+    assert len(cont.state().devices) == 15                   # nothing from the refused request got in
 
 
 def test_one_request_over_the_cap_changes_nothing():

@@ -111,20 +111,18 @@ class ActuatorCfg(_Strict):
 
 class TokensCfg(_Strict):
     mode: Literal["unsigned", "signed"] = "unsigned"
-    guardian_public_key: str | None = None              # base64 of the raw 32-byte Ed25519 public key
+    guardian_public_key: str | None = None              # Ed25519 public key: raw base64, PEM text, or path to a PEM file
     min_score: dict[str, float] = {}                    # risk level -> minimum score. Empty = not enforced (no number agreed)
 
     @model_validator(mode="after")
     def _check(self):
         if self.mode == "signed":
-            import base64
+            from .keys import load_public_key
             try:
-                raw = base64.b64decode(self.guardian_public_key or "", validate=True)
-            except Exception:
-                raw = b""
-            if len(raw) != 32:
-                raise ValueError("tokens.mode is 'signed', so tokens.guardian_public_key must be the base64 of a "
-                                 "raw 32-byte Ed25519 public key")
+                load_public_key(self.guardian_public_key)
+            except ValueError as e:
+                raise ValueError("tokens.mode is 'signed', so tokens.guardian_public_key must be Guardian's Ed25519 "
+                                 f"public key (raw base64, PEM text, or a path to a PEM file): {e}") from None
         bad = set(self.min_score) - {"R1", "R2", "R3"}
         if bad:
             raise ValueError(f"tokens.min_score has unknown risk levels: {sorted(bad)}")

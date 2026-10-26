@@ -30,6 +30,8 @@ from .models import Topology
 from .settings import ActuatorCfg, ParamCfg, TwinConfig
 from .sim import Simulation
 from .storage.actionstate import ActionState, MemoryActionState, StateUnavailable
+from datetime import datetime, timedelta
+
 from .tokens import TokenError, read_token
 from .util import format_rfc3339
 
@@ -226,12 +228,17 @@ class ActionBook:
                 already_used = self.store.jti_used(run_id, claims.jti, now)
             except StateUnavailable as e:
                 return self._store_down(action, targets, cleaned, e, token_id=claims.jti)
+            if datetime.fromisoformat(claims.iat) > now + timedelta(seconds=2):
+                return self._reject("TOKEN_INVALID", action, targets, cleaned,
+                                    "Token is dated in the future (simulated clock, see get_clock).", token_id=claims.jti)
             for code, failed, why in (
                 ("TOKEN_WRONG_RUN", claims.run_id != self.sim.run_id, "Token is for another run."),
                 ("TOKEN_EXPIRED", claims.expires_at() <= now, "Token has expired (simulated clock, see get_clock)."),
                 ("TOKEN_REUSED", already_used, "Token was already used."),
                 ("TOKEN_MISMATCH", (claims.action, sorted(claims.targets), claims.params) != (action, targets, cleaned),
                  "Token was issued for a different action, targets or params than this request."),
+                ("TOKEN_MISMATCH", bool(claims.idempotency_key) and claims.idempotency_key != idempotency_key,
+                 "Token was issued for a different idempotency_key than this request."),
             ):
                 if failed:
                     return self._reject(code, action, targets, cleaned, why, token_id=claims.jti)
