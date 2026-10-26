@@ -57,6 +57,8 @@ TOOL_ACCESS: dict[str, frozenset[Identity] | None] = {     # None = anyone, even
     "list_actions": LAYERS,
     "actuate": frozenset({Identity.CITY_BRAIN}),      # the permission table: the Brain requests, Guardian signs
     "preview_action": frozenset({Identity.CITY_BRAIN}),   # dry-run of actuate: same caller as actuate, changes nothing
+    "get_city_graph": LAYERS,                          # nodes, links, distances, zones, roads (ours, agreed with CIVIS 23 Oct)
+    "get_nearest_nodes": LAYERS,                       # closest nodes to one node, optional domain or role filter (ours)
     "get_containment_state": LAYERS,                   # which devices are cut off, caps used (ours, not in the spec)
     "isolate_sensor": frozenset({Identity.GUARDIAN}),  # the permission table: only Guardian contains
     "quarantine_device": frozenset({Identity.GUARDIAN}),

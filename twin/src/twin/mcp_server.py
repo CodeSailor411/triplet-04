@@ -16,6 +16,8 @@ from pydantic import BaseModel
 
 from . import __version__
 from .actions import ActionBook, ActionList, ActuateResult, BadRequest, PreviewResult
+from .graph import CityGraph, GraphBook, NearestNodes
+from .models import Layout
 from .scenarios import ScenarioBook, ScenarioResult
 from .containment import (ContainmentBook, ContainmentState, ContainResult, QuarantineLane, ReleaseResult,
                           RollbackResult)
@@ -48,7 +50,7 @@ def _identity(ctx: ServerRequestContext, keyring: KeyRing) -> Identity | None:
 
 
 def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: ActionBook,
-              containment: ContainmentBook, scenarios: ScenarioBook) -> MCPServer:
+              containment: ContainmentBook, scenarios: ScenarioBook, layout: Layout | None = None) -> MCPServer:
     mcp = MCPServer(
         "twin",
         title="Twin: simulated city",
@@ -56,6 +58,13 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
                      "Call get_capabilities first.",
         version=__version__,
     )
+
+    graph_cache: list[GraphBook] = []        # built on the first call, then reused: the graph never changes in a run
+
+    def graph_book() -> GraphBook:
+        if not graph_cache:
+            graph_cache.append(GraphBook(topology, layout, book.list_actions(), sim.run_id))
+        return graph_cache[0]
 
     def caller(ctx: Context) -> Identity | None:
         return _identity(ctx.request_context, keyring)
@@ -85,7 +94,7 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
             features={
                 "token_formats": ["g1", "jws-eddsa"], "token_mode": book.cfg.tokens.mode,
                 "token_max_lifetime_seconds": 60, "token_score_range": [0, 1],
-                "preview_action": True, "two_step_commit": False, "idempotency": True,
+                "preview_action": True, "two_step_commit": False, "idempotency": True, "city_graph": True,
                 "containment_tools": ["isolate_sensor", "quarantine_device", "rollback_reading", "release_device"],
                 "live_feed": "sse:/events", "sensors": sorted(sim.sensor_names),
                 "not_built": ["commit_action (two-step)", "get_flagged_readings", "Telecom and Waste domains"]})
@@ -97,6 +106,33 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
         require(ctx, "list_nodes")
         nodes = [n for n in topology.nodes if domain is None or domain in n.domains]
         return NodeList(seed=topology.seed, count=len(nodes), nodes=nodes)
+
+    @mcp.tool()
+    def get_city_graph(ctx: Context, include_matrix: bool = True, include_roads: bool = True) -> CityGraph:
+        """The whole city as a graph, in one call: every node (position, GPS, zone, domains, role, sensors with units,
+        the actions it can carry out with risk level), every link between nodes (distance in metres, compass bearing,
+        same-domain or cross-domain), the zones, the roads, and the straight-line distance between EVERY pair of nodes
+        (`distance_matrix_m`, in the order of `node_order`). Distances are straight lines over the ground, not along roads
+        or pipes. The graph is the same for the whole run. Set include_matrix or include_roads to false for a smaller reply.
+        It holds the layout of the city only, no sensor datasheet data."""
+        require(ctx, "get_city_graph")
+        return graph_book().graph(include_matrix, include_roads)
+
+    @mcp.tool()
+    def get_nearest_nodes(ctx: Context, node_id: str, domain: Domain | None = None, role: str | None = None,
+                          limit: int = 5) -> NearestNodes:
+        """The nodes closest to `node_id`, nearest first, each with its straight-line distance in metres, the compass
+        bearing from `node_id`, and whether the two are linked in the graph. Optional filters: `domain` (for example
+        water) or `role` (standard, call_place, dispatch_center). `limit` is 1 to 50."""
+        require(ctx, "get_nearest_nodes")
+        gb = graph_book()
+        if node_id not in gb.by_id:
+            raise ToolError(f"UNKNOWN_NODE: '{node_id}' is not a node. Call list_nodes for the node ids.")
+        if role is not None and role not in gb.roles:
+            raise ToolError(f"UNKNOWN_ROLE: '{role}' is not a role. Known: {', '.join(sorted(gb.roles))}.")
+        if not 1 <= limit <= 50:
+            raise ToolError("BAD_LIMIT: limit must be from 1 to 50.")
+        return gb.nearest(node_id, domain, role, limit)
 
     @mcp.tool()
     def get_readings(ctx: Context, domain: Domain | None = None, node_id: str | None = None,

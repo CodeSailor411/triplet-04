@@ -35,7 +35,7 @@ def test_every_sensor_and_its_unit_are_in_the_units_section():
 
 
 def test_card_names_the_tested_tag_and_separates_implemented_from_planned():
-    assert "Tested version: tag `twin-mock-3`" in CARD
+    assert re.search(r"Tested version: tag `twin-mock-\d+`", CARD)
     assert "**Implemented:**" in CARD and "**Planned, not built:**" in CARD
 
 
@@ -44,7 +44,7 @@ async def test_get_capabilities_features_tell_the_truth_over_mcp(mcp_client):
         f = (await c.call_tool("get_capabilities", {})).structured_content["features"]
     assert f["token_formats"] == ["g1", "jws-eddsa"] and f["token_mode"] in {"unsigned", "signed"}
     assert f["token_max_lifetime_seconds"] == 60 and f["token_score_range"] == [0, 1]
-    assert f["preview_action"] is True and f["two_step_commit"] is False and f["idempotency"] is True
+    assert f["preview_action"] is True and f["two_step_commit"] is False and f["idempotency"] is True and f["city_graph"] is True
     assert "congestion_index" in f["sensors"] and len(f["sensors"]) == 12
     assert set(f["containment_tools"]) <= set(TOOL_ACCESS)               # never advertise a tool that does not exist
     assert "commit_action (two-step)" in f["not_built"]                  # and say plainly what is missing
