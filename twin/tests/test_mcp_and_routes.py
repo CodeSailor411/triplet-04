@@ -25,10 +25,10 @@ async def test_capabilities_lists_only_tools_that_caller_can_really_call(mcp_cli
     """Row 25 fix: the list used to show actuate to everyone."""
     expected = {
         "city_brain": {"get_capabilities", "list_nodes", "get_readings", "get_clock", "list_actions", "actuate",
-                       "preview_action", "get_containment_state"},
+                       "preview_action", "get_containment_state", "get_city_graph", "get_nearest_nodes"},
         "guardian": {"get_capabilities", "list_nodes", "get_readings", "get_clock", "list_actions",
                      "get_containment_state", "isolate_sensor", "quarantine_device", "rollback_reading",
-                     "release_device", "get_quarantine_lane"},
+                     "release_device", "get_quarantine_lane", "get_city_graph", "get_nearest_nodes"},
         "scenario": {"get_capabilities", "run_scenario"},
     }
     for who, names in expected.items():
