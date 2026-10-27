@@ -154,7 +154,9 @@ def legend_svg() -> str:
     out.append(glyph(x + 14, 20, 28, ["power"], "trusted", None, unknown=True, fill=PANEL))
     out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">No verdict yet</text>')
     x += 38 + 9 * 14 + 10
-    return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {x} 40" width="{x}" height="40" overflow="visible" font-family="{FONT}">{"".join(out)}</svg>'
+    # No fixed pixel width: the drawing may shrink to the column it sits in (a 1366x768 screen), and never grows past its natural size.
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {x} 40" preserveAspectRatio="xMinYMid meet" '
+            f'style="display:block;width:100%;max-width:{x}px;height:auto" font-family="{FONT}">{"".join(out)}</svg>')
 
 
 def _dot(color: str, ring: bool = False, dashed: bool = False) -> None:
@@ -167,7 +169,7 @@ def build_page(hub: Hub) -> None:
     ui.add_css(CSS)
     ui.colors(primary=EDGE, secondary="#9A9A9A", accent="#BDBDBD", dark=PANEL, info="#BDBDBD")   # page chrome = black, white, grey. Cyan belongs to Water only. (Quasar has a default blue "info" and a teal "secondary": set them too)
     S: dict[str, Any] = {"run": None, "node": None, "event": None, "window": hub.cfg.window_ticks, "follow": True, "end": None,
-                         "edges": False, "attacks": True, "seen": None, "hidden": set()}
+                         "edges": False, "attacks": True, "seen": None, "hidden": set(), "drag_since": None}
     scenes: dict[str, Scene] = {}
 
     def state() -> RunState | None:
@@ -189,11 +191,34 @@ def build_page(hub: Hub) -> None:
         S["event"] = event_id
         redraw(force=True)
 
+    DRAG_GUARD_SECONDS = 15.0                                                   # if the browser never says "released", stop waiting after this long
+
+    def dragging() -> bool:
+        t = S["drag_since"]
+        if t is None:
+            return False
+        if time.monotonic() - t > DRAG_GUARD_SECONDS:
+            S["drag_since"] = None
+            return False
+        return True
+
+    def pan(e: Any) -> None:
+        """The slider's own start/end-of-drag signal. While the knob is held the page must not rebuild, because a rebuild under a held knob is
+        what left the page stuck on the slider."""
+        phase = e.args[0] if isinstance(e.args, list) and e.args else e.args
+        if phase == "start":
+            S["drag_since"] = time.monotonic()
+        else:
+            S["drag_since"] = None
+            redraw(force=True)
+
     def sync_slider(st: RunState) -> None:
         """The slider limits must be NUMBERS. `slider.props("max=30")` stores the TEXT '30', and the slider in the browser then
         crashes as soon as you touch it (it adds the limit to a number, and text + number glues instead of adding)."""
-        slider.props["min"] = 0
-        slider.props["max"] = max(st.tick, 1)
+        if slider.props.get("min") != 0:
+            slider.props["min"] = 0
+        if slider.props.get("max") != max(st.tick, 1):                          # only touch the limits when they really moved
+            slider.props["max"] = max(st.tick, 1)
 
     def follow_changed(on: bool) -> None:
         st = state()
@@ -239,6 +264,8 @@ def build_page(hub: Hub) -> None:
 
     # -------------------------------------------------------------- redraw
     def redraw(force: bool = False) -> None:
+        if dragging():
+            return                                                              # the release ('pan' end / 'change') redraws once
         hub.poll()
         ids = hub.run_ids()
         st = state()
@@ -501,6 +528,7 @@ def build_page(hub: Hub) -> None:
                 ui.switch("Follow live", value=True, on_change=lambda e: follow_changed(e.value))
                 slider = ui.slider(min=0, max=1, value=0).props("label").classes("w-64")
                 slider.on("change", slide)
+                slider.on("pan", pan)
                 slider.set_visibility(False)
                 ui.label("click an event to follow its chain").classes("text-dim text-sm")
             timeline_img = ui.interactive_image(size=(1800, 660), content="", events=["click"], sanitize=False,
