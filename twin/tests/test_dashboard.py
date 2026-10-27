@@ -719,3 +719,48 @@ async def test_moving_the_slider_scrubs_the_timeline_and_the_map_and_going_live_
         await asyncio.sleep(0.3)
         assert not sl.visible
         assert "ATTACK" in city_img.content
+
+
+def test_the_legend_has_no_fixed_pixel_width_so_it_fits_a_small_screen():
+    """Regression (768p laptop): the legend carried width="<pixels>" and spilled out of its column."""
+    root = ET.fromstring(legend_svg())
+    assert "width" not in root.attrib and "height" not in root.attrib                                # no hard-coded size on the drawing itself
+    style = root.attrib["style"]
+    assert "width:100%" in style and "max-width:" in style                                           # shrinks to the column, never grows past its natural size
+    vb = [float(v) for v in root.attrib["viewBox"].split()]
+    assert vb[2] > 0 and vb[3] > 0                                                                   # still has a real drawing area to scale
+
+
+async def test_nothing_is_rebuilt_while_the_slider_knob_is_held(city, sample_dir):
+    """Regression: a rebuild under a held knob left the page stuck on the slider. The slider's 'pan' start/end pauses the redraw."""
+    hub = make_hub(city, [sample_dir])
+    async with user_simulation(root=lambda: build_page(hub)) as user:
+        await user.open("/")
+        sw = _follow_switch(user)
+        sl = _slider_next_to(sw)
+        images = {tuple(i.props["size"]): i for i in user.find(kind=ui.interactive_image).elements}
+        city_img = images[(1920, 1080)]
+        sw.set_value(False)
+        await asyncio.sleep(0.3)
+        fire(sl, "pan", "start")                                                                     # knob grabbed
+        before = city_img.content
+        fire(sl, "change", 5)                                                                        # a value arrives while held: the page must not redraw
+        await asyncio.sleep(0.3)
+        assert city_img.content == before
+        fire(sl, "pan", "end")                                                                       # knob released: one redraw, from the slider value
+        await asyncio.sleep(0.3)
+        await user.should_see("Triplet 04")                                                          # and the page still answers
+
+
+async def test_a_lost_release_signal_does_not_freeze_the_page_forever(city, sample_dir):
+    hub = make_hub(city, [sample_dir])
+    async with user_simulation(root=lambda: build_page(hub)) as user:
+        await user.open("/")
+        sw = _follow_switch(user)
+        sl = _slider_next_to(sw)
+        sw.set_value(False)
+        await asyncio.sleep(0.3)
+        fire(sl, "pan", "start")                                                                     # 'end' never arrives
+        sw.set_value(True)                                                                           # going live again forces a redraw; it is held back ...
+        await asyncio.sleep(0.2)
+        await user.should_see("Triplet 04")                                                          # ... but the page keeps answering, and the guard times out
