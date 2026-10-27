@@ -127,7 +127,7 @@ def attach_debug(app, runtime, settings):
     @app.post("/debug/case/{sid}/{variant}", include_in_schema=False)
     async def replay(request: Request, sid: str, variant: str):
         authorized(request, write=True)
-        if sid not in IMPLEMENTED_SCENARIOS or variant not in {"base", "refusal"}:
+        if sid not in {"S01", "S02", "S03", "S04", "S05"} or variant not in {"base", "refusal"}:
             raise HTTPException(404, "Only delivered cases are available")
         return await execute(DebugRunRequest(scenario=sid, variant=variant))
 

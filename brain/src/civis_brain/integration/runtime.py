@@ -35,13 +35,16 @@ RELEVANCE = {
     "S03": ("power", {"load_kw", "voltage_v"}),
     "S04": ("air_quality", {"pm25"}),
     "S05": ("emergency", {"emergency_calls"}),
+    "S06": ("traffic", {"road_accident_report"}),
 }
+
 ACTION_BY_SCENARIO = {
     "S01": "set_signal_plan",
     "S02": "set_valve_position",
     "S03": None,
     "S04": None,
     "S05": "dispatch",
+    "S06": None,
 }
 PROTOCOL = "2026-07-28"
 
@@ -86,7 +89,10 @@ class BrainRuntime:
         self.twin, self.guardian, self.provider = twin, guardian, provider
         self.policies, self.features = policies, features
         self.scenarios = tuple(scenarios)
-        enabled = features.get("enabled_scenario_ids", list(RELEVANCE))
+        enabled = features.get(
+    "enabled_scenario_ids",
+    ["S01", "S02", "S03", "S04", "S05"],
+)
         if not isinstance(enabled, list) or not set(enabled).issubset(RELEVANCE):
             raise ValueError("enabled_scenario_ids must contain known scenario IDs")
         self.enabled = set(enabled)
@@ -601,8 +607,23 @@ class BrainRuntime:
                             batch, sid, "alert", warning, evidence_ids, code="EVIDENCE_WARNING"
                         )
                     )
+
                 if not incidents:
                     continue
+
+                if sid == "S06":
+                    for incident in incidents:
+                        results.append(
+                            self._decision(
+                                batch,
+                                sid,
+                                "alert",
+                                "S06: report detected, but no reviewed road-accident dispatch action is configured.",
+                                incident.source_reading_ids,
+                            )
+                        )
+                    continue
+
                 generation = self.generation
                 evidence, scores, thresholds, scale = await self._trusted(batch, incidents, nodes)
                 allowed = [row for row in actions if row.action == ACTION_BY_SCENARIO[sid]]
