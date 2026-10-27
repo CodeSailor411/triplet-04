@@ -60,7 +60,7 @@ Add `?max_events=3` to the feed address to make it stop by itself. Without a key
 
 **Make the Twin act (`actuate`)**
 
-The Twin refuses every action that has no token from Guardian. While Guardian's mock does not exist yet, make test tokens yourself.
+The Twin refuses every action that has no token from Guardian. You can make test tokens yourself, as below, or let the mock Guardian do it (see "Stand-ins").
 Ask the clock for the `run_id`, then:
 
 ```
@@ -108,7 +108,7 @@ It only shows up for the scenario key (try `get_capabilities` with each key and 
 | See the city as a map and a timeline screen (R3) | **Yes** | `python -m twin.dashboard`, see "The dashboard" below. It shows logged events only, so a quiet Twin looks empty |
 | Start a scenario with one command or button (R2) | **Yes, one command** | `run_scenario` starts an attack. There is no button yet |
 | A log file for every run (R2) | **Yes, the Twin's part** | see "The run log" below. The shared format was reviewed with the partners on 9 Oct (JSON Lines, one part file per layer), and the merged file only holds the other layers' events once they write their parts |
-| Mock Brain and mock Guardian that call the Twin on their own (R1) | **Not by us.** The Brain and Guardian teams' mocks are the stand-ins (agreed 9 Oct) | `example_client.py` is only a one-shot caller |
+| Mock Brain and mock Guardian that call the Twin on their own (R1) | **Yes**, thin scripted stand-ins made by the Twin team | `python mocks/mock_brain.py incident --fake-jam`, see "Stand-ins" below |
 | Faults and attacks | **Yes**, fake reading, stuck sensor, exact replay | `run_scenario` above. The recycled-values replay comes 28 Oct |
 | An actuator changing a sensor | **No**, 15 Oct | `actuate` stores the commanded value and nothing reacts |
 
@@ -156,6 +156,51 @@ What you see:
 How the arrows work: the Twin cannot know who asked it to do something, so the others say it in their own events. Verdict: `caused_by` holds the `reading_id` it judged. Guardian's approval event carries the same `token_id` as the Twin's `action` event, and the Brain's decision carries the same `idempotency_key`. The containment tools take an optional `caused_by` (for example Guardian's verdict id). If a link is missing, that event simply has no arrow. Nothing is guessed.
 
 Limits: the trust cut-offs (0.8 and 0.5) are placeholders until Guardian publishes its own. The Guardian and Brain lanes stay empty until they write log parts in the same format (`--sample` shows how it looks when they do). The dashboard never reads `*-private.jsonl`. It shows what the layers LOGGED. The Twin does not log normal readings (109 per tick), so with no scenario running the map shows no verdicts or attacks, only the city. Live node values are not shown yet. It was tested without a real browser (NiceGUI's simulated user, plus pictures of the drawings), so open it once in a browser and look for anything odd.
+
+## Stand-ins: a mock Brain and a mock Guardian (R1)
+
+Challenge rule R1 says each layer must run alone, with simple stand-ins for the other two. These are ours. They are small scripts that call the Twin the way the real Brain and the real Guardian would. They are **not** the Brain team's or the Guardian team's code, and they do not copy their logic. They follow a fixed script and judge nothing.
+
+| File | What it plays |
+|---|---|
+| `mocks/mock_guardian.py` | Guardian. Hands out a permission token for one exact action, and calls the containment tools (`isolate_sensor`, `quarantine_device`, `release_device`). It behaves the way you tell it to (`--mode`, see below) |
+| `mocks/mock_brain.py` | City Brain. Watches a traffic sensor, and when it sees a jam it asks the mock Guardian for a token and sends `actuate` |
+| `mocks/mock_common.py` | Shared helper: where the Twin is, which key to use, a small MCP client |
+
+Start the Twin in one terminal (`python -m twin`), then in a second terminal:
+
+```
+python mocks/mock_brain.py incident                      # waits up to 60 s for a jam. A calm Twin answers "no_incident"
+python mocks/mock_brain.py incident --fake-jam           # starts a fake jam first, then the whole path runs
+python mocks/mock_brain.py act --action set_valve_position --targets WAT-03 --params '{"position": 25}'
+python mocks/mock_brain.py act --action set_signal_plan --targets TRF-01 --params '{"plan": "normal"}' --sends 2
+python mocks/mock_guardian.py token --action set_signal_plan --targets TRF-01 --params '{"plan": "normal"}' --idempotency-key try-1
+python mocks/mock_guardian.py isolate --devices WAT-01.water_level --reason "stuck sensor"
+python mocks/mock_guardian.py release --devices WAT-01.water_level
+```
+
+The keys come from the environment (`TWIN_KEY_CITY_BRAIN`, `TWIN_KEY_GUARDIAN`, `TWIN_KEY_SCENARIO`) or from `twin/.env`, the same file the Twin reads. The Twin's address comes from `--url`, then `TWIN_URL`, then `server` in `config/twin.yaml`. Nothing is hard-coded.
+
+**How the mock Guardian behaves** (`--guardian-mode` on the Brain, `--mode` on the Guardian):
+
+| Mode | What it does | What the mock Brain then does |
+|---|---|---|
+| `approve` (default) | Gives a token | Sends the action. The Twin commits it |
+| `refuse` | Says no | Sends nothing. Result `not_sent`, reason `GUARDIAN_REFUSED` |
+| `slow` | Gives a token after `--slow-seconds` (default 2) | Waits. If that is longer than `--guardian-timeout` (default 3 real seconds), it gives up like `silent` |
+| `silent` | Never answers | Gives up after `--guardian-timeout`. Result `not_sent`, reason `GUARDIAN_TIMEOUT` |
+
+The token format follows the Twin's setting. An unsigned Twin gets our own unsigned token. A Twin with `tokens.mode: signed` gets Guardian's real `g1` token, signed with Ed25519 (a signature type with two keys: one signs, the other only checks). For that, make a key pair with `python mocks/token_tool.py keygen`, put the public key in a copy of `config/twin.yaml`, and give the mock Guardian the private key with `--private-key` or `MOCK_GUARDIAN_PRIVATE_KEY`. Never commit a private key.
+
+The jam in `incident` is the Brain team's S01 story, with their numbers copied: a congestion index of 80 % or more on two ticks in a row. A tick is one step of the simulated clock.
+
+What they cannot do (say it in the demo):
+
+* The Twin cannot make a **real** incident yet, only a fake reading. So `--fake-jam` is a sensor lying, and the mock Brain acts on the lie. The real Guardian is the one meant to distrust it. The mock Guardian does not read the feed and does not judge anything.
+* They do not write a run log, so their decisions do not show on the dashboard timeline yet.
+* They are not a test of the real Brain or the real Guardian. A joint run with the real ones is a separate step.
+
+They are tested by `tests/test_mocks.py` (27 tests, each against a real running Twin, including a Twin in signed mode).
 
 ## Test it
 
@@ -271,7 +316,7 @@ This is reference data: no tool and no cap checks distances.
 | `mocks/token_tool.py` | Makes test tokens and key pairs for mocks and tests |
 | `src/twin/sensors.py` | Sensor model: true value, and observed value = truth + device bias + noise. Pure functions of seed, device and tick |
 | `src/twin/settings.py` | Reads and checks config and secrets, with clear error messages |
-| `mocks/` | Mock Brain and mock Guardian (small example client for now, real mocks on 9 Oct) |
+| `mocks/` | `mock_brain.py` and `mock_guardian.py` (the stand-ins, see "Stand-ins"), `mock_common.py` (their helpers), `example_client.py` (one-shot caller), `token_tool.py` |
 | `tests/` | Automated tests |
 | `requirements.txt` | Exact versions we use. `requirements-lock.txt` freezes everything installed, including pulled-in packages |
 

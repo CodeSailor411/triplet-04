@@ -151,12 +151,27 @@ class RunLog:
             await self.sim.wait_for_change(run, tick, 1.0)
 
     # ------------------------------------------------------------------ merging
+    def partner_parts(self, run_id: str) -> list[Path]:
+        """Part files of the other layers that sit in OUR parts folder (<run_id>.guardian.jsonl, <run_id>.brain.jsonl).
+        Only these two exact names are picked up: never the private file with true values (<run_id>.twin-private.jsonl)."""
+        return [p for layer in ("guardian", "brain") if (p := self.parts_dir / f"{run_id}.{layer}.jsonl").exists()]
+
     def export(self, extra_parts: list[Path] | None = None) -> Path | None:
-        """(Re)write the merged file of the current run from every part we can find."""
+        """(Re)write the merged file of the current run from every part we can find: ours, the partners' part files
+        in our folder (added 27 Oct, so a stand-in's or a partner's events do not vanish when the Twin merges), and any
+        you pass in. If a partner's file belongs to another run, say so and merge only the Twin's own events."""
         if not self.enabled or self._run is None:
             return None
+        parts = [self.part_path(self._run_id), *self.partner_parts(self._run_id), *(extra_parts or [])]
         try:
-            return merge_parts([self.part_path(self._run_id), *(extra_parts or [])], self.merged_path(self._run_id))
+            return merge_parts(parts, self.merged_path(self._run_id))
+        except ValueError as e:                                  # parts of different runs: never mix them
+            log.warning("Partner part files not merged: %s", e)
+            try:
+                return merge_parts([self.part_path(self._run_id)], self.merged_path(self._run_id))
+            except OSError as e2:
+                self._warn(e2)
+                return None
         except OSError as e:
             self._warn(e)
             return None

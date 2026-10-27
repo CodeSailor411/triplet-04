@@ -163,6 +163,9 @@ class DashboardCfg(_Strict):
     # PLACEHOLDERS. Guardian will publish its own cut-offs (decision report: a verdict is a score only, no label).
     trusted_from: float = Field(default=0.8, ge=0, le=1)
     degraded_from: float = Field(default=0.5, ge=0, le=1)
+    # Live node values (27 Oct): the dashboard also reads the Twin's live feed (/events). It needs a key (see live.py).
+    live_feed: bool = True
+    feed_url: str | None = None          # default: the Twin's own address, built from `server` (host and port)
 
 
 class CanvasCfg(_Strict):

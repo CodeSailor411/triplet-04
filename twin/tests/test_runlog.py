@@ -308,3 +308,48 @@ async def test_caused_by_works_through_the_real_tool(mcp_client):
         await g.call_tool("release_device", {"device_ids": ["AIR-05.pm25"]})
     assert not ok.is_error and ok.structured_content["status"] == "applied"
     assert bad.is_error and "INVALID_CAUSED_BY" in bad.content[0].text
+
+
+# ------------------------------------------------------------------ partner part files in the Twin's own folder (27 Oct)
+def partner_line(run_id, layer, n=1, tick=100, etype="verdict"):
+    return json.dumps({"run_id": run_id, "event_id": f"{layer}-{n:06d}", "timestamp": "2026-10-05T08:01:40.000Z", "tick": tick,
+                       "wall": "2999-01-01T00:00:00.000Z", "layer": layer, "event_type": etype, "caused_by": [],
+                       "data": {"device_id": WAT, "score": 0.2}}) + "\n"
+
+
+def test_the_twins_merge_includes_the_partner_parts_that_sit_in_its_folder(tmp_path):
+    """Without this a stand-in's or a partner's events were wiped from the repo log whenever the Twin merged by itself."""
+    sim, _, cont, _, rl, _ = build(tmp_path)
+    cont.contain("isolate_sensor", ["AIR-01.pm25"], "stuck")
+    (tmp_path / "parts").mkdir(exist_ok=True)
+    (rl.parts_dir / f"{sim.run_id}.guardian.jsonl").write_text(partner_line(sim.run_id, "guardian"))
+    (rl.parts_dir / f"{sim.run_id}.brain.jsonl").write_text(partner_line(sim.run_id, "brain", etype="decision"))
+    merged = lines(rl.export())
+    assert sorted({e["layer"] for e in merged}) == ["brain", "guardian", "twin"]
+    assert {e["event_type"] for e in merged if e["layer"] != "twin"} == {"verdict", "decision"}
+
+
+def test_the_private_truth_file_is_never_merged_even_when_it_sits_next_to_the_parts(tmp_path):
+    sim, _, _, sc, rl, _ = build(tmp_path)
+    run(sc, "fake_reading", {"device_id": WAT, "value": 180, "delay_ticks": 1})
+    sim.tick = 101
+    rl.log_tick(101)
+    assert rl.private_path(sim.run_id).exists()
+    merged_text = rl.export().read_text()
+    assert "true_value" not in merged_text and "twin-private" not in merged_text
+
+
+def test_a_partner_file_of_another_run_is_not_mixed_in_and_the_twin_still_merges(tmp_path):
+    sim, _, cont, _, rl, _ = build(tmp_path)
+    cont.contain("isolate_sensor", ["AIR-01.pm25"], "stuck")
+    (rl.parts_dir / f"{sim.run_id}.guardian.jsonl").write_text(partner_line("run-99-009", "guardian"))
+    merged = lines(rl.export())
+    assert {e["layer"] for e in merged} == {"twin"}
+    assert {e["run_id"] for e in merged} == {sim.run_id}
+
+
+def test_an_unknown_layer_file_in_the_folder_is_ignored(tmp_path):
+    sim, _, cont, _, rl, _ = build(tmp_path)
+    cont.contain("isolate_sensor", ["AIR-01.pm25"], "stuck")
+    (rl.parts_dir / f"{sim.run_id}.someone-else.jsonl").write_text(partner_line(sim.run_id, "guardian"))
+    assert {e["layer"] for e in lines(rl.export())} == {"twin"}

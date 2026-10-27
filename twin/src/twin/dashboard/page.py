@@ -13,6 +13,7 @@ from nicegui import ui
 from ..models import Layout, Topology
 from ..settings import DashboardCfg
 from .events import Event, LogFollower, RunState, as_list, build_state, node_status, summarize
+from .live import LiveFeed
 from .nodes import HEX, glyph
 from .style import BG, DIM, EDGE, FONT, FONT_FILES, HEADER_BG, PANEL_2, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
 from .svg import Scene, city_scene, timeline_scene
@@ -25,8 +26,9 @@ class Hub:
     """Shared by every open browser tab: one reader of the logs, one cache of the computed state."""
 
     def __init__(self, cfg: DashboardCfg, topology: Topology, layout: Layout, sources: list[str] | None = None,
-                 fingerprint: str | None = None):
+                 fingerprint: str | None = None, live: LiveFeed | None = None):
         self.cfg, self.topology, self.layout, self.fingerprint = cfg, topology, layout, fingerprint
+        self.live = live                       # None = no live values (the page then only shows what the logs say)
         self.follower = LogFollower(sources if sources is not None else cfg.sources)
         self.cutoffs = {"trusted": cfg.trusted_from, "degraded": cfg.degraded_from}
         self._cache: tuple[Any, ...] | None = None
@@ -60,6 +62,11 @@ class Hub:
 
 def _is_sample(st: RunState) -> bool:
     return any(isinstance(e.get("data"), dict) and e["data"].get("sample") for e in st.events)
+
+
+def _has_stand_ins(st: RunState) -> bool:
+    """True when a Guardian or Brain event was written by the Twin team's stand-ins (they mark every event stand_in)."""
+    return any(isinstance(e.get("data"), dict) and e["data"].get("stand_in") for e in st.events)
 
 
 def _age(st: RunState) -> tuple[str, bool]:
@@ -248,11 +255,13 @@ def build_page(hub: Hub) -> None:
             set_status("no data", False)
             set_stats(None)
             sample_chip.set_visibility(False)
+            stand_in_chip.set_visibility(False)
             return
         mismatch = hub.city_mismatch(st)
         warn.set_text(mismatch or "")
         warn.set_visibility(bool(mismatch))
         sample_chip.set_visibility(_is_sample(st))
+        stand_in_chip.set_visibility(_has_stand_ins(st))
         text, live = _age(st)
         set_status(text, live)
         set_stats(st)
@@ -288,6 +297,7 @@ def build_page(hub: Hub) -> None:
         st = state()
         if st is None:
             return
+        live_values()
         if S["event"] and S["event"] in st.by_id:
             event_card(st, st.by_id[S["event"]])
         if S["node"]:
@@ -320,6 +330,30 @@ def build_page(hub: Hub) -> None:
                     ui.label(f"tick {e['tick']} · {d.get('partner', '?')}: {d.get('failure', '?')}").classes("text-sm")
                     if d.get("handled"):
                         ui.label(f"handled: {d['handled']}").classes("text-xs text-dim")
+
+    @ui.refreshable
+    def live_values() -> None:
+        """The newest sensor values from the Twin's feed: all of them (counts) or, with a node picked, that node's."""
+        feed = hub.live
+        if feed is None:
+            return
+        with ui.card().classes("w-full"):
+            ui.label("Live values").classes("text-lg font-bold")
+            text, live = feed.status()
+            ui.label(text).classes("text-sm " + ("" if live else "text-dim")).mark("live-status")
+            if S["node"] and feed.latest:
+                rows = feed.node_values(S["node"])
+                if not rows:
+                    ui.label(f"No live values for {S['node']} yet.").classes("text-dim text-sm")
+                for r in rows:
+                    v = r["value"]
+                    shown_value = "no value" if v is None else f"{v:g} {r['unit'] or ''}".strip()
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label(r["device_id"] + (f" ({r['channel']})" if r.get("channel") else "")).classes("text-sm font-bold")
+                        ui.label(shown_value).classes("text-sm").mark(f"live-{r['device_id']}")
+                        ui.label(f"tick {r['tick']}").classes("text-xs text-dim")
+            elif feed.latest:
+                ui.label(f"{feed.count} readings per tick, run {feed.run_id}. Click a node to see its values.").classes("text-sm text-dim")
 
     def node_card(st: RunState, node_id: str) -> None:
         n = next((x for x in hub.topology.nodes if x.node_id == node_id), None)
@@ -402,6 +436,14 @@ def build_page(hub: Hub) -> None:
         with ui.element("div").classes("tw-sample") as sample_chip:
             ui.label("SAMPLE DATA")
             ui.tooltip("The Twin events are real. The Guardian and Brain events are made up (each one is marked sample).")
+        with ui.element("div").classes("tw-sample") as stand_in_chip:
+            ui.label("STAND-IN LAYERS")
+            ui.tooltip("The Guardian and Brain events come from the Twin team's stand-in scripts (mocks), not from the real "
+                       "Guardian and Brain. The Twin events are real. Each stand-in event is marked stand_in.")
+        with ui.element("div").classes("tw-pill") as feed_pill:
+            ui.element("div").classes("tw-dot")
+            feed_text = ui.label("").mark("feed-status")
+            ui.tooltip("Live sensor values from the Twin's own feed. The map and timeline below come from the run logs.")
         ui.space()
         for key, title in (("tick", "Tick"), ("time", "Sim time"), ("events", "Events"), ("untrusted", "Untrusted"),
                            ("cut", "Cut off"), ("person", "Needs a person")):
@@ -473,9 +515,30 @@ def build_page(hub: Hub) -> None:
                        {"name": "what", "label": "What happened", "field": "what", "align": "left"}]
             table = ui.table(columns=columns, rows=[], row_key="id", pagination=15).props("dark flat dense").classes("w-full")
             table.on("rowClick", lambda e: select_event(e.args[1]["id"]))
-    ui.label("Reads run logs only. Trust cut-offs are placeholders until Guardian publishes its own.").classes("text-xs text-dim px-4 pb-2")
+    ui.label("Map and timeline come from the run logs. Live values come from the Twin's feed. "
+             "Trust cut-offs are placeholders until Guardian publishes its own.").classes("text-xs text-dim px-4 pb-2")
+
+    shown_feed: dict[str, Any] = {"version": None, "status": None}
+
+    def refresh_live() -> None:
+        """Twice a second: update the chip, and redraw the values card only when a new tick arrived."""
+        feed = hub.live
+        if feed is None:
+            feed_pill.set_visibility(False)
+            return
+        text, live = feed.status()
+        feed_text.set_text(text)
+        if live:
+            feed_pill.classes(add="live")
+        else:
+            feed_pill.classes(remove="live")
+        if (feed.version, text) != (shown_feed["version"], shown_feed["status"]):
+            shown_feed.update(version=feed.version, status=text)
+            live_values.refresh()
 
     ui.timer(hub.cfg.refresh_seconds, redraw)
+    ui.timer(0.5, refresh_live)
+    refresh_live()
     redraw(force=True)
 
 

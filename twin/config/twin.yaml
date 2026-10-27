@@ -165,6 +165,8 @@ dashboard:
   window_ticks: 60            # how many ticks the timeline shows (0 = the whole run)
   trusted_from: 0.8           # PLACEHOLDER cut-offs until Guardian publishes its own
   degraded_from: 0.5
+  live_feed: true            # also read the Twin's live feed (/events) for the newest sensor values (needs TWIN_KEY_CITY_BRAIN in the environment or twin/.env)
+  feed_url: null             # null = the Twin's own address from `server` above
 
 # ---------------------------------------------------------------------------
 # Topology generator
