@@ -183,3 +183,57 @@ def test_unsupported_report_channel_is_rejected():
     assert result.incidents == []
     assert result.observations[0].usable is False
     assert result.observations[0].reason == "unsupported_report_channel"
+
+def test_duplicate_report_inside_same_batch_creates_one_incident():
+    scenario = RoadAccidentScenario()
+    reading = make_reading(reading_id="duplicate-001")
+    batch = make_batch([reading, reading])
+
+    result = scenario.detect(batch, make_nodes(), {}, {})
+
+    assert len(result.incidents) == 1
+    assert result.incidents[0].source_reading_ids == ["duplicate-001"]
+
+
+def test_unconfirmed_report_value_is_rejected():
+    scenario = RoadAccidentScenario()
+    reading = make_reading(value=0)
+
+    result = scenario.detect(
+        make_batch([reading]), make_nodes(), {}, {}
+    )
+
+    assert result.incidents == []
+    assert result.observations[0].usable is False
+    assert result.observations[0].reason == "report_not_confirmed"
+
+def test_same_report_id_in_different_runs_is_not_deduplicated():
+    scenario = RoadAccidentScenario()
+    state = {}
+    nodes = make_nodes()
+
+    first_reading = make_reading(
+        reading_id="report-shared",
+        run_id="run-A",
+    )
+    first = scenario.detect(
+        make_batch([first_reading], run_id="run-A"),
+        nodes,
+        {},
+        state,
+    )
+
+    second_reading = make_reading(
+        reading_id="report-shared",
+        run_id="run-B",
+    )
+    second = scenario.detect(
+        make_batch([second_reading], run_id="run-B"),
+        nodes,
+        {},
+        state,
+    )
+
+    assert len(first.incidents) == 1
+    assert len(second.incidents) == 1
+    assert first.incidents[0].run_id != second.incidents[0].run_id
