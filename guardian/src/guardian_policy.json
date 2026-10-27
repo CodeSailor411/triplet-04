@@ -1,0 +1,21 @@
+{
+  "trust": {
+    "score_field": "trust_score",
+    "trusted_min": 0.7,
+    "suspect_min": 0.3,
+    "boundary_semantics": "score > trusted_min is trusted; suspect_min < score <= trusted_min is suspect; score <= suspect_min is compromised",
+    "risk_minimums": {"R1": 0.5, "R2": 0.7, "R3": 0.85},
+    "risk_values_provisional": true
+  },
+  "actions": {
+    "aliases": {"set_failover": "set_priority_mode", "set_collection_priority": "send_collection_truck"},
+    "allowlist": ["set_priority_mode", "send_collection_truck", "set_signal_plan", "set_valve_position", "set_grid_switch", "dispatch"],
+    "action_risk_levels": {"set_priority_mode": null, "send_collection_truck": null, "set_signal_plan": "R1", "set_valve_position": "R3", "set_grid_switch": "NONE", "dispatch": "R2"},
+    "action_risk_values_provisional": false,
+    "action_domains": {"set_priority_mode": "Telecom", "send_collection_truck": "Waste", "set_signal_plan": "Traffic", "set_valve_position": "Water", "set_grid_switch": "Power", "dispatch": "Emergency"},
+    "power_action_cap": 3,
+    "power_action_scope": "per_run",
+    "rollback_pool_sizes": {"Telecom": 3, "Waste": 3},
+    "capacity_source": "offline_fallback"
+  }
+}
