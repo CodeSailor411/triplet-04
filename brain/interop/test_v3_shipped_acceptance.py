@@ -8,6 +8,7 @@ Unmet partner prerequisites are ordinary failures, never skips or fake approval.
 """
 
 import asyncio
+import copy
 import hashlib
 import json
 import os
@@ -149,6 +150,20 @@ class NativeIntentPlanner:
         }], "alerts": []})
 
 
+def observe_actuations(runtime):
+    """Passive test-only capture; original signed requests stay in memory only."""
+    requests = []
+    original = runtime.twin.call_tool
+
+    async def call_tool(name, arguments):
+        if name == "actuate":
+            requests.append(copy.deepcopy(arguments))
+        return await original(name, arguments)
+
+    runtime.twin.call_tool = call_tool
+    return requests
+
+
 @asynccontextmanager
 async def shipped_stack(twin, monkeypatch, *, events_url=None, evidence_age=60):
     directory = twin.directory
@@ -175,12 +190,14 @@ async def shipped_stack(twin, monkeypatch, *, events_url=None, evidence_age=60):
                 scenario_policy_file=str(override_file), max_evidence_age_seconds=evidence_age,
                 peer_timeout_seconds=8, ai_max_calls_per_run=20)
             app = create_app(settings)
+            actuate_requests = observe_actuations(app.state.runtime)
             with serve(app) as brain_url:
                 stack = SimpleNamespace(twin=twin, app=app, runtime=app.state.runtime,
                     brain=MCPPeer(brain_url, INBOUND["scenario"], 12),
                     guardian=MCPPeer(guardian_url + "/mcp", BRAIN_KEY, 8),
                     guardian_url=guardian_url, bridge=bridge, bridge_log=bridge_log,
-                    brain_url=brain_url.removesuffix("/mcp"), directory=directory)
+                    brain_url=brain_url.removesuffix("/mcp"), directory=directory,
+                    actuate_requests=actuate_requests)
                 try:
                     yield stack
                 finally:
@@ -216,16 +233,21 @@ async def require_action(stack):
     await wait_feed(stack)
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        completed = [(key, request) for key, request in stack.runtime.sent_requests.items()
-                     if stack.runtime.intents.get(key, {}).get("status") == "committed"]
+        completed = [(key, receipt) for key, receipt in list(stack.runtime.intents.items())
+                     if receipt.get("status") == "committed"]
         if completed:
-            key, request = completed[0]
+            key, brain_receipt = completed[0]
+            requests = [item for item in list(stack.actuate_requests) if item.get("idempotency_key") == key]
+            assert requests, "BRAIN_COMMIT_WITHOUT_OBSERVED_ACTUATE"
+            request = requests[0]
+            assert all(item == request for item in requests), "CHANGED_REQUEST_UNDER_SAME_KEY"
             book = stack.twin.app.state.book
             saved = book.store.get_answer(stack.runtime.run_id, "city_brain", key)
             assert saved is not None, "BRAIN_COMMIT_WITHOUT_TWIN_IDEMPOTENCY_RECEIPT"
             receipt = json.loads(saved[1])
             assert receipt["status"] == "committed"
             assert receipt["action_id"] in book.committed
+            assert receipt["action_id"] == brain_receipt.get("action_id")
             assert all(receipt[field] == request[field] for field in ("action", "targets", "params"))
             write_evidence(stack.directory, "actual-commit-proof", {
                 "idempotency_key": key, "receipt": receipt,
@@ -235,6 +257,44 @@ async def require_action(stack):
         await asyncio.sleep(.1)
     codes = sorted({item.peer_code or item.status for item in stack.runtime.decisions.values()})
     pytest.fail("LIVE_ACTION_PREREQUISITE_FAILED: " + repr(codes))
+
+
+async def test_commit_proof_survives_runtime_removing_finished_request(monkeypatch, tmp_path):
+    """Harness regression only, not a replacement for the real-service gate."""
+    request = {"action": "set_signal_plan", "targets": ["TRA-01"], "params": {"plan": "normal"},
+               "idempotency_key": "original-key", "token": "PRIVATE_TEST_TOKEN"}
+    receipt = {"status": "committed", "action_id": "actual-action", "run_id": "r1",
+               "action": request["action"], "targets": request["targets"], "params": request["params"]}
+    forwarded = []
+
+    async def actual_call(name, arguments):
+        forwarded.append((name, arguments))
+        return receipt
+
+    runtime = SimpleNamespace(twin=SimpleNamespace(call_tool=actual_call), run_id="r1",
+        intents={"original-key": receipt}, sent_requests={})
+    captured = observe_actuations(runtime)
+    assert await runtime.twin.call_tool("actuate", request) is receipt
+    assert forwarded[0][1] is request
+    assert captured[0] == request and captured[0] is not request
+    indexes = []
+
+    def get_answer(run_id, caller, key):
+        indexes.append((run_id, caller, key))
+        return "fingerprint", json.dumps(receipt)
+
+    async def feed_ready(*_):
+        return None
+
+    monkeypatch.setitem(globals(), "wait_feed", feed_ready)
+    book = SimpleNamespace(store=SimpleNamespace(get_answer=get_answer),
+                           committed={"actual-action"}, seq=1)
+    stack = SimpleNamespace(runtime=runtime, actuate_requests=captured, directory=tmp_path,
+                            twin=SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(book=book))))
+    assert await require_action(stack) == request
+    assert indexes == [("r1", "city_brain", "original-key")]
+    assert runtime.sent_requests == {}
+    assert "PRIVATE_TEST_TOKEN" not in (tmp_path / "actual-commit-proof.json").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("shipped_twin", ["S01", "S02", "S03", "S04", "S05"], indirect=True)

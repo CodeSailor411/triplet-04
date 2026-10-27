@@ -89,8 +89,10 @@ async def test_v3_tools_and_native_ingestion(twin):
         result = await ingest(url, batch)
         row = next(r for r in batch["readings"] if r["sensor"] == "congestion_index")
         verdict = await raw.call_tool("get_trust_verdict", {"reading_id": row["reading_id"], "fresh": True})
-        save("v3-native-ingestion", {"ingestion": result, "verdict": verdict, "capability": capability})
-        assert verdict["caused_by"] == row["reading_id"]
+        scores = await adapter.call_tool(SCORE_TOOL, {"readings": [row]})
+        save("v3-native-ingestion", {"ingestion": result, "verdict": verdict,
+                                     "normalized": scores, "capability": capability})
+        assert scores["scores"][0]["reading_id"] == row["reading_id"]
 
 
 async def test_guardian_native_discovery_accepts_current_mcp(twin):
@@ -201,7 +203,9 @@ async def test_v3_guardian_scores_actual_availability(twin):
         except Exception as exc:
             save("v3-availability", {"skipped": result["skipped"], "error_type": type(exc).__name__})
             pytest.fail("Guardian did not provide trust for actual units_free evidence")
-        assert verdict["caused_by"] == row["reading_id"]
+        save("v3-availability", {"verdict": verdict})
+        scores = await GuardianV3Peer(peer).call_tool(SCORE_TOOL, {"readings": [row]})
+        assert scores["scores"][0]["reading_id"] == row["reading_id"]
 
 
 def test_v3_legacy_mutations_require_auth(twin):

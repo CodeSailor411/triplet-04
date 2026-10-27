@@ -11,14 +11,18 @@ S06 uses the existing Traffic folder. Do not create a new S06 package or a secon
 | Shared dispatch helper | `brain/src/civis_brain/planning/dispatch.py` |
 | Shared contract example and tests | `brain/tests/integration/test_accident_dispatch_contract.py` |
 
-Your `accident.py` is already in PR 17 and integrated into the Elyes development branch. The missing shared helper had not been pushed. Elyes also corrected a helper restriction that would have rejected a Traffic-only accident destination. The carrier remains an Emergency node that advertises dispatch; the destination can be the reported Traffic node. S06 action routing now exposes the dispatch manifest. Your submitted planner remains alert-only until you implement the response.
+28 October review: your current submission is PR 27, branch `codex/yassine-s06-test-hardening`, head `95154e4`. Its base is now `codex/civis-elyes`. It has shared-file merge conflicts and has not been merged. The newly submitted accident tests and current Traffic/shared-helper tests pass together: 55 checks. This does not complete the S06 response.
+
+Your detector is already integrated. The shared helper and S06 dispatch routing are published on the Elyes branch. The carrier remains a discovered Emergency node advertising dispatch; the destination can be the reported Traffic node. Your current `draft_plan` still returns only an alert. Finish the fixture response using the helper below; live activation is a separate gate.
+
+Do not replace the current shared runtime with PR 27's older copy. Its S06 early-alert shortcut bypasses the shared trust/planning path, and `ACTION_BY_SCENARIO["S06"] = None` removes dispatch routing. Keep the current Elyes runtime, registry and debug files when resolving these conflicts with Elyes.
 
 ## Update your branch
 
 From your repository root, commit your own current Traffic changes first. Then:
 
 ```powershell
-git switch codex/civis-yassine
+git switch codex/yassine-s06-test-hardening
 git fetch origin
 git merge origin/codex/civis-elyes
 ```
@@ -59,4 +63,4 @@ From `brain/`:
 .\.venv\Scripts\python.exe -m pytest tests/scenarios/traffic tests/integration/test_accident_dispatch_contract.py -q
 ```
 
-Finish your response and fixtures inside the assigned Traffic paths. Submit the next changes against `codex/civis-elyes` and update PR 17's stale S01/runtime description if it remains open. Keep the existing S01 tests passing.
+Finish your response and fixtures inside the assigned Traffic paths. Continue PR 27 against `codex/civis-elyes`. Keep the existing S01 tests passing. Keep live S06 disabled until Twin confirms the individual accident-report convention and Guardian supports the required report/resource evidence.

@@ -2,11 +2,16 @@ import asyncio
 import base64
 import json
 from types import SimpleNamespace
+from typing import Literal
 
 import pytest
+from mcp.server.mcpserver import MCPServer
+from pydantic import BaseModel
 
 from civis_brain.errors import BrainError
+from civis_brain.integration import mcp_peer
 from civis_brain.integration.guardian_v3 import APPROVAL_TOOL, SCORE_TOOL, GuardianV3Peer
+from civis_brain.integration.mcp_peer import MCPPeer
 
 from .helpers import harness, make_case
 
@@ -45,6 +50,134 @@ class DelayedVerdictPeer(PublishedPeer):
                 self.calls.append((name, args))
                 raise BrainError(self.error_code, "Expected test tool failure")
         return await super().call_tool(name, args)
+
+
+class PendingVerdictPeer(PublishedPeer):
+    """The explicit pending shape published in Guardian's final-version tag."""
+
+    def __init__(self, pending_calls=1, retry_after_ms=5):
+        super().__init__()
+        self.pending_calls = pending_calls
+        self.retry_after_ms = retry_after_ms
+        self.attempts = {}
+
+    async def call_tool(self, name, args):
+        if name == "get_trust_verdict":
+            reading_id = args["reading_id"]
+            self.attempts[reading_id] = self.attempts.get(reading_id, 0) + 1
+            if self.attempts[reading_id] <= self.pending_calls:
+                self.calls.append((name, args))
+                return {"status": "pending", "reading_id": reading_id,
+                        "retry_after_ms": self.retry_after_ms, "last_scored_tick": 16}
+        return await super().call_tool(name, args)
+
+
+async def test_v3_published_pending_verdict_retries_original_ids_until_scored():
+    raw = PendingVerdictPeer()
+    peer = GuardianV3Peer(raw, verdict_wait_seconds=1.5)
+    result = await peer.call_tool(SCORE_TOOL, {
+        "readings": [{"reading_id": "r1"}, {"reading_id": "r2"}]})
+    assert result == {"scores": [{"reading_id": "r1", "score": .9},
+                                  {"reading_id": "r2", "score": .9}]}
+    assert raw.attempts == {"r1": 2, "r2": 2}
+    assert all(name == "get_trust_verdict" and args["fresh"] for name, args in raw.calls)
+    assert peer.last_retrieval["not_ready_errors"] == 2
+    assert peer.last_retrieval["unknown_tool_errors"] == 0
+    assert peer.last_retrieval["outcome"] == "succeeded"
+
+
+async def test_v3_actual_mcp_model_union_wraps_pending_and_scored_verdicts(monkeypatch):
+    class Scored(BaseModel):
+        trust_score: float
+        caused_by: str
+        scale: list[float]
+
+    class Pending(BaseModel):
+        status: Literal["pending"]
+        reading_id: str
+        retry_after_ms: int
+        last_scored_tick: int
+
+    server = MCPServer("published-guardian-union-test")
+    attempts = {}
+
+    @server.tool(structured_output=True)
+    def get_trust_verdict(reading_id: str, fresh: bool = False) -> Scored | Pending:
+        attempts[reading_id] = attempts.get(reading_id, 0) + 1
+        if attempts[reading_id] == 1:
+            return Pending(status="pending", reading_id=reading_id,
+                           retry_after_ms=5, last_scored_tick=16)
+        return Scored(trust_score=.9, caused_by=reading_id, scale=[0., 1.])
+
+    monkeypatch.setattr(mcp_peer, "streamable_http_client", lambda *args, **kwargs: server)
+    transport = MCPPeer("in-memory", "fixture-only-key")
+    pending = await transport.call_tool("get_trust_verdict", {"reading_id": "probe", "fresh": True})
+    assert pending == {"result": {"status": "pending", "reading_id": "probe",
+                                  "retry_after_ms": 5, "last_scored_tick": 16}}
+    scored = await transport.call_tool("get_trust_verdict", {"reading_id": "probe", "fresh": True})
+    assert scored == {"result": {"trust_score": .9, "caused_by": "probe", "scale": [0., 1.]}}
+    peer = GuardianV3Peer(transport, verdict_wait_seconds=.5)
+    assert await peer.call_tool(SCORE_TOOL, {"readings": [{"reading_id": "r1"}]}) == {
+        "scores": [{"reading_id": "r1", "score": .9}]}
+    assert attempts == {"probe": 2, "r1": 2}
+    assert peer.last_retrieval["not_ready_errors"] == 1
+
+
+@pytest.mark.parametrize("wrapped", [
+    {"result": None}, {"result": []}, {"result": "not-a-verdict"},
+    {"result": {"trust_score": .9, "caused_by": "r1", "scale": [0, 1]}, "extra": True},
+    {"result": {"result": {"trust_score": .9, "caused_by": "r1", "scale": [0, 1]}}},
+    {"result": {}, "trust_score": .9, "caused_by": "r1", "scale": [0, 1]},
+])
+async def test_v3_rejects_malformed_or_mixed_union_wrappers_without_retry(wrapped):
+    class WrappedPeer(PublishedPeer):
+        async def call_tool(self, name, args):
+            self.calls.append((name, args))
+            return wrapped
+
+    raw = WrappedPeer()
+    with pytest.raises(BrainError) as error:
+        await GuardianV3Peer(raw).call_tool(SCORE_TOOL, {"readings": [{"reading_id": "r1"}]})
+    assert error.value.code == "GUARDIAN_SCHEMA_INVALID"
+    assert len(raw.calls) == 1
+
+
+@pytest.mark.parametrize("budget,retry_after_ms,max_calls", [(0, 5, 1), (.15, 5, 3), (.06, 60000, 1)])
+async def test_v3_pending_never_returns_scores_or_waits_past_retry_budget(
+    budget, retry_after_ms, max_calls,
+):
+    raw = PendingVerdictPeer(pending_calls=100, retry_after_ms=retry_after_ms)
+    peer = GuardianV3Peer(raw, verdict_wait_seconds=budget)
+    with pytest.raises(BrainError) as error:
+        await asyncio.wait_for(peer.call_tool(
+            SCORE_TOOL, {"readings": [{"reading_id": "r1"}]}), .5)
+    assert error.value.code == "GUARDIAN_VERDICT_NOT_READY"
+    assert 1 <= raw.attempts["r1"] <= max_calls
+    assert peer.last_retrieval["failure_code"] == "GUARDIAN_VERDICT_NOT_READY"
+    assert peer.last_retrieval["outcome"] == "failed"
+
+
+@pytest.mark.parametrize("override", [
+    {"reading_id": "different-reading"}, {"reading_id": None},
+    {"retry_after_ms": None}, {"retry_after_ms": True}, {"retry_after_ms": 1.5},
+    {"retry_after_ms": 0}, {"retry_after_ms": -1}, {"retry_after_ms": 60001},
+    {"last_scored_tick": None}, {"last_scored_tick": True}, {"last_scored_tick": 1.5},
+    {"last_scored_tick": -1}, {"trust_score": .9}, {"caused_by": "r1"}, {"scale": [0, 1]},
+])
+async def test_v3_rejects_malformed_or_mismatched_pending_without_retry(override):
+    class MalformedPending(PublishedPeer):
+        async def call_tool(self, name, args):
+            self.calls.append((name, args))
+            return {"status": "pending", "reading_id": "r1", "retry_after_ms": 5,
+                    "last_scored_tick": 16, **override}
+
+    raw = MalformedPending()
+    peer = GuardianV3Peer(raw)
+    with pytest.raises(BrainError) as error:
+        await peer.call_tool(SCORE_TOOL, {"readings": [{"reading_id": "r1"}]})
+    assert error.value.code == "GUARDIAN_SCHEMA_INVALID"
+    assert len(raw.calls) == 1
+    assert peer.last_retrieval["retries"] == 0
 
 
 @pytest.mark.parametrize("code", ["GUARDIAN_VERDICT_NOT_READY", "PEER_ERROR"])

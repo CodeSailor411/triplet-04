@@ -50,12 +50,13 @@ class GuardianV3Peer:
 
             async def verdict(row):
                 last_error = None
+                retry_delay = self.verdict_wait_seconds / 3
                 for attempt in range(3):
                     if attempt:
                         remaining = deadline - loop.time()
                         if remaining <= 0:
                             raise last_error
-                        await asyncio.sleep(min(self.verdict_wait_seconds / 3, remaining))
+                        await asyncio.sleep(min(retry_delay, remaining))
                     requested = False
                     try:
                         async with semaphore:
@@ -73,6 +74,29 @@ class GuardianV3Peer:
                                 summary["calls"] += 1
                                 requested = True
                                 reply = await self.peer.call_tool("get_trust_verdict", request)
+                            retry_delay = self.verdict_wait_seconds / 3
+                            if not isinstance(reply, dict):
+                                raise BrainError(
+                                    "GUARDIAN_SCHEMA_INVALID", "Guardian verdict must be an object")
+                            # MCP 2.3 wraps the published model-union return value.
+                            if "result" in reply:
+                                if set(reply) != {"result"} or not isinstance(reply["result"], dict):
+                                    raise BrainError(
+                                        "GUARDIAN_SCHEMA_INVALID", "Malformed Guardian verdict wrapper")
+                                reply = reply["result"]
+                            if reply.get("status") == "pending":
+                                if (reply.get("reading_id") != row["reading_id"]
+                                        or type(reply.get("retry_after_ms")) is not int
+                                        or not 1 <= reply["retry_after_ms"] <= 60000
+                                        or type(reply.get("last_scored_tick")) is not int
+                                        or reply["last_scored_tick"] < 0
+                                        or any(field in reply for field in (
+                                            "trust_score", "caused_by", "scale"))):
+                                    raise BrainError(
+                                        "GUARDIAN_SCHEMA_INVALID", "Malformed pending Guardian verdict")
+                                retry_delay = reply["retry_after_ms"] / 1000
+                                raise BrainError(
+                                    "GUARDIAN_VERDICT_NOT_READY", "Guardian has not scored this reading")
                     except TimeoutError:
                         if attempt == 0:
                             raise BrainError("PEER_TIMEOUT", "Guardian request timed out") from None
