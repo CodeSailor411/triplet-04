@@ -17,6 +17,8 @@ The Twin is the simulated city: it sends sensor readings and receives actuator c
 | `actuate` | Brain | `action`, `targets`, `params`, `token`, `idempotency_key` | `committed` or `rejected`, `code` |
 | `isolate_sensor`, `quarantine_device`, `release_device` | Guardian | `device_ids`, `reason`?, `caused_by`? | `applied` or `rejected`, `changed` |
 | `rollback_reading` | Guardian | `reading_ids` | corrections: `corrected: true`, `corrects`, `value` (never the true value) |
+| `get_city_graph` | Brain, Guardian | `include_matrix`?, `include_roads`? | the city graph: 38 nodes (GPS, zone, domains, sensors, actions with risk), 67 links (`distance_m`, `bearing_a_to_b_deg`, `kind`), zones, roads, and `distance_matrix_m` between every pair in `node_order`. Straight-line distances, not along roads or pipes. Fixed for the run |
+| `get_nearest_nodes` | Brain, Guardian | `node_id`, `domain`?, `role`?, `limit`? (1 to 50, default 5) | nearest nodes first: `distance_m`, `bearing_deg`, `linked`. Refusals `UNKNOWN_NODE`, `UNKNOWN_ROLE`, `BAD_LIMIT` |
 | `get_containment_state`, `get_quarantine_lane` | Brain, Guardian (lane: Guardian) | none | cut-off devices, corrections, cap use, held commands |
 | `run_scenario` | `scenario` key only | `name`, `params`? | started faults. Names: `fake_reading`, `stuck_sensor`, `replay_exact`, `list`, `stop`, `reset` |
 
@@ -49,4 +51,4 @@ Refusal (three valves, water cap is 2). A refusal is a normal result, not a cras
 * **Messages:** we send strict JSON, we ignore unknown extra fields, unknown `params` are refused. UTF-8, snake_case, time = simulated UTC (RFC 3339) plus `tick`.
 * **Log:** `run-logs/<run_id>.twin.jsonl`, merged into `logs/`. Fields: `run_id`, `event_id`, `timestamp`, `tick`, `wall`, `layer`, `event_type`, `caused_by`, `data`. Timeline links: a verdict's `caused_by` is the `reading_id`, Guardian's approval has `data.token_id`, the Brain's decision has `data.idempotency_key`.
 
-**Implemented:** everything above. **Planned, not built:** two-step commit (`commit_action`), `get_flagged_readings`, Telecom and Waste domains. **Not final:** dispatch place is `destination` (CIVIS to confirm).
+**Implemented:** everything above, including the city graph agreed with CIVIS on 23 Oct (our extra, not a Phase 1 requirement). **Planned, not built:** two-step commit (`commit_action`), `get_flagged_readings`, Telecom and Waste domains. **Not final:** dispatch place is `destination` (CIVIS to confirm).

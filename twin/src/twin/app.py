@@ -68,7 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     book.recorder = containment.recorder = scenarios.recorder = runlog
     history = open_history(cfg.storage, env_file=TWIN_ROOT / ".env")                  # memory by default; timescale when config says so
     runlog.sink = history.submit_event
-    mcp = build_mcp(topology, keyring, sim, book, containment, scenarios)
+    mcp = build_mcp(topology, keyring, sim, book, containment, scenarios, layout)
     if cfg.tokens.mode == "unsigned":
         log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
     mcp_app = mcp.streamable_http_app()                # the MCP endpoint lives at /mcp inside this app
