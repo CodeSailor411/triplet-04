@@ -1,4 +1,10 @@
-﻿# Yassine — Traffic Scenario Progress
+# Integration review, 28 October 2026
+
+PR 27 at `95154e4` is integrated into `codex/civis-elyes`. Its tests are preserved; conflicting older shared files were replaced with the current Elyes versions. The shared registry, S06 dispatch routing, configuration and helper already exist. The S06 member planner remains alert-only and live S06 stays disabled pending the report/evidence contract.
+
+Continue with the committed [S06 handoff](../YASSINE_S06_HANDOFF.md). The submitted record below predates this integration; its missing-runtime and missing-configuration statements do not describe the current Elyes branch.
+
+# Yassine: submitted Traffic progress
 
 ## Current status
 

@@ -63,6 +63,8 @@ These names are confirmed. Maintain them in Guardian's `INTERFACE.md` and actual
 
 Guardian's risk enum is `R1|R2|R3|NONE`; CIVIS actuating paths use R1–R3. Brain forwards the signed token unchanged and never signs one.
 
+CIVIS does not send a `preview_id`: the tagged Twin supplies none. Brain obtains the existing preview before authorization; Twin enforces its cached binding when executing.
+
 The pending verdict published in `guardian_final_version` (`f23e570`) is accepted by the CIVIS working-branch update:
 
 ```json
@@ -96,8 +98,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/test_tagged_v3
   -IncludeBrainTests -TwinTag twin-mock-3 -GuardianTag guardian_final_version
 ```
 
-Guardian source: `f23e570bf1685e155ad8ecb73cd73ef83e259fcb`. Twin source: `b012c94e4a63652c7fbe9b6baf62ce59b4a1ac9c`. Preserve these tags. Guardian owns any new follow-up release; never move an already tested tag.
+Guardian source: `f23e570bf1685e155ad8ecb73cd73ef83e259fcb`. Twin source: `b012c94e4a63652c7fbe9b6baf62ce59b4a1ac9c`. Preserve these tags. For the remaining Guardian fixes, CIVIS proposes a new immutable `guardian-mock-4` tag, published and confirmed by Guardian. Do not move an already tested tag.
 
 Logs: `brain/.artifacts/tagged-v3/<UTC-run-id>/`, including source/environment manifests, `brain.xml`, `partners.xml`, `result.json` and service evidence. Share sanitized evidence only; private signing keys are stored separately inside the run directory. `-DiagnosticsOnly` cannot certify joint acceptance. The runner is Windows PowerShell; Linux validation must be recorded separately.
 
-Internal layer tests and published interfaces do not prove joint acceptance. Record the latest complete gate result before declaring the three-layer workflow ready.
+## Latest verification
+
+Final CIVIS recheck: **551 tests passed**, Ruff clean. Joint checks: **22 passed, 8 failed**, with no skips; one passing check is the test-harness regression. Evidence run: `20261027T235323826Z-f16d4f4f`, with final CIVIS results in `brain-merged.xml`.
+
+S01 commits through actual Guardian/Twin and repeats its original request without another effect. S04's trusted alert passes; S03 passes its stated evidence-warning scope. Planning is recorded for these Windows tests; live Gemini and Linux were not retested. All 139 tagged partner source files are unchanged.
+
+| Remaining failure group | Owner and required correction |
+|---|---|
+| S02, diagnostic and live | Guardian refuses R3 with `safe_preview_tool_unconfirmed`; complete its handling of the existing Twin preview contract. |
+| S05 and availability control | Guardian skips `units_free`, so original availability IDs receive no verdict; support the declared resource sensor/channels. |
+| Containment propagation | Guardian's local containment does not change Twin or invoke Brain's callback; implement the real calls and notification. |
+| Two legacy HTTP controls | Guardian still returns cached trust after rollback and lets the caller disable signature checking. These are legacy-route findings, not proven MCP authorization bypasses. |
+
+CIVIS corrected its pending/union adapter and a receipt-check bug in its acceptance harness. A positive unit test's artificial 150 ms wait was also changed to the existing 1.5 second budget; production timeouts were unchanged. The original run and final recheck remain separate evidence.
+
+Use the updated `codex/civis-elyes` branch for these corrections; `brain-mock-3` is unchanged. Full three-layer acceptance remains blocked until the required failures pass.

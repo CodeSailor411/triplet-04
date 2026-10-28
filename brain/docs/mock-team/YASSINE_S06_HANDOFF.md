@@ -11,11 +11,11 @@ S06 uses the existing Traffic folder. Do not create a new S06 package or a secon
 | Shared dispatch helper | `brain/src/civis_brain/planning/dispatch.py` |
 | Shared contract example and tests | `brain/tests/integration/test_accident_dispatch_contract.py` |
 
-28 October review: your current submission is PR 27, branch `codex/yassine-s06-test-hardening`, head `95154e4`. Its base is now `codex/civis-elyes`. It has shared-file merge conflicts and has not been merged. The newly submitted accident tests and current Traffic/shared-helper tests pass together: 55 checks. This does not complete the S06 response.
+28 October review: PR 27, branch `codex/yassine-s06-test-hardening`, head `95154e4`, is integrated into `codex/civis-elyes`. Shared-file conflicts were resolved by retaining the current Elyes runtime, registry and debug code. Your new tests and submitted progress record are preserved. The submitted accident tests and current Traffic/shared-helper tests passed together: 55 checks. This does not complete the S06 response.
 
 Your detector is already integrated. The shared helper and S06 dispatch routing are published on the Elyes branch. The carrier remains a discovered Emergency node advertising dispatch; the destination can be the reported Traffic node. Your current `draft_plan` still returns only an alert. Finish the fixture response using the helper below; live activation is a separate gate.
 
-Do not replace the current shared runtime with PR 27's older copy. Its S06 early-alert shortcut bypasses the shared trust/planning path, and `ACTION_BY_SCENARIO["S06"] = None` removes dispatch routing. Keep the current Elyes runtime, registry and debug files when resolving these conflicts with Elyes.
+Do not replace the current shared runtime with PR 27's older copy. Its S06 early-alert shortcut bypassed the shared trust/planning path, and `ACTION_BY_SCENARIO["S06"] = None` removed dispatch routing. Those shared-file changes were excluded from integration.
 
 ## Update your branch
 
@@ -63,4 +63,4 @@ From `brain/`:
 .\.venv\Scripts\python.exe -m pytest tests/scenarios/traffic tests/integration/test_accident_dispatch_contract.py -q
 ```
 
-Finish your response and fixtures inside the assigned Traffic paths. Continue PR 27 against `codex/civis-elyes`. Keep the existing S01 tests passing. Keep live S06 disabled until Twin confirms the individual accident-report convention and Guardian supports the required report/resource evidence.
+Finish your response and fixtures inside the assigned Traffic paths. Open the next response PR against `codex/civis-elyes`; PR 27's submitted history is already included. Keep the existing S01 tests passing. Keep live S06 disabled until Twin confirms the individual accident-report convention and Guardian supports the required report/resource evidence.
