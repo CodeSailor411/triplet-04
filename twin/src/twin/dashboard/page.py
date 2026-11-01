@@ -543,7 +543,8 @@ def build_page(hub: Hub) -> None:
                        {"name": "what", "label": "What happened", "field": "what", "align": "left"}]
             table = ui.table(columns=columns, rows=[], row_key="id", pagination=15).props("dark flat dense").classes("w-full")
             table.on("rowClick", lambda e: select_event(e.args[1]["id"]))
-    ui.label("Map and timeline come from the run logs. Live values come from the Twin's feed. "
+    ui.label(("Map and timeline come from the run logs. Live values come from the Twin's feed. " if hub.live is not None else
+              "Map and timeline come from the run logs (no live feed). ") +
              "Trust cut-offs are placeholders until Guardian publishes its own.").classes("text-xs text-dim px-4 pb-2")
 
     shown_feed: dict[str, Any] = {"version": None, "status": None}

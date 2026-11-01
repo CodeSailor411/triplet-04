@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (23 Oct 2026): 405 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 423).** New on 23 Oct: the `congestion_index` sensor (percent, one per traffic node, 120 readings per tick) and Guardian's own `g1` token format. The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 120 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built yet: two-step commit, actuator effects on the city, signed-token check turned on (see the table at the bottom).
+**Status (31 Oct 2026): 469 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 487).** New on 27 to 31 Oct: scripted stand-ins for the Brain and the Guardian that write their own run logs (`mocks/`, see "Stand-ins"), and live sensor values on the dashboard. Earlier, on 23 Oct: the `congestion_index` sensor (percent, one per traffic node, 120 readings per tick) and Guardian's own `g1` token format. The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 120 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built yet: two-step commit, actuator effects on the city, signed-token check turned on (see the table at the bottom).
 
 ## Run it
 
@@ -105,7 +105,7 @@ It only shows up for the scenario key (try `get_capabilities` with each key and 
 | Watch live readings | Yes, as text | `/events` with curl (120 readings per tick) |
 | List nodes, readings, actions, the clock | Yes | `example_client.py` tools above |
 | Make the Twin act through the trust gate | Yes, with test tokens | `token_tool.py` plus `actuate` |
-| See the city as a map and a timeline screen (R3) | **Yes** | `python -m twin.dashboard`, see "The dashboard" below. It shows logged events only, so a quiet Twin looks empty |
+| See the city as a map and a timeline screen (R3) | **Yes** | `python -m twin.dashboard`, see "The dashboard" below. The map and timeline show logged events; the newest sensor values come from the Twin's live feed, so a quiet Twin still shows a moving tick |
 | Start a scenario with one command or button (R2) | **Yes, one command** | `run_scenario` starts an attack. There is no button yet |
 | A log file for every run (R2) | **Yes, the Twin's part** | see "The run log" below. The shared format was reviewed with the partners on 9 Oct (JSON Lines, one part file per layer), and the merged file only holds the other layers' events once they write their parts |
 | Mock Brain and mock Guardian that call the Twin on their own (R1) | **Yes**, thin scripted stand-ins made by the Twin team | `python mocks/mock_brain.py incident --fake-jam`, see "Stand-ins" below |
@@ -126,7 +126,7 @@ python -m twin.logmerge run-42-001
 python -m twin.logmerge run-42-001 --parts ../brain/run-logs/run-42-001.brain.jsonl ../guardian/run-logs/run-42-001.guardian.jsonl
 ```
 
-Running it again is safe, the file is rebuilt from the parts every time. A new run (a new `run_id`) starts with `run_scenario` `reset`, and gets its own file.
+Running it again is safe, the file is rebuilt from the parts every time. Since 27 Oct the Twin's own merge also picks up `run-logs/<run_id>.guardian.jsonl` and `run-logs/<run_id>.brain.jsonl` when they sit in its folder (only those two names, never the private file; a file of another run is skipped with a warning), so a stand-in's or a partner's events are not wiped when the Twin merges. A new run (a new `run_id`) starts with `run_scenario` `reset`, and gets its own file.
 
 What the Twin writes: `scenario` (run started, scenario started or stopped), `reading` (only readings that a scenario fault touched, 120 per tick would be huge), `action` (what `actuate` answered, with the token's ID, never the token) and `containment` (isolate, quarantine, rollback, release). Every line has `run_id`, `event_id`, `timestamp` (simulated time), `tick`, `wall` (real clock, orders events inside one tick), `layer`, `event_type`, `caused_by`, `data`.
 
@@ -134,7 +134,7 @@ Limits: normal readings are not logged, so a verdict that points at one will not
 
 ## The dashboard (R3)
 
-A live screen with a **city map** and a **timeline** of reading → verdict → decision → action. It only reads the run logs, it never calls the Twin.
+A live screen with a **city map** and a **timeline** of reading → verdict → decision → action. The map and the timeline come from the run logs. It also reads the Twin's live feed (`/events`) for the newest sensor values. It never calls a tool and never changes anything in the Twin.
 
 ```
 python -m twin.dashboard --sample     # look at a made-up run first (needs no Twin and no partners)
@@ -145,7 +145,9 @@ Then open http://127.0.0.1:8080. It needs no internet (no CDN, no fonts loaded f
 
 The page is black, white and grey; colour only appears on domains, trust and attacks. The one font is Lato (SIL Open Font License, files and licence in `src/twin/dashboard/fonts/`), served by the dashboard itself, so it also works offline.
 
-The dashboard does **not** connect to the Twin. It has no key and sends no request. Once a second (`dashboard.refresh_seconds`) it re-reads the log folders listed in `dashboard.sources` (in `config/twin.yaml`) and draws what is new. So start it from the `twin/` folder (the folders are relative to where you start it), and a layer shows up as soon as it writes a log part there. Logs of a partner on another computer only show if you copy them into one of those folders.
+The map and the timeline come from log files. Once a second (`dashboard.refresh_seconds`) the dashboard re-reads the log folders listed in `dashboard.sources` (in `config/twin.yaml`) and draws what is new. So start it from the `twin/` folder (the folders are relative to where you start it), and a layer shows up as soon as it writes a log part there. Logs of a partner on another computer only show if you copy them into one of those folders.
+
+**Live values (added 27 Oct).** The dashboard also connects to the Twin's live feed (`GET /events`, SSE: one open connection the Twin keeps pushing readings on) and keeps the newest value of every sensor, nothing else. It shows a chip in the top bar (`LIVE · tick N`, or `feed lost` / `feed quiet` / `feed off` with the reason) and a "Live values" card: with nothing selected it counts the readings per tick, with a node clicked it lists that node's sensors with units. The feed needs a key and accepts only the City Brain's and the Guardian's, so the dashboard uses the City Brain's key from `TWIN_KEY_CITY_BRAIN` (environment or `twin/.env`) or `--feed-key`. If the Twin is down or refuses the key, the chip says so and the dashboard retries by itself; the map and timeline keep working. Turn it off with `--no-feed` or `dashboard.live_feed: false` (the Twin's address is `dashboard.feed_url`, default the `server` setting). The values are not drawn on the map.
 
 What you see:
 - **City map.** A black and white wireframe map section drawn in code around the node positions: one connected street network (every node sits on a street), outskirt streets that run off the edge, and a map frame with tick marks that cuts them off. Roads, nodes and the frame glow. It has no colour of its own and no district names. Colour only appears where it means something (the same positions always give the same map; the Twin's zones and `layout.json` are not changed). Every node is a hexagon from the node style spec, in its domain colour. **The shape is the trust state:** closed hexagon with a dot = Trusted, top and bottom sides missing = Degraded, an X = Untrusted, a padlock with corner brackets = Isolated (also used for quarantined, which adds a Q badge). Dimmer nodes have no Guardian verdict yet. A shared node (two domains) shows two colours. A pulsing red ring with ! means an attack is running there. Node names only show where something is going on, or on the node you click. **Layers** buttons switch a domain off (its nodes fade to grey, an isolated node keeps its lock). \"Connections\" draws the links between nodes (the selected node's links are always drawn). Click a node for its sensors and latest events. A legend under the map uses the same node pictures.
@@ -155,7 +157,7 @@ What you see:
 
 How the arrows work: the Twin cannot know who asked it to do something, so the others say it in their own events. Verdict: `caused_by` holds the `reading_id` it judged. Guardian's approval event carries the same `token_id` as the Twin's `action` event, and the Brain's decision carries the same `idempotency_key`. The containment tools take an optional `caused_by` (for example Guardian's verdict id). If a link is missing, that event simply has no arrow. Nothing is guessed.
 
-Limits: the trust cut-offs (0.8 and 0.5) are placeholders until Guardian publishes its own. The Guardian and Brain lanes stay empty until they write log parts in the same format (`--sample` shows how it looks when they do). The dashboard never reads `*-private.jsonl`. It shows what the layers LOGGED. The Twin does not log normal readings (109 per tick), so with no scenario running the map shows no verdicts or attacks, only the city. Live node values are not shown yet. It was tested without a real browser (NiceGUI's simulated user, plus pictures of the drawings), so open it once in a browser and look for anything odd.
+Limits: the trust cut-offs (0.8 and 0.5) are placeholders until Guardian publishes its own. The Guardian and Brain lanes stay empty until they write log parts in the same format (`--sample` shows how it looks when they do; the Twin team's stand-ins write them, every event marked `stand_in`, and the page then shows a STAND-IN LAYERS badge). The dashboard never reads `*-private.jsonl`. It shows what the layers LOGGED. The Twin does not log normal readings (109 per tick), so with no scenario running the map shows no verdicts or attacks, only the city (the LIVE chip and the Live values card show that the Twin is running). It was tested without a real browser (NiceGUI's simulated user, plus pictures of the drawings), so open it once in a browser and look for anything odd.
 
 ## Stand-ins: a mock Brain and a mock Guardian (R1)
 
@@ -197,10 +199,10 @@ The jam in `incident` is the Brain team's S01 story, with their numbers copied: 
 What they cannot do (say it in the demo):
 
 * The Twin cannot make a **real** incident yet, only a fake reading. So `--fake-jam` is a sensor lying, and the mock Brain acts on the lie. The real Guardian is the one meant to distrust it. The mock Guardian does not read the feed and does not judge anything.
-* They do not write a run log, so their decisions do not show on the dashboard timeline yet.
+* They write run logs (`run-logs/<run_id>.guardian.jsonl` and `.brain.jsonl`, every event marked `stand_in: true`: verdict, decision, partner_failure, escalation), so a run shows reading, verdict, decision, action on the dashboard. `--no-log` turns that off and `--log-dir` changes the folder. Start the Twin, the dashboard and the stand-ins from the `twin/` folder so they share `run-logs/`.
 * They are not a test of the real Brain or the real Guardian. A joint run with the real ones is a separate step.
 
-They are tested by `tests/test_mocks.py` (27 tests, each against a real running Twin, including a Twin in signed mode).
+They are tested by `tests/test_mocks.py` (37 tests, each against a real running Twin, including a Twin in signed mode).
 
 ## Test it
 
