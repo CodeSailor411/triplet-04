@@ -373,7 +373,7 @@ async def test_page_shows_the_sample_story(city, sample_dir):
     hub = make_hub(city, [sample_dir])
     async with user_simulation(root=lambda: build_page(hub)) as user:
         await user.open("/")
-        for text in ("Triplet 04", "SAMPLE DATA", "run-42-001", "Needs a person", "A person must check the valve", "fake_reading on WAT-01.water_level",
+        for text in ("Run 42-001", "SAMPLE DATA", "run-42-001", "Needs a person", "A person must check the valve", "fake_reading on WAT-01.water_level",
                      "Partner failures", "no verdict for AIR-02", "All events", "Timeline"):
             await user.should_see(text)
 
@@ -428,12 +428,12 @@ async def test_page_follows_a_log_that_is_still_growing(city, tmp_path):
     hub = make_hub(city, [tmp_path])
     async with user_simulation(root=lambda: build_page(hub)) as user:
         await user.open("/")
-        assert stat_value(user, "events") == "1"
+        assert stat_value(user, "person") == "0"
         with open(f, "a") as h:
             h.write(json.dumps(ev("brain", 1, 2, "escalation", {"reason": "Please check the pump"})) + "\n")
         await asyncio.sleep(0.8)                                                    # the page looks again every 0.2 s
         await user.should_see("Please check the pump")
-        assert stat_value(user, "events") == "2"
+        assert stat_value(user, "person") == "1"
 
 
 async def test_a_log_from_another_city_gets_a_warning(city, tmp_path):
@@ -714,21 +714,23 @@ async def test_moving_the_slider_scrubs_the_timeline_and_the_map_and_going_live_
         fire(sl, "change", None)
         fire(sl, "change", 999)                                                                      # too big: held at the last tick
         await asyncio.sleep(0.3)
-        await user.should_see("Triplet 04")
+        await user.should_see("All events")
         sw.set_value(True)
         await asyncio.sleep(0.3)
         assert not sl.visible
         assert "ATTACK" in city_img.content
 
 
-def test_the_legend_has_no_fixed_pixel_width_so_it_fits_a_small_screen():
-    """Regression (768p laptop): the legend carried width="<pixels>" and spilled out of its column."""
+def test_the_legend_has_a_real_pixel_width_and_still_shrinks_to_a_narrow_column():
+    """Regression (2 Nov screenshot): the legend had width:100%, but its NiceGUI card shrinks children to their content, so 100% of a
+    shrink-wrapped box drew it at about a third of its size. It now carries its natural width in pixels and may only shrink."""
     root = ET.fromstring(legend_svg())
-    assert "width" not in root.attrib and "height" not in root.attrib                                # no hard-coded size on the drawing itself
-    style = root.attrib["style"]
-    assert "width:100%" in style and "max-width:" in style                                           # shrinks to the column, never grows past its natural size
+    assert "width" not in root.attrib and "height" not in root.attrib                                # no width/height attribute on the drawing
+    style = dict(p.split(":", 1) for p in root.attrib["style"].split(";") if p)
     vb = [float(v) for v in root.attrib["viewBox"].split()]
-    assert vb[2] > 0 and vb[3] > 0                                                                   # still has a real drawing area to scale
+    assert style["width"] == f"{vb[2]:g}px"                                                          # natural width in pixels, not a percentage
+    assert style["max-width"] == "100%"                                                              # shrinks only when the column is narrower
+    assert vb[2] > 0 and vb[3] > 0
 
 
 async def test_nothing_is_rebuilt_while_the_slider_knob_is_held(city, sample_dir):
@@ -749,7 +751,7 @@ async def test_nothing_is_rebuilt_while_the_slider_knob_is_held(city, sample_dir
         assert city_img.content == before
         fire(sl, "pan", "end")                                                                       # knob released: one redraw, from the slider value
         await asyncio.sleep(0.3)
-        await user.should_see("Triplet 04")                                                          # and the page still answers
+        await user.should_see("All events")                                                          # and the page still answers
 
 
 async def test_a_lost_release_signal_does_not_freeze_the_page_forever(city, sample_dir):
@@ -763,4 +765,4 @@ async def test_a_lost_release_signal_does_not_freeze_the_page_forever(city, samp
         fire(sl, "pan", "start")                                                                     # 'end' never arrives
         sw.set_value(True)                                                                           # going live again forces a redraw; it is held back ...
         await asyncio.sleep(0.2)
-        await user.should_see("Triplet 04")                                                          # ... but the page keeps answering, and the guard times out
+        await user.should_see("All events")                                                          # ... but the page keeps answering, and the guard times out

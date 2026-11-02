@@ -39,7 +39,7 @@ def main(argv: list[str] | None = None) -> None:
         write_sample(tmp)
         sources = [str(tmp)]
         print(f"Sample run written to {tmp}")
-    app.add_static_files("/tw-fonts", str(Path(__file__).parent / "fonts"))     # Lato, served by the dashboard itself: no internet needed
+    app.add_static_files("/tw-fonts", str(Path(__file__).parent / "fonts"))     # Inter, served by the dashboard itself: no internet needed
     live = None
     if cfg.dashboard.live_feed and not a.no_feed and not a.sample:        # the sample is made-up data: no live values next to it
         base = a.feed_url or cfg.dashboard.feed_url or f"http://{cfg.server.host}:{cfg.server.port}"

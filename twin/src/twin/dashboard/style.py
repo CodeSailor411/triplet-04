@@ -5,8 +5,9 @@ Colours and shapes follow `node-style-spec.md` (3 Oct 2026): dark map, domain co
 """
 
 # the one font of the whole page (files are in dashboard/fonts, served by the dashboard itself, so no internet is needed)
-FONT = "Lato, 'Open Sans', Arial, sans-serif"
-FONT_FILES = {400: "lato-latin-400-normal.woff2", 700: "lato-latin-700-normal.woff2"}
+FONT_NAME = "Inter"
+FONT = "Inter, Arial, sans-serif"
+FONT_FILES = {400: "inter-latin-400-normal.woff2", 700: "inter-latin-700-normal.woff2"}
 
 # theme (node style spec, section 6, then made black / white / grey only on 11 Oct: no blue anywhere)
 BG = "#050505"            # page background. Neutral black. Darker than node-style-spec (#0A0E17) on purpose (Dali, 10-11 Oct)
@@ -46,3 +47,7 @@ LANES = [
 ]
 LANE_OF_TYPE = {"reading": 0, "verdict": 1, "decision": 2, "escalation": 2, "action": 3, "containment": 3}
 RUN_STRIP_TYPES = {"scenario", "partner_failure"}      # shown on a thin strip above the lanes
+# Events the Twin writes about its own life, not about the city: it started, a run started, a run ended. They are typed
+# "scenario" in the shared log (the partners read that format, so the type stays), but the dashboard calls them SYSTEM events
+# and keeps them off the timeline unless the "System events" switch is on.
+SYSTEM_PHASES = {"twin_started", "run_started", "run_ended"}

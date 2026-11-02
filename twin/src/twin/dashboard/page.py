@@ -5,17 +5,16 @@ but only redraws when a log really changed or you clicked something.
 """
 import json
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from nicegui import ui
 
 from ..models import Layout, Topology
 from ..settings import DashboardCfg
-from .events import Event, LogFollower, RunState, as_list, build_state, node_status, summarize
+from .events import Event, LogFollower, RunState, as_list, build_state, display_type, format_wall, node_status, split_sessions, summarize
 from .live import LiveFeed
 from .nodes import HEX, glyph
-from .style import BG, DIM, EDGE, FONT, FONT_FILES, HEADER_BG, PANEL_2, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
+from .style import BG, DIM, EDGE, FONT, FONT_FILES, FONT_NAME, HEADER_BG, PANEL_2, DOMAIN_COLORS, DOMAIN_NAMES, LANE_OF_TYPE, LANES, LINE, PANEL, TEXT, TRUST_COLORS, TRUST_NAMES
 from .svg import Scene, city_scene, timeline_scene
 
 TABLE_ROWS = 400
@@ -33,7 +32,8 @@ class Hub:
         self.cutoffs = {"trusted": cfg.trusted_from, "degraded": cfg.degraded_from}
         self._cache: tuple[Any, ...] | None = None
         self._runs: list[str] = []
-        self._states: dict[str, RunState] = {}
+        self._states: dict[str, RunState] = {}          # the CURRENT session of each run id (the newest Twin start)
+        self._all_states: dict[str, RunState] = {}      # every session of the run id together (the old view)
 
     def poll(self) -> None:
         self.follower.poll()
@@ -42,13 +42,20 @@ class Hub:
             self._cache = (key,)
             runs = self.follower.runs()
             self._runs = sorted(runs, key=lambda r: max((e.get("wall", ""), e["tick"]) for e in runs[r]), reverse=True)
-            self._states = {r: build_state(ev, self.topology, self.cutoffs, r) for r, ev in runs.items()}
+            self._states, self._all_states = {}, {}
+            for r, ev in runs.items():
+                parts = split_sessions(ev)                  # a restarted Twin reuses the run id: its old events must not mix into the new session
+                now = build_state(parts[-1], self.topology, self.cutoffs, r)
+                every = now if len(parts) == 1 else build_state(ev, self.topology, self.cutoffs, r)
+                now.sessions = every.sessions = len(parts)
+                self._states[r], self._all_states[r] = now, every
 
     def run_ids(self) -> list[str]:
         return self._runs
 
-    def state(self, run_id: str | None) -> RunState | None:
-        return self._states.get(run_id or (self._runs[0] if self._runs else ""))
+    def state(self, run_id: str | None, all_sessions: bool = False) -> RunState | None:
+        """The state of a run. By default only its newest session (since the last Twin start); all_sessions=True gives every session."""
+        return (self._all_states if all_sessions else self._states).get(run_id or (self._runs[0] if self._runs else ""))
 
     def city_mismatch(self, st: RunState) -> str | None:
         """The map is drawn from OUR config. If the log came from a different city, say so instead of drawing a wrong map."""
@@ -69,24 +76,9 @@ def _has_stand_ins(st: RunState) -> bool:
     return any(isinstance(e.get("data"), dict) and e["data"].get("stand_in") for e in st.events)
 
 
-def _age(st: RunState) -> tuple[str, bool]:
-    """('LIVE', True) if the newest event was written a moment ago, else ('IDLE, last event 3 min ago', False)."""
-    walls = [e.get("wall", "") for e in st.events if e.get("wall")]
-    try:
-        last = datetime.fromisoformat(max(walls).replace("Z", "+00:00"))
-    except (ValueError, TypeError):
-        return "no clock in log", False
-    secs = (datetime.now(timezone.utc) - last).total_seconds()
-    if secs < 6:
-        return "LIVE", True
-    return "IDLE, last event " + (f"{int(secs)} s" if secs < 120 else f"{int(secs // 60)} min" if secs < 7200 else f"{int(secs // 3600)} h") + " ago", False
-
-
 CSS = f"""
 body, .q-page, .nicegui-content {{ background:{BG} !important; color:{TEXT}; }}
-@font-face {{ font-family:'Lato'; font-weight:400; font-style:normal; font-display:swap; src:url('/tw-fonts/lato-latin-400-normal.woff2') format('woff2'); }}
-@font-face {{ font-family:'Lato'; font-weight:700; font-style:normal; font-display:swap; src:url('/tw-fonts/lato-latin-700-normal.woff2') format('woff2'); }}
-body, button, input, select, textarea, .q-btn, .q-field__native, .q-field__input, .q-field__control, .q-table, .q-table th, .q-table td, .q-menu, .q-item, .q-tooltip, .q-card, .q-toggle__label, .q-pagination, .font-mono, .q-btn-toggle {{ font-family:{FONT} !important; }}
+{"".join(f"@font-face {{ font-family:'{FONT_NAME}'; font-weight:{w}; font-style:normal; font-display:swap; src:url('/tw-fonts/{f}') format('woff2'); }}" + chr(10) for w, f in FONT_FILES.items())}body, button, input, select, textarea, .q-btn, .q-field__native, .q-field__input, .q-field__control, .q-table, .q-table th, .q-table td, .q-menu, .q-item, .q-tooltip, .q-card, .q-toggle__label, .q-pagination, .font-mono, .q-btn-toggle {{ font-family:{FONT} !important; }}
 .q-header {{ background:{HEADER_BG} !important; border-bottom:1px solid {LINE}; box-shadow:none !important; }}
 .tw-sw {{ color:{TEXT}; font-size:14px; }}
 .tw-sw .q-toggle__track {{ background:#1A1A1A !important; opacity:1 !important; border:1px solid #3A3A3A; }}
@@ -98,10 +90,11 @@ body, button, input, select, textarea, .q-btn, .q-field__native, .q-field__input
 .tw-layer {{ color:{TEXT} !important; border-radius:6px; padding:0 10px; font-size:12px; letter-spacing:.03em; }}
 .tw-layer.off {{ color:{DIM} !important; opacity:.6; }}
 .tw-bar {{ height:60px; padding:0 22px; gap:18px; flex-wrap:nowrap; }}
-.tw-brand-name {{ text-transform:uppercase; font-size:13px; font-weight:700; letter-spacing:.22em; line-height:1.1; color:{TEXT}; }}
-.tw-brand-sub {{ font-size:11px; letter-spacing:.06em; color:{DIM}; line-height:1.2; }}
+.tw-brand-name {{ font-size:15px; font-weight:700; letter-spacing:.04em; line-height:1.1; color:{TEXT}; white-space:nowrap; }}
+.tw-clock {{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; min-width:96px; font-variant-numeric:tabular-nums; }}
+.tw-clock-time {{ font-size:20px; font-weight:700; line-height:1; color:{TEXT}; }}
+.tw-clock-sub {{ font-size:11px; letter-spacing:.06em; color:{DIM}; line-height:1; white-space:nowrap; }}
 .tw-divider {{ width:1px; height:28px; background:{LINE}; }}
-.tw-cap {{ font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:{DIM}; line-height:1; }}
 .tw-run .q-field__control {{ height:34px; min-height:34px; background:{PANEL_2}; border:1px solid {LINE}; border-radius:8px; padding:0 10px; }}
 .tw-run .q-field__native, .tw-run .q-field__append {{ min-height:32px; font-size:13px; }}
 .tw-run .q-field__control:before, .tw-run .q-field__control:after {{ display:none; }}
@@ -113,9 +106,11 @@ body, button, input, select, textarea, .q-btn, .q-field__native, .q-field__input
 @keyframes tw-pulse {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:.35; }} }}
 .tw-sample {{ height:28px; padding:0 12px; border-radius:999px; border:1px solid #FBBF24; color:#FBBF24; font-size:11px; letter-spacing:.14em;
               display:inline-flex; align-items:center; white-space:nowrap; }}
-.tw-stat {{ display:flex; flex-direction:column; align-items:flex-end; gap:5px; min-width:54px; }}
-.tw-stat-val {{ font-variant-numeric:tabular-nums; font-size:17px; font-weight:700; line-height:1; color:{TEXT}; }}
+.tw-stat {{ display:inline-flex; align-items:baseline; gap:6px; height:28px; padding:0 12px; border-radius:999px; border:1px solid {LINE};
+            background:{PANEL_2}; white-space:nowrap; align-items:center; }}
+.tw-stat-val {{ font-variant-numeric:tabular-nums; font-size:15px; font-weight:700; line-height:1; color:{TEXT}; }}
 .tw-stat-val.bad {{ color:#FF5A5F; }}
+.tw-stat-name {{ font-size:13px; line-height:1; color:{DIM}; }}
 .q-card {{ background:{PANEL} !important; color:{TEXT}; border:1px solid {LINE}; box-shadow:none !important; border-radius:10px; }}
 .text-dim {{ color:{DIM}; }}
 .warnbar {{ background:#3A2A0B; color:#FBBF24; }}
@@ -140,23 +135,31 @@ def field_glow(domains: list[str]) -> dict[str, str]:
             "title": f"text-shadow:0 0 14px {a}"}
 
 
+LEGEND_FONT = 16        # px. The legend is drawn at its natural size on any screen at least 1366 wide (it only shrinks if the column is narrower than the drawing)
+
+
 def legend_svg() -> str:
-    """The legend is drawn with the real node pictures, so it can never disagree with the map."""
-    items = [("Trusted", "trusted"), ("Degraded", "degraded"), ("Untrusted", "untrusted"), ("Isolated", "isolated")]
-    out, x = [], 24
-    for label, st in items:
-        out.append(glyph(x + 14, 20, 28, ["power"], st, None, fill=PANEL))
-        out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">{label}</text>')
-        x += 38 + 9 * len(label) + 26
-    out.append(glyph(x + 14, 20, 28, ["power", "emergency"], "trusted", None, fill=PANEL))
-    out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">Shared node (two colours)</text>')
-    x += 38 + 9 * 26 + 26
-    out.append(glyph(x + 14, 20, 28, ["power"], "trusted", None, unknown=True, fill=PANEL))
-    out.append(f'<text x="{x + 38}" y="26" font-size="14" fill="{TEXT}">No verdict yet</text>')
-    x += 38 + 9 * 14 + 10
-    # No fixed pixel width: the drawing may shrink to the column it sits in (a 1366x768 screen), and never grows past its natural size.
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {x} 40" preserveAspectRatio="xMinYMid meet" '
-            f'style="display:block;width:100%;max-width:{x}px;height:auto" font-family="{FONT}">{"".join(out)}</svg>')
+    """The legend is drawn with the real node pictures, so it can never disagree with the map. Two rows, so it stays readable on a
+    small screen: row 1 the four trust states, row 2 the two extras. Its width is set in pixels, because a card shrinks its children to their content and a percentage of that is tiny. It never grows past its natural size and shrinks only if the column is narrower."""
+    rows = [[("Trusted", "trusted"), ("Degraded", "degraded"), ("Untrusted", "untrusted"), ("Isolated", "isolated")],
+            [("Shared node (two colours)", "shared"), ("No verdict yet", "unknown")]]
+    char_w = LEGEND_FONT * 0.62                                       # about the width of one character of Inter
+    out, widest = [], 0.0
+    for r, row in enumerate(rows):
+        x, cy = 24.0, 24 + r * 44
+        for label, st in row:
+            if st == "shared":
+                out.append(glyph(x + 16, cy, 32, ["power", "emergency"], "trusted", None, fill=PANEL))
+            elif st == "unknown":
+                out.append(glyph(x + 16, cy, 32, ["power"], "trusted", None, unknown=True, fill=PANEL))
+            else:
+                out.append(glyph(x + 16, cy, 32, ["power"], st, None, fill=PANEL))
+            out.append(f'<text x="{x + 44:.0f}" y="{cy + 6}" font-size="{LEGEND_FONT}" fill="{TEXT}">{label}</text>')
+            x += 44 + char_w * len(label) + 30
+        widest = max(widest, x)
+    w, h = round(widest), 24 + 44 + 24
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" preserveAspectRatio="xMinYMid meet" '
+            f'style="display:block;width:{w}px;max-width:100%;height:auto" font-family="{FONT}">{"".join(out)}</svg>')
 
 
 def _dot(color: str, ring: bool = False, dashed: bool = False) -> None:
@@ -169,11 +172,12 @@ def build_page(hub: Hub) -> None:
     ui.add_css(CSS)
     ui.colors(primary=EDGE, secondary="#9A9A9A", accent="#BDBDBD", dark=PANEL, info="#BDBDBD")   # page chrome = black, white, grey. Cyan belongs to Water only. (Quasar has a default blue "info" and a teal "secondary": set them too)
     S: dict[str, Any] = {"run": None, "node": None, "event": None, "window": hub.cfg.window_ticks, "follow": True, "end": None,
-                         "edges": False, "attacks": True, "seen": None, "hidden": set(), "drag_since": None}
+                         "edges": False, "attacks": True, "seen": None, "hidden": set(), "drag_since": None,
+                         "labels": False, "system": False, "all": False}
     scenes: dict[str, Scene] = {}
 
     def state() -> RunState | None:
-        return hub.state(S["run"])
+        return hub.state(S["run"], S["all"])
 
     # -------------------------------------------------------------- actions
     def pick(which: str, e: Any) -> None:
@@ -269,7 +273,8 @@ def build_page(hub: Hub) -> None:
         hub.poll()
         ids = hub.run_ids()
         st = state()
-        key = (hub.follower.version, S["run"], S["node"], S["event"], S["window"], S["follow"], S["end"], S["edges"], S["attacks"], frozenset(S["hidden"]))
+        key = (hub.follower.version, S["run"], S["node"], S["event"], S["window"], S["follow"], S["end"], S["edges"], S["attacks"], frozenset(S["hidden"]),
+               S["labels"], S["system"], S["all"])
         if not force and key == S["seen"]:
             return
         S["seen"] = key
@@ -279,8 +284,11 @@ def build_page(hub: Hub) -> None:
         if st is None:
             warn.set_text("")
             warn.set_visibility(False)
-            set_status("no data", False)
+            set_title(None)
+            refresh_status()
+            set_clock()
             set_stats(None)
+            sessions_row.set_visibility(False)
             sample_chip.set_visibility(False)
             stand_in_chip.set_visibility(False)
             return
@@ -289,9 +297,14 @@ def build_page(hub: Hub) -> None:
         warn.set_visibility(bool(mismatch))
         sample_chip.set_visibility(_is_sample(st))
         stand_in_chip.set_visibility(_has_stand_ins(st))
-        text, live = _age(st)
-        set_status(text, live)
+        set_title(st)
+        refresh_status()
+        set_clock()
         set_stats(st)
+        sessions_row.set_visibility(st.sessions > 1 or S["all"])
+        older = st.sessions - 1
+        sessions_note.set_text(f"{older} earlier session{'s' if older != 1 else ''} of this run id shown, ticks overlap" if S["all"] and older
+                               else f"{older} earlier session{'s' if older != 1 else ''} hidden (the Twin was restarted)")
         running = len(st.attacks())
         attack_sw.set_text(f"Attacks · {running} running" if running else "Attacks · none running")
         per_lane = [0] * len(LANES)
@@ -308,12 +321,12 @@ def build_page(hub: Hub) -> None:
         view = shown(st)
         map_note.set_text(f"Map as of tick {S['end']} (not live)" if view is not st else "")
         c = city_scene(hub.topology, hub.layout, view, selected=S["node"], show_edges=S["edges"], show_attacks=S["attacks"], hidden=set(S["hidden"]))
-        t = timeline_scene(st, selected=S["event"], window_ticks=S["window"], end_tick=S["end"])
+        t = timeline_scene(st, selected=S["event"], window_ticks=S["window"], end_tick=S["end"], labels=S["labels"], show_system=S["system"])
         scenes["city"], scenes["timeline"] = c, t
         city_img.set_content(c.content)
         timeline_img.set_content(t.content)
-        rows = [{"id": e["event_id"], "time": (e.get("timestamp") or "")[11:19], "tick": e["tick"], "layer": e["layer"],
-                 "type": e["event_type"], "what": summarize(e)} for e in reversed(st.events[-TABLE_ROWS:])]
+        rows = [{"id": e["event_id"], "time": (e.get("timestamp") or "")[11:19], "real": format_wall(e), "tick": e["tick"], "layer": e["layer"],
+                 "type": display_type(e), "what": summarize(e)} for e in reversed(st.events[-TABLE_ROWS:])]
         table.rows = rows
         table.update()
         side.refresh()
@@ -412,9 +425,10 @@ def build_page(hub: Hub) -> None:
     def event_card(st: RunState, e: Event) -> None:
         with ui.card().classes("w-full border-l-4 border-white"):
             with ui.row().classes("w-full items-center justify-between"):
-                ui.label(f"{e['layer']} · {e['event_type']}").classes("text-lg font-bold")
+                ui.label(f"{e['layer']} · {display_type(e)}").classes("text-lg font-bold")
                 ui.button(icon="close", on_click=lambda: (S.update(event=None), redraw(force=True))).props("flat dense round")
-            ui.label(f"tick {e['tick']} · {e.get('timestamp', '')}").classes("text-dim text-sm")
+            real = format_wall(e)
+            ui.label(f"tick {e['tick']} · sim time {(e.get('timestamp') or '')[11:23]}" + (f" · real time {real}" if real else " · no real time in this event")).classes("text-dim text-sm")
             ui.label(summarize(e)).classes("text-sm")
             causes = st.causes.get(e["event_id"], [])
             if causes:
@@ -422,19 +436,41 @@ def build_page(hub: Hub) -> None:
             ui.code(json.dumps(e.get("data"), indent=2, ensure_ascii=False)[:2500], language="json").classes("w-full text-xs")
 
     # -------------------------------------------------------------- header
-    def set_status(text: str, live: bool) -> None:
+    def set_title(st: RunState | None) -> None:
+        """'Run 42-001 · seed 42': which run this page shows. The seed is only written when the log says it."""
+        if st is None:
+            title_label.set_text("No run yet")
+            return
+        short = st.run_id[4:] if st.run_id.startswith("run-") else st.run_id
+        title_label.set_text(f"Run {short}" + (f" · seed {st.seed}" if st.seed is not None else ""))
+
+    def refresh_status() -> None:
+        """The ONE status chip. With the live feed it says what the feed says; without it, that the page only reads logs."""
+        feed = hub.live
+        text, live = feed.status() if feed is not None else ("Log only · no live feed", False)
         status_text.set_text(text)
         if live:
             status_pill.classes(add="live")
         else:
             status_pill.classes(remove="live")
 
+    def set_clock() -> None:
+        """The ONE clock. While the live feed is up it shows the feed's tick and simulated time. Otherwise the newest event of the log."""
+        feed, st = hub.live, state()
+        if feed is not None and feed.status()[1] and feed.tick is not None:
+            tick, sim, src = feed.tick, feed.sim_time or "", "live"
+        elif st is not None:
+            tick, sim, src = st.tick, st.time, "from log"
+        else:
+            tick, sim, src = None, "", ""
+        clock_time.set_text(sim[11:19] if len(sim) >= 19 else "-")
+        clock_sub.set_text(f"tick {tick} · {src}" if tick is not None else "no clock yet")
+
     def set_stats(st: RunState | None) -> None:
         if st is None:
-            vals = {"tick": "-", "time": "-", "events": "-", "untrusted": "-", "cut": "-", "person": "-"}
+            vals = {"untrusted": "-", "cut": "-", "person": "-"}
         else:
-            vals = {"tick": str(st.tick), "time": st.time[11:19] if len(st.time) >= 19 else "-", "events": str(len(st.events)),
-                    "untrusted": str(sum(1 for d in st.devices.values() if d.trust == "untrusted")),
+            vals = {"untrusted": str(sum(1 for d in st.devices.values() if d.trust == "untrusted")),
                     "cut": str(sum(1 for d in st.devices.values() if d.cut)), "person": str(len(st.escalations))}
         for key, label in stat_vals.items():
             label.set_text(vals[key])
@@ -449,17 +485,14 @@ def build_page(hub: Hub) -> None:
     stat_vals: dict[str, Any] = {}
     with ui.header().classes("items-center tw-bar"):
         ui.html(mark, sanitize=False).classes("flex items-center")
-        with ui.column().classes("gap-1"):
-            ui.label("Triplet 04").classes("tw-brand-name")
-            ui.label("Twin · city map and timeline").classes("tw-brand-sub")
+        title_label = ui.label("No run yet").classes("tw-brand-name").mark("run-title")
         ui.element("div").classes("tw-divider")
-        with ui.column().classes("gap-1"):
-            ui.label("Run").classes("tw-cap")
-            run_select = ui.select([], on_change=lambda e: (S.update(run=e.value, node=None, event=None), redraw(force=True))) \
-                .props("dense borderless dark options-dark").classes("w-44 tw-run")
+        run_select = ui.select([], on_change=lambda e: (S.update(run=e.value, node=None, event=None), redraw(force=True))) \
+            .props("dense borderless dark options-dark").classes("w-44 tw-run")
         with ui.element("div").classes("tw-pill") as status_pill:
             ui.element("div").classes("tw-dot")
-            status_text = ui.label("")
+            status_text = ui.label("").mark("feed-status")
+            ui.tooltip("Live sensor values come from the Twin's own feed. The map and timeline come from the run logs.")
         with ui.element("div").classes("tw-sample") as sample_chip:
             ui.label("SAMPLE DATA")
             ui.tooltip("The Twin events are real. The Guardian and Brain events are made up (each one is marked sample).")
@@ -467,16 +500,14 @@ def build_page(hub: Hub) -> None:
             ui.label("STAND-IN LAYERS")
             ui.tooltip("The Guardian and Brain events come from the Twin team's stand-in scripts (mocks), not from the real "
                        "Guardian and Brain. The Twin events are real. Each stand-in event is marked stand_in.")
-        with ui.element("div").classes("tw-pill") as feed_pill:
-            ui.element("div").classes("tw-dot")
-            feed_text = ui.label("").mark("feed-status")
-            ui.tooltip("Live sensor values from the Twin's own feed. The map and timeline below come from the run logs.")
         ui.space()
-        for key, title in (("tick", "Tick"), ("time", "Sim time"), ("events", "Events"), ("untrusted", "Untrusted"),
-                           ("cut", "Cut off"), ("person", "Needs a person")):
+        with ui.element("div").classes("tw-clock"):
+            clock_time = ui.label("-").classes("tw-clock-time").mark("clock-time")
+            clock_sub = ui.label("").classes("tw-clock-sub").mark("clock-tick")
+        for key, title in (("untrusted", "Untrusted"), ("cut", "Cut off"), ("person", "Needs a person")):
             with ui.element("div").classes("tw-stat"):
-                ui.label(title).classes("tw-cap")
                 stat_vals[key] = ui.label("-").classes("tw-stat-val").mark(f"stat-{key}")
+                ui.label(title).classes("tw-stat-name")
 
     warn = ui.label("").classes("w-full warnbar px-4 py-2 text-sm")
     empty = ui.column().classes("w-full items-center p-8")
@@ -510,7 +541,7 @@ def build_page(hub: Hub) -> None:
                 map_note = ui.label("").classes("text-sm px-2")
                 city_img = ui.interactive_image(size=(1920, 1080), content="", events=["click"], sanitize=False,
                                                 on_mouse=lambda e: pick("city", e)).classes("w-full")
-                ui.html(legend_svg(), sanitize=False).classes("px-2")
+                ui.html(legend_svg(), sanitize=False).classes("w-full px-2")
                 ui.label("Click a node for details. The shape of a node is its trust. A pulsing red ring with ! = an attack is running there. "
                          "Q = quarantined. Dimmer nodes: Guardian has not judged them yet.").classes("text-dim text-xs px-2")
             with ui.column().classes("w-1/3 gap-3"):
@@ -525,18 +556,28 @@ def build_page(hub: Hub) -> None:
                             ui.label("→").classes("text-dim")
                         step_chips.append(ui.label(lane["title"]).classes("step step-off"))
                 ui.select(WINDOWS, value=S["window"], on_change=lambda e: (S.update(window=e.value), redraw(force=True))).props("dense outlined dark options-dark").classes("w-40")
+                with ui.switch("Labels", value=False, on_change=lambda e: (S.update(labels=e.value), redraw(force=True))).classes("tw-sw"):
+                    ui.tooltip("Write a short text under every event. Off: only the selected event and its chain have text; hover any event to read it.")
+                with ui.switch("System events", value=False, on_change=lambda e: (S.update(system=e.value), redraw(force=True))).classes("tw-sw"):
+                    ui.tooltip("Show when the Twin started, a run started and a run ended. They are about the Twin itself, not the city.")
                 ui.switch("Follow live", value=True, on_change=lambda e: follow_changed(e.value))
                 slider = ui.slider(min=0, max=1, value=0).props("label").classes("w-64")
                 slider.on("change", slide)
                 slider.on("pan", pan)
                 slider.set_visibility(False)
                 ui.label("click an event to follow its chain").classes("text-dim text-sm")
+            with ui.row().classes("w-full items-center gap-3 px-2") as sessions_row:
+                sessions_note = ui.label("").classes("text-dim text-sm")
+                with ui.switch("Show earlier sessions", value=False, on_change=lambda e: (S.update(all=e.value), redraw(force=True))).classes("tw-sw"):
+                    ui.tooltip("A restarted Twin keeps the run id but counts ticks from 0 again. By default only the newest session is shown.")
+            sessions_row.set_visibility(False)
             timeline_img = ui.interactive_image(size=(1800, 660), content="", events=["click"], sanitize=False,
                                                 on_mouse=lambda e: pick("timeline", e)).classes("w-full")
 
         with ui.card().classes("w-full p-2"):
             ui.label("All events (newest first)").classes("text-lg font-bold px-2")
             columns = [{"name": "time", "label": "Sim time", "field": "time", "align": "left"},
+                       {"name": "real", "label": "Real time", "field": "real", "align": "left"},
                        {"name": "tick", "label": "Tick", "field": "tick", "align": "right"},
                        {"name": "layer", "label": "Layer", "field": "layer", "align": "left"},
                        {"name": "type", "label": "Type", "field": "type", "align": "left"},
@@ -550,17 +591,13 @@ def build_page(hub: Hub) -> None:
     shown_feed: dict[str, Any] = {"version": None, "status": None}
 
     def refresh_live() -> None:
-        """Twice a second: update the chip, and redraw the values card only when a new tick arrived."""
+        """Twice a second: update the status chip and the clock, and redraw the values card only when a new tick arrived."""
         feed = hub.live
+        refresh_status()
+        set_clock()
         if feed is None:
-            feed_pill.set_visibility(False)
             return
-        text, live = feed.status()
-        feed_text.set_text(text)
-        if live:
-            feed_pill.classes(add="live")
-        else:
-            feed_pill.classes(remove="live")
+        text, _ = feed.status()
         if (feed.version, text) != (shown_feed["version"], shown_feed["status"]):
             shown_feed.update(version=feed.version, status=text)
             live_values.refresh()
