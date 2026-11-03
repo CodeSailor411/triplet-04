@@ -1,5 +1,5 @@
-Lato (latin subset, regular 400 and bold 700), from the npm package @fontsource/lato 5.3.0.
-Copyright (c) 2010-2011 by tyPoland Lukasz Dziedzic (team@latofonts.com) with Reserved Font Name "Lato". Licensed under the SIL Open Font License, Version 1.1.
+Inter (latin subset, regular 400 and bold 700), from the npm package @fontsource/inter 5.3.0.
+Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) Inter-Italic[opsz,wght].ttf: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

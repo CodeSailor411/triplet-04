@@ -6,12 +6,13 @@ build_state  turns the events of one run into device and node states, attacks, e
 """
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone, tzinfo
 from pathlib import Path
 from typing import Any
 
 from ..models import Node, Topology
 from ..runlog import LAYER_ORDER
-from .style import TRUST_ORDER
+from .style import SYSTEM_PHASES, TRUST_ORDER
 
 REQUIRED = {"run_id", "event_id", "tick", "layer", "event_type"}
 Event = dict[str, Any]
@@ -25,6 +26,84 @@ def sort_key(e: Event) -> tuple:
 def as_list(x: Any) -> list:
     """Logs come from other teams. A field that should be a list but is not (a number, a string, null) counts as empty."""
     return x if isinstance(x, list) else []
+
+
+# ---------------------------------------------------------------------- real clock, system events, sessions
+def wall_time(e: Event) -> datetime | None:
+    """The real-clock time an event was written (`wall`, optional in the shared format). None if missing or unreadable.
+    A time without a zone is read as UTC, because the Twin writes UTC ('...Z')."""
+    w = e.get("wall")
+    if not isinstance(w, str):
+        return None
+    try:
+        t = datetime.fromisoformat(w.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def format_wall(e: Event, tz: tzinfo | None = None) -> str:
+    """'14:03:22.481': the real time of an event, to the millisecond, in `tz` (default: this computer's own time zone).
+    Empty text when the event has no real time. This is the time that puts events of the SAME tick in order."""
+    t = wall_time(e)
+    if t is None:
+        return ""
+    t = t.astimezone(tz)                                      # tz=None means the local zone of the machine that runs the dashboard
+    return t.strftime("%H:%M:%S.") + f"{t.microsecond // 1000:03d}"
+
+
+def _phase(e: Event) -> str | None:
+    d = e.get("data")
+    return d.get("phase") if e.get("event_type") == "scenario" and isinstance(d, dict) and isinstance(d.get("phase"), str) else None
+
+
+def is_system(e: Event) -> bool:
+    """The Twin writing about itself (it started, a run started, a run ended). Not something that happened in the city."""
+    return _phase(e) in SYSTEM_PHASES
+
+
+def display_type(e: Event) -> str:
+    """What the Type column says. The log keeps type 'scenario' for these (the partners read that format), the screen says 'system'."""
+    return "system" if is_system(e) else e["event_type"]
+
+
+def _is_start(e: Event) -> bool:
+    return _phase(e) in ("run_started", "twin_started")
+
+
+TICK_BACK = 10          # a tick this far behind the newest tick of the session means the clock started over
+
+
+def split_sessions(events: list[Event]) -> list[list[Event]]:
+    """A restarted Twin keeps the run id (`run-42-001`) but its tick counts from 0 again, so one run id can hold several
+    SESSIONS (one per Twin start). This cuts the events of one run id into sessions, oldest first.
+
+    How: put the events in real-clock order, then start a new session when (1) a `run_started` / `twin_started` event
+    arrives after the session already holds other events, or (2) a tick is more than TICK_BACK behind the newest tick of the
+    session (the clock fell back). Events without a real clock (`wall` is optional) go to the newest session that started at
+    or before their tick. Every session comes back in the usual display order (tick, real time, layer, event id)."""
+    walled = sorted((e for e in events if wall_time(e) is not None),
+                    key=lambda e: (wall_time(e), e["tick"], LAYER_ORDER.get(e["layer"], 9), e["event_id"]))
+    sessions: list[list[Event]] = []
+    cur: list[Event] = []
+    has_work, newest = False, 0
+    for e in walled:
+        starts = _is_start(e)
+        if cur and ((starts and has_work) or e["tick"] < newest - TICK_BACK):
+            sessions.append(cur)
+            cur, has_work, newest = [], False, 0
+        cur.append(e)
+        has_work = has_work or not starts
+        newest = max(newest, e["tick"])
+    if cur:
+        sessions.append(cur)
+    loose = [e for e in events if wall_time(e) is None]
+    if not sessions:
+        sessions = [[]]
+    for e in loose:
+        home = [s for s in sessions if s and min(x["tick"] for x in s) <= e["tick"]]
+        (home[-1] if home else sessions[0]).append(e)
+    return [sorted(s, key=sort_key) for s in sessions]
 
 
 def _is_event(obj: Any) -> bool:
@@ -132,6 +211,8 @@ class RunState:
     escalations: list[Event] = field(default_factory=list)
     failures: list[Event] = field(default_factory=list)
     causes: dict[str, list[str]] = field(default_factory=dict)       # event_id -> event_ids it came from
+    seed: int | None = None                                           # from the run_started event
+    sessions: int = 1                                                 # how many Twin starts this run id holds (set by the Hub)
 
     def attacks(self) -> list[dict[str, Any]]:
         """Faults that are running right now (the dashboard may show them, it is a viewer for people)."""
@@ -225,6 +306,8 @@ def build_state(events: list[Event], topology: Topology, cutoffs: dict[str, floa
                     dev = device(c.get("device_id")) if isinstance(c, dict) else None
                     if dev:
                         dev.corrections += 1
+        elif t == "scenario" and d.get("phase") == "run_started" and isinstance(d.get("seed"), int) and not isinstance(d.get("seed"), bool):
+            st.seed = d["seed"]
         elif t == "scenario" and d.get("phase") == "started":
             st.scenarios.append({"scenario_id": d.get("scenario_id"), "name": d.get("name"), "stopped": False,
                                  "faults": [dict(f) for f in as_list(d.get("faults")) if isinstance(f, dict) and "start_tick" in f]})
@@ -254,6 +337,24 @@ def node_status(node: Node, st: RunState) -> dict[str, Any]:
             "attack": any(d.device_id in attacked for d in devs)}
 
 
+def _token_outcome(d: dict[str, Any]) -> str:
+    """A verdict with no device is Guardian's answer to a token request: 'approved' or 'refused'."""
+    refused = d.get("refused") or d.get("approved") is False or d.get("decision") in ("refused", "denied", "rejected")
+    return "refused" if refused else "approved"
+
+
+def _system_text(e: Event) -> str:
+    d = e.get("data") if isinstance(e.get("data"), dict) else {}
+    phase = _phase(e)
+    if phase == "twin_started":
+        return "Twin started"
+    if phase == "run_ended":
+        return "Run ended"
+    bits = [f"seed {d['seed']}"] if "seed" in d else []
+    bits += [f"{d['nodes']} nodes"] if "nodes" in d else []
+    return "Run started" + (f" ({', '.join(bits)})" if bits else "")
+
+
 def summarize(e: Event) -> str:
     """One short line for the event table and the timeline labels. Never raises on odd data."""
     d, t = e.get("data"), e["event_type"]
@@ -267,9 +368,16 @@ def summarize(e: Event) -> str:
     if t == "reading":
         return f"{g('device_id')} = {short(g('value'))} {g('unit') or ''}".strip()
     if t == "verdict":
-        return f"{g('device_id')} score {short(g('score'))}"
+        score = f"score {short(g('score'))}"
+        if g("device_id"):
+            return f"{g('device_id')} {score}"
+        what = f" for {g('approved_action')}" if g("approved_action") else ""      # no device: the answer to a token request
+        return f"token {_token_outcome(d)}{what}, {score}"
     if t == "decision":
-        return f"{g('incident') or g('chosen_action') or 'decision'}" + (f" -> {g('chosen_action')}" if g("incident") and g("chosen_action") else "")
+        incident, action = g("incident"), g("chosen_action")
+        if incident and action and str(action) not in str(incident):               # 'set_signal_plan on TRF-01' already says the action
+            return f"{incident} -> {action}"
+        return str(incident or action or "decision")
     if t == "action":
         return f"{g('action')} {','.join(map(str, as_list(g('targets'))))}: {g('status')}" + (f" ({g('code')})" if g("code") else "")
     if t == "containment":
@@ -278,6 +386,8 @@ def summarize(e: Event) -> str:
     if t == "escalation":
         return f"Human review: {g('reason') or g('incident') or 'needs a person'}"
     if t == "scenario":
+        if is_system(e):
+            return _system_text(e)
         return f"{g('phase')} {g('name') or ''}".strip()
     if t == "partner_failure":
         return f"{g('partner') or g('layer') or 'partner'}: {g('failure') or g('what') or 'failed'}"
@@ -296,7 +406,8 @@ def short_label(e: Event) -> str:
         return f"{v:g} {g('unit') or ''}".strip() if isinstance(v, (int, float)) else "reading"
     if t == "verdict":
         sc = g("score")
-        return f"{node(g('device_id', '?'))} {sc:g}" if isinstance(sc, (int, float)) else node(g("device_id", "verdict"))
+        who = node(g("device_id")) if g("device_id") else f"token {'ok' if _token_outcome(d) == 'approved' else 'refused'}"
+        return f"{who} {sc:g}" if isinstance(sc, (int, float)) and not isinstance(sc, bool) else who
     if t == "decision":
         return str(g("chosen_action") or g("incident") or "decision")[:20]
     if t == "action":
@@ -311,6 +422,6 @@ def short_label(e: Event) -> str:
     if t == "partner_failure":
         return f"{g('partner') or 'partner'} failed"
     if t == "scenario":
-        return f"{g('name') or ''} {g('phase') or ''}".strip()
+        return _system_text(e) if is_system(e) else f"{g('name') or ''} {g('phase') or ''}".strip()
     return t
 
