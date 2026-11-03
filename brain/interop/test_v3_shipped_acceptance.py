@@ -76,15 +76,30 @@ def shipped_twin(request):
     profile = config.sensor_model.profiles[sensor]
     if sid == "S05":
         profile.channels["medical"] = 2
+    elif sid == "S01":
+        # Keep the native Twin condition present for the full Guardian round trip.
+        # The regular dynamics can otherwise clear this short-lived synthetic
+        # incident while Brain is waiting for per-reading trust verdicts.
+        profile.base = value
+        profile.wave_amp = 0
+        profile.wander_amp = 0
+        profile.noise_sd = 0
+        profile.bias_sd = 0
+        profile.follows = None
     else:
         profile.base = value
-    # Keep normal noise, bias, dynamics and all advertised devices/channels.
-    # Only the public truth baseline changes, so Guardian remains authoritative.
+    # This remains a Twin-generated native reading. Only this S01 test profile is
+    # made steady; Brain's execution-time evidence recheck stays unchanged.
+    sensor_override = {"channels.medical": 2} if sid == "S05" else {"base": value}
+    if sid == "S01":
+        sensor_override.update({"wave_amp": 0, "wander_amp": 0, "noise_sd": 0,
+                                "bias_sd": 0, "follows": None})
     write_evidence(directory, "test-profile", {
         "scenario_id": sid, "source_modified": False,
-        "sensor_model_override": {sensor: {"channels.medical": 2} if sid == "S05" else {"base": value}},
+        "sensor_model_override": {sensor: sensor_override},
         "clock": {"autorun": True, "speed": 1, "tick_seconds": config.clock.tick_seconds},
         "input": "native observed readings from configured virtual true conditions",
+        "purpose": "keep S01 above its fixture threshold through authorization" if sid == "S01" else None,
         "guardian_policy_override": False,
     })
     app = twin_app(TwinSettings(config=config, secrets=Secrets(

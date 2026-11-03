@@ -43,6 +43,7 @@ def configured_runtime(settings):
     features = {
         "ai_max_calls_per_run": settings.ai_max_calls_per_run,
         "ai_timeout_seconds": settings.ai_timeout_seconds,
+        "traffic_gnn_shadow_enabled": settings.traffic_gnn_shadow_enabled,
         "peer_timeout_seconds": settings.peer_timeout_seconds,
         "max_evidence_age_seconds": settings.max_evidence_age_seconds,
         "mock_integration_profile": settings.mock_integration_profile,

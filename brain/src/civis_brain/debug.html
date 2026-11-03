@@ -32,6 +32,7 @@ details { margin: 10px 0; } summary { cursor: pointer; }
 <tr><th>AI</th><td><span id="ai-mode">Loading</span>; <span id="key-status"></span><br><span id="model"></span></td></tr>
 <tr><th>Remaining debug AI calls</th><td id="budget">Loading</td></tr>
 </table></div>
+<details><summary>Traffic GNN shadow forecast and Gemini interpretation</summary><pre id="traffic-gnn-shadow">Loading</pre><pre id="traffic-gnn-interpretation">Loading</pre></details>
 <section>
 <h2>1. Load and edit a request</h2>
 <label for="preset">Case:</label>
@@ -171,6 +172,8 @@ async function refresh() {
     $("budget").textContent = state.debug_ai_calls_remaining;
     $("active-run").textContent = state.run_id || "No active run";
     $("service-events").textContent = json(state.events);
+    $("traffic-gnn-shadow").textContent = json(state.traffic_gnn_shadow || {status: "disabled"});
+    $("traffic-gnn-interpretation").textContent = json(state.traffic_gnn_interpretation || {status: "not_started"});
     $("ai-smoke").disabled = busy || state.llm_mode !== "gemini" || state.debug_ai_calls_remaining === 0;
     return state;
   } catch (error) { notice(error.message); }

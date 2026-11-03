@@ -142,6 +142,34 @@ async def test_gemini_schema_selected_evidence_and_one_call():
     assert "tools" not in calls[0] and calls[0]["store"] is False
 
 
+async def test_gemini_graph_interpretation_uses_configured_timeout_and_schema():
+    calls = []
+
+    async def interpret(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            output_text=json.dumps({
+                "summary": "Traffic flow is mostly steady.",
+                "trend": "stable",
+                "uncertainty": "medium",
+                "caveats": ["Synthetic forecast; neighbours are geographic proxies."],
+            }),
+            status="completed",
+        )
+
+    client = SimpleNamespace(aio=SimpleNamespace(interactions=SimpleNamespace(create=interpret)))
+    provider = GeminiPlanProvider("", "gemini-3.5-flash-lite", timeout_seconds=42, client=client)
+    forecast = {"model_id": "test-graph-v1", "forecasts": []}
+
+    result = await provider.interpret_graph(forecast)
+
+    assert result["trend"] == "stable"
+    assert calls[0]["timeout"] == 42
+    assert json.loads(calls[0]["input"]) == forecast
+    assert calls[0]["response_format"]["mime_type"] == "application/json"
+    assert calls[0]["store"] is False
+
+
 @pytest.mark.parametrize(
     "failure,code",
     [

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from pydantic import ValidationError
 
 from civis_brain.context_graph import ContextGraph
+from civis_brain.context_graph.traffic_forecast import forecast_traffic
 from civis_brain.contracts import (
     ActionInfo,
     ContainmentNotice,
@@ -114,9 +115,13 @@ class BrainRuntime:
         self.latest_feed = None
         self.feed_connected = None
         self.discovery_snapshot = None
+        self._traffic_gnn_tasks = set()
         self._reset()
 
     def _reset(self):
+        for task in getattr(self, "_traffic_gnn_tasks", set()):
+            task.cancel()
+        self._traffic_gnn_tasks = set()
         self.states = {scenario.scenario_id: {} for scenario in self.scenarios}
         self.ledger = {}
         self.invalid_ids = set()
@@ -138,7 +143,85 @@ class BrainRuntime:
         self.sent_requests = {}
         self.reconciliation_attempts = set()
         self.dispatch_allocations = {}
+        self.traffic_gnn_shadow = {"status": "disabled"}
+        self.traffic_gnn_interpretation = {"status": "not_started"}
+        self.traffic_gnn_interpretation_count = 0
+        self._traffic_gnn_key = None
         self.observed_feed_generation = self.feed_generation
+
+    def _update_traffic_gnn_shadow(self, batch, nodes):
+        if not self.features.get("traffic_gnn_shadow_enabled", False):
+            self.traffic_gnn_shadow = {"status": "disabled"}
+            return
+        try:
+            graph = ContextGraph(nodes)
+            forecast = forecast_traffic(
+                nodes,
+                list(self.ledger.values()),
+                run_id=batch.run_id,
+                tick=batch.tick,
+                tick_seconds=batch.tick_seconds,
+                graph_version=graph.version,
+                invalid_ids=self.invalid_ids,
+                blocked_devices=self.blocked_devices,
+            )
+        except Exception:
+            # The optional forecast must never block the established detector path.
+            forecast = {"status": "unavailable", "code": "GNN_INFERENCE_FAILED"}
+        self.traffic_gnn_shadow = forecast
+        self._traffic_gnn_key = (batch.run_id, batch.tick)
+        if forecast.get("status") == "ready":
+            self.journal.append({"event": "traffic_gnn_shadow", **forecast})
+
+    def _schedule_traffic_gnn_interpretation(self, batch):
+        forecast = self.traffic_gnn_shadow
+        interpreter = getattr(self.provider, "interpret_graph", None)
+        if (not self.features.get("traffic_gnn_shadow_enabled", False)
+                or forecast.get("status") != "ready"
+                or self._traffic_gnn_key != (batch.run_id, batch.tick)
+                or self.traffic_gnn_interpretation_count > 0):
+            return
+        if not callable(interpreter):
+            self.traffic_gnn_interpretation = {"status": "interpreter_unavailable"}
+            self.traffic_gnn_interpretation_count = 1
+            return
+        if self.ai_calls >= self.features.get("ai_max_calls_per_run", 3):
+            self.traffic_gnn_interpretation = {"status": "ai_budget_exhausted"}
+            self.traffic_gnn_interpretation_count = 1
+            return
+        self.ai_calls += 1
+        self.traffic_gnn_interpretation_count += 1
+        key = self._traffic_gnn_key
+        self.traffic_gnn_interpretation = {
+            "status": "pending", "run_id": key[0], "tick": key[1],
+        }
+        task = asyncio.create_task(self._interpret_traffic_gnn(key, copy.deepcopy(forecast)))
+        self._traffic_gnn_tasks.add(task)
+        task.add_done_callback(self._traffic_gnn_tasks.discard)
+
+    async def _interpret_traffic_gnn(self, key, forecast):
+        try:
+            interpretation = await asyncio.wait_for(
+                self.provider.interpret_graph(forecast),
+                self.features.get("ai_timeout_seconds", 60),
+            )
+            result = {"status": "ready", "run_id": key[0], "tick": key[1],
+                      "interpretation": interpretation}
+        except TimeoutError:
+            result = {"status": "unavailable", "run_id": key[0], "tick": key[1],
+                      "code": "AI_TIMEOUT"}
+        except BrainError as error:
+            result = {"status": "unavailable", "run_id": key[0], "tick": key[1],
+                      "code": error.code}
+        except Exception:
+            result = {"status": "unavailable", "run_id": key[0], "tick": key[1],
+                      "code": "AI_UNAVAILABLE"}
+        self.journal.append({"event": "traffic_gnn_interpretation", **result})
+        # Keep the completed snapshot visible while the same run advances. The
+        # result carries its source tick; only a new run makes it stale enough
+        # to discard.
+        if self.run_id == key[0]:
+            self.traffic_gnn_interpretation = result
 
     def observe_feed(self, batch=None, *, discontinuity=False, connected=True):
         """Called by the independent receiver, including while Gemini is awaiting I/O."""
@@ -557,6 +640,7 @@ class BrainRuntime:
                 )
                 while len(self.ledger) > 2000:
                     self.ledger.pop(next(iter(self.ledger)))
+                self._update_traffic_gnn_shadow(batch, nodes)
                 decisions = await self._evaluate_scenarios(batch, nodes, actions, capabilities)
             except BrainError as error:
                 decisions = [
@@ -579,6 +663,7 @@ class BrainRuntime:
                         code="INPUT_INVALID",
                     )
                 ]
+            self._schedule_traffic_gnn_interpretation(batch)
             result = DecisionBatch(run_id=batch.run_id, tick=batch.tick, decisions=decisions)
             if batch.run_id != self.run_id:
                 return result
@@ -1157,6 +1242,12 @@ class BrainRuntime:
         }
 
     async def close(self):
+        if self._traffic_gnn_tasks:
+            _done, pending = await asyncio.wait(self._traffic_gnn_tasks, timeout=0.1)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
         closer = getattr(self.provider, "aclose", None)
         if closer:
             await closer()
