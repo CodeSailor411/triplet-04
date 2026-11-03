@@ -1,0 +1,14 @@
+{
+  "scenario_id": "S08",
+  "enabled": false,
+  "fixture_only": true,
+  "report_contract_confirmed": false,
+  "report_sensor": "emergency_calls",
+  "report_channel": "fire",
+  "report_unit": "calls/min",
+  "unit_type": "fire",
+  "availability_sensor": "units_free",
+  "availability_channel": "fire",
+  "availability_unit": "units",
+  "status": "Twin publishes these channels. Aggregate calls are not yet an agreed individual fire report."
+}

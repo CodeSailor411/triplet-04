@@ -1,0 +1,7 @@
+{
+  "scenario_id": "S06",
+  "enabled": false,
+  "fixture_only": true,
+  "report_contract_confirmed": false,
+  "status": "Explicit report detector delivered. Live report convention and response pending review."
+}

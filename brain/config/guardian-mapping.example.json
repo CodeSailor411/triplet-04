@@ -1,0 +1,42 @@
+{
+  "capabilities": {
+    "tool": "get_capabilities",
+    "request_fields": {},
+    "response_fields": {
+      "protocol_version": "protocol_version",
+      "score_scale": "score_scale",
+      "thresholds": "thresholds"
+    }
+  },
+  "score": {
+    "tool": "CONFIRM_SCORE_TOOL_WITH_9ANTRA",
+    "request_fields": {
+      "run_id": "run_id",
+      "tick": "tick",
+      "readings": "readings"
+    },
+    "response_fields": {
+      "scores": "scores"
+    }
+  },
+  "approval": {
+    "tool": "CONFIRM_APPROVAL_TOOL_WITH_9ANTRA",
+    "request_fields": {
+      "run_id": "run_id",
+      "tick": "tick",
+      "time": "time",
+      "action": "action",
+      "targets": "targets",
+      "params": "params",
+      "risk": "risk",
+      "source_reading_ids": "source_reading_ids"
+    },
+    "response_fields": {
+      "approved": "approved"
+    },
+    "optional_response_fields": {
+      "token": "token",
+      "code": "code"
+    }
+  }
+}

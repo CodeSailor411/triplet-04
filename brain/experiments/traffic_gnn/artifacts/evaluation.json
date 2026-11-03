@@ -1,0 +1,71 @@
+{
+  "experiment": "CIVIS S01 traffic five-tick-ahead shadow forecast",
+  "data_source": "Twin SensorModel observed_value generated from checked-in twin/config/twin.yaml",
+  "data_kind": "synthetic mock telemetry; no real measurements and no incident labels",
+  "twin_source_sha256": "f08650d43bf18ff02b8584abced8c1342897ecf8ff382e669ea8a2b8c05dff4b",
+  "seed_split": {
+    "train": [
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107
+    ],
+    "validation": [
+      108,
+      109
+    ],
+    "test": [
+      110,
+      111
+    ]
+  },
+  "ticks_per_seed": 1200,
+  "history_ticks": 5,
+  "horizon_ticks": 5,
+  "window_stride_ticks": 5,
+  "traffic_nodes": [
+    "SH-05",
+    "SH-06",
+    "TRF-01",
+    "TRF-02",
+    "TRF-03",
+    "TRF-04",
+    "TRF-05",
+    "TRF-06",
+    "TRF-07",
+    "TRF-08",
+    "TRF-09"
+  ],
+  "test_windows": 478,
+  "validation_mse": {
+    "graphsage_mean": 0.06738382577896118,
+    "temporal_mlp_no_graph": 0.06743183732032776
+  },
+  "test_mae": {
+    "graphsage_mean": {
+      "vehicle_count": 1.8781147003173828,
+      "avg_speed": 1.0617388486862183
+    },
+    "temporal_mlp_no_graph": {
+      "vehicle_count": 1.8767261505126953,
+      "avg_speed": 1.0621198415756226
+    },
+    "persistence": {
+      "vehicle_count": 2.3198935985565186,
+      "avg_speed": 1.3693280220031738
+    },
+    "linear_trend": {
+      "vehicle_count": 4.358216285705566,
+      "avg_speed": 2.654292106628418
+    }
+  },
+  "units": {
+    "vehicle_count": "cars/min",
+    "avg_speed": "km/h"
+  },
+  "interpretation": "Forecast accuracy on this deterministic simulator is not real-world traffic validation."
+}

@@ -1,0 +1,20 @@
+{
+  "scenario_id": "S05",
+  "fixture_only": true,
+  "fixtures": [
+    {
+      "file": "base_case.json",
+      "expected": {
+        "status": "committed",
+        "actuator_effect_count": 1
+      }
+    },
+    {
+      "file": "refusal_case.json",
+      "expected": {
+        "status": "blocked",
+        "actuator_effect_count": 0
+      }
+    }
+  ]
+}

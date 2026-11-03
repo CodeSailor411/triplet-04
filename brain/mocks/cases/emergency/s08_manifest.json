@@ -1,0 +1,47 @@
+{
+  "scenario_id": "S08",
+  "fixtures": [
+    {
+      "file": "s08_supported_fire_report.json",
+      "expected": {
+        "status": "committed",
+        "actuator_effect_count": 1
+      }
+    },
+    {
+      "file": "s08_air_pollution_only.json",
+      "expected": {
+        "status": "no_fire_no_dispatch",
+        "actuator_effect_count": 0
+      }
+    },
+    {
+      "file": "s08_no_firefighters.json",
+      "expected": {
+        "status": "alert",
+        "actuator_effect_count": 0
+      }
+    },
+    {
+      "file": "s08_repeated_report.json",
+      "expected": {
+        "status": "committed_once",
+        "actuator_effect_count": 1
+      }
+    },
+    {
+      "file": "s08_guardian_denial.json",
+      "expected": {
+        "status": "blocked",
+        "actuator_effect_count": 0
+      }
+    },
+    {
+      "file": "s08_fire_with_separate_injury_evidence.json",
+      "expected": {
+        "status": "committed_primary_firefighter_only",
+        "actuator_effect_count": 1
+      }
+    }
+  ]
+}

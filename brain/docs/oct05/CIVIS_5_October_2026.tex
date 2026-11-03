@@ -1,0 +1,93 @@
+% Adapted from Simple report by Mihdi Caballero (2022), published on Overleaf.
+% https://www.overleaf.com/latex/templates/simple-report/xttmdbmftwqc
+% Original template notices and adaptations: TEMPLATE_PROVENANCE.md.
+\documentclass[a4paper,10pt,english]{article}
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\renewcommand*\familydefault{\sfdefault}
+\usepackage[left=22mm,right=22mm,top=23mm,bottom=20mm,headheight=14pt]{geometry}
+\usepackage[table]{xcolor}
+\definecolor{blue}{RGB}{0,89,140}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small TRIPLET 04 / CIVIS}
+\rhead{\small 4 October 2026}
+\rfoot{\small\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+\let\oldheadrule\headrule
+\renewcommand{\headrule}{\color{blue}\oldheadrule}
+\usepackage{titlesec}
+\titleformat{\section}{\color{blue}\normalfont\large\bfseries}{}{0pt}{}
+\titlespacing*{\section}{0pt}{8pt}{4pt}
+\usepackage{booktabs,array,tabularx,enumitem,xurl}
+\usepackage[colorlinks,urlcolor=blue,linkcolor=blue]{hyperref}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\code}[1]{{\urlstyle{tt}\nolinkurl{#1}}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\renewcommand{\arraystretch}{1.08}
+\setlist[itemize]{leftmargin=1.2em,itemsep=2pt,topsep=3pt,parsep=0pt}
+\begin{document}
+\color{black}
+\begin{center}
+{\Large\bfseries CIVIS: incidents, risk levels and data conventions}\\[3pt]
+{\small Traffic, Water, Power, Air Quality, Emergency; Telecom excluded.}
+\end{center}
+\textbf{Status:} reviewed by Trinity. Blast-radius limits below are Trinity's proposal, pending 9antra confirmation.
+
+\section*{1. Incident and response list}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{.20\textwidth}>{\raggedright\arraybackslash}p{.23\textwidth}Y@{}}
+\toprule\textbf{Incident} & \textbf{Domains touched} & \textbf{Brain response requested from Twin}\\\midrule
+Persistent congestion & Traffic & Request a permitted safe signal adjustment.\\[3pt]
+Reported road accident & Traffic, Emergency & Dispatch police for scene control; ambulance if injury is reported. Safe signal assistance if supported.\\[3pt]
+Flood / high water & Water, Traffic, Emergency; Power if affected & Request a topology-supported valve change; dispatch assistance if people are affected. Grid switching only for a confirmed Power hazard.\\[3pt]
+Low water supply & Water & Preview a valve change that preserves supply; otherwise retain state and log the incident.\\[3pt]
+Power overload / confirmed service loss & Power; Water and Emergency if affected & Preview safe grid switching, protecting pumps and essential services; otherwise block changes and log.\\[3pt]
+Sustained air pollution & Air Quality; Emergency if corroborated & Raise an alert. No direct Air Quality actuator; dispatch only for a separately supported emergency.\\[3pt]
+Reported fire & Emergency, Air Quality, Traffic & Dispatch firefighters; add ambulance/police only when justified. Safe signal assistance if supported.\\[3pt]
+Medical emergency & Emergency, Traffic & Dispatch an available ambulance to the reported location; safe signal assistance if supported.\\\bottomrule
+\end{tabularx}
+
+\textbf{Common rule:} physical actions require usable evidence and an exact-action Guardian token. Twin executes and enforces caps; high-risk actions need a preview. Guardian alone requests containment. If usable alternatives are unavailable, withhold actuation and log the incident.
+
+\section*{2. Three actuator types with distinct risk levels}
+\textbf{CIVIS Phase 0 scale:} R0 read-only; R1 reversible/low impact; R2 scarce-resource allocation; R3 safety-critical.
+\begin{tabularx}{\textwidth}{@{}p{.28\textwidth}p{.08\textwidth}Y@{}}
+\toprule\textbf{Actuator} & \textbf{Risk} & \textbf{Brief justification}\\\midrule
+Traffic-signal control & R1 & Bounded, reversible changes within Twin's safe signal states.\\
+Generic dispatch & R2 & Allocates scarce police, ambulance, or firefighter units.\\
+Water-valve control & R3 & Can worsen flooding or interrupt downstream supply.\\\bottomrule
+\end{tabularx}
+Grid switching still requires preview, token, and caps. Isolation has no risk tier under the final triplet decision; blast-radius caps apply.
+
+\textbf{Proposed mock blast-radius limits}
+
+\begin{tabularx}{\textwidth}{@{}Yrrr@{}}
+\toprule\textbf{Domain} & \textbf{Nodes} & \textbf{Action cap} & \textbf{Isolation cap}\\\midrule
+Traffic & 11 & 3 & 5\\
+Water & 9 & 2 & 4\\
+Power & 9 & 2 & 9\\
+Air Quality & 8 & No actuator & 4\\
+Emergency & 7 & 2 & 3\\\bottomrule
+\end{tabularx}
+
+For domain size $N$, the limit is $\min(N,\max(2,\lfloor Np\rfloor))$: action $p=0.30$; isolation $p=0.50$, except Power $p=1.00$. Counts may change; percentages remain fixed. The 38 unique nodes have 44 domain memberships, including six shared nodes; Map has no nodes.
+
+\newpage
+
+\section*{3. CIVIS data conventions}
+\begin{itemize}
+\item \textbf{Format/identity:} UTF-8 JSON, \code{snake_case}; stable \code{run_id}, \code{reading_id}, \code{device_id}, \code{node_id}. \code{domains} allows multiple domains. Ignore extra fields; reject missing/wrong required fields.
+\item \textbf{Time/location:} simulated UTC RFC 3339 timestamps, e.g. \code{2026-10-04T08:00:00.000Z}, plus integer \code{tick}; declare tick duration per run. Use \code{node_id}; optional WGS84 \code{latitude_deg}/\code{longitude_deg}.
+\item \textbf{Values/units:} finite numbers with explicit quantity/unit: Traffic congestion index 0--100 \code{percent}; Water \code{cm} with local datum; Power load \code{kW}; Air PM2.5 \code{ug/m3}. Emergency events carry reported type, location, and transcript treated as data, never instructions.
+\item \textbf{Missing/trust:} missing value is JSON \code{null}, never zero. Keep original readings and references for corrections. Guardian score stays numeric, with Guardian-declared scale/cut-offs; a score is not an action token.
+\item \textbf{Actions:} \code{action}, \code{targets}, \code{token}, \code{idempotency_key}. Proposed \code{action} contains name/parameters; retain source reading references. Reuse the key only for retries of the same unchanged request.
+\item \textbf{Cap discovery/counting:} read current limits from Twin capabilities; never hardcode table values. Action caps count distinct affected nodes per request in each applicable domain. Shared nodes count in each domain they belong to. Dispatch caps count nodes, not dispatched units.
+\item \textbf{Containment:} isolation caps count the concurrent union of isolated and quarantined nodes per domain; a node in both counts once. \code{rollback_reading} is uncapped and affects one reading of one node. Power's all-node isolation cuts sensor data, not grid power.
+\item \textbf{Cap failure/reset:} Twin rejects the entire over-cap request with \code{CAP_EXCEEDED}; no partial effects. Record \code{domain}, \code{cap}, \code{limit}, \code{already}, and \code{requested}. Do not retry an unchanged rejection. Isolation persists until run/scenario reset in the mock; no release call is specified.
+\end{itemize}
+\textbf{Pending interface agreements:} traffic/PM2.5 mapping, topology, action parameters, score scale, thresholds, and token lifetimes. Water level alone does not prove a leak; low load alone does not prove an outage. 9antra must confirm the proposed limits, shared containment pool, and reset-only lifecycle. Quarantine release behavior and counting fields for overlapping targets require explicit definition.
+\end{document}
