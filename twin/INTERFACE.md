@@ -20,7 +20,7 @@ The Twin is the simulated city: it sends sensor readings and receives actuator c
 | `get_city_graph` | Brain, Guardian | `include_matrix`?, `include_roads`? | the city graph: 38 nodes (GPS, zone, domains, sensors, actions with risk), 67 links (`distance_m`, `bearing_a_to_b_deg`, `kind`), zones, roads, and `distance_matrix_m` between every pair in `node_order`. Straight-line distances, not along roads or pipes. Fixed for the run |
 | `get_nearest_nodes` | Brain, Guardian | `node_id`, `domain`?, `role`?, `limit`? (1 to 50, default 5) | nearest nodes first: `distance_m`, `bearing_deg`, `linked`. Refusals `UNKNOWN_NODE`, `UNKNOWN_ROLE`, `BAD_LIMIT` |
 | `get_containment_state`, `get_quarantine_lane` | Brain, Guardian (lane: Guardian) | none | cut-off devices, corrections, cap use, held commands |
-| `run_scenario` | `scenario` key only | `name`, `params`? | started faults. Names: `fake_reading`, `stuck_sensor`, `replay_exact`, `list`, `stop`, `reset` |
+| `run_scenario` | `scenario` key only | `name`, `params`? | started faults or incidents. Names: `fake_reading`, `stuck_sensor`, `replay_exact`, `real_jam`, `list`, `stop`, `reset` |
 
 ## Units (as sent in each reading)
 `vehicle_count` cars/min, `avg_speed` km/h, `congestion_index` percent (0 to 100, one per traffic node, added 23 Oct), `water_level` cm, `flow_rate` L/s, `load_kw` kW, `voltage_v` V, `pm25` ug/m3, `co_ppm` ppm, `temperature_c` C, `emergency_calls` calls/min, `units_free` units. 120 readings per tick.

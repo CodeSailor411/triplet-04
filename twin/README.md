@@ -91,11 +91,30 @@ One command starts an attack. With no `params` each one has a default sensor, so
 | `fake_reading` | Reports a made-up `value`. The true value does not change. |
 | `stuck_sensor` | Keeps repeating the last value it reported before the fault. |
 | `replay_exact` | Re-sends an old reading exactly as it was (same `reading_id`, old tick and time), `lag_ticks` old. |
+| `real_jam` | Not an attack: a REAL traffic jam (see below). |
 | `list`, `stop`, `reset` | List the scenarios. Stop one (`{"scenario_id": "sc-0001"}`). Start a new run (new run id, clock at 0, everything forgotten). |
 
 Params for the attacks: `device_id`, `channel` (only for sensors with channels), `delay_ticks` (at least 1, default 2: a fault never changes readings that were already sent), `duration_ticks` (default: until stopped), plus `value` or `lag_ticks`. Two faults on the same sensor at the same time are refused. A replay needs `lag_ticks` of history first, so at the very start of a run it answers `START_TOO_EARLY`.
 
 It only shows up for the scenario key (try `get_capabilities` with each key and compare).
+
+**The real jam (`real_jam`, added 2 Nov).** The attacks above only change what a sensor REPORTS. `real_jam` changes the real value, like a real jam would: every sensor at the node then reports what is really there.
+
+```
+python mocks/example_client.py --key dev-scenario-key-change-me --tool run_scenario --args '{"name": "real_jam"}'
+python mocks/example_client.py --key dev-scenario-key-change-me --tool run_scenario --args '{"name": "real_jam", "params": {"node_id": "TRF-01", "hold_ticks": 20}}'
+```
+
+With no `params` it starts at SH-05 (the first traffic node that carries a signal) 2 ticks later. What it does:
+
+* **Shape.** It builds up over `ramp_ticks` (default 10), holds the peak for `hold_ticks` (default 40), fades over `fade_ticks` (default 10) and ends by itself. It never jumps, because a sudden jump looks like a fake reading to a rate-of-change check. `stop` ends it at once, with no fade.
+* **At the centre node:** `congestion_index` goes to 90, `vehicle_count` to 120 and `avg_speed` to 8. That passes the Brain's S01 rule (index of at least 80 on two ticks in a row).
+* **Neighbours.** Traffic nodes linked to the centre feel `spread` (default 0.35) of the jam: about 50 on the index, so they clearly rise but do not trip the rule. A fake spike is a lone sensor; a real jam also moves its neighbours. Air-quality neighbours and every other sensor stay as they were. `spread: 0` keeps the jam on one node.
+* **Same seed, same run.** The values depend only on the seed, the tick and the jam record, so a replay gives the same run. Nothing before the start tick changes.
+* **Logged.** The readings it moves are written to the run log as `reading` events linked to the jam's `started` event, so a verdict can point at them. The true values go only to the private file.
+* **Params:** `node_id` (a traffic node), `delay_ticks`, `ramp_ticks`, `hold_ticks`, `fade_ticks`, `spread`. Two jams that share a node at the same time are refused (`INCIDENT_ALREADY_ACTIVE`); a jam on a far node is fine.
+* **Real incident plus an attack at the same time:** start `real_jam`, then a `fake_reading` on any sensor (for example a fake low value on a neighbour that hides its rise).
+* **Does not react to actions yet.** A signal change does not ease the jam. The Brain's action is logged and committed, but the city does not answer.
 
 ## What you can see today
 
@@ -127,6 +146,13 @@ python -m twin.logmerge run-42-001 --parts ../brain/run-logs/run-42-001.brain.js
 ```
 
 Running it again is safe, the file is rebuilt from the parts every time. Since 27 Oct the Twin's own merge also picks up `run-logs/<run_id>.guardian.jsonl` and `run-logs/<run_id>.brain.jsonl` when they sit in its folder (only those two names, never the private file; a file of another run is skipped with a warning), so a stand-in's or a partner's events are not wiped when the Twin merges. A new run (a new `run_id`) starts with `run_scenario` `reset`, and gets its own file.
+
+**Known gap: partner part files in their own folders.** The decision of 9 Oct says every layer writes `run-logs/<run_id>.<layer>.jsonl` in its OWN folder (`brain/run-logs`, `guardian/run-logs`). The Twin's automatic merge (scenario stop, `reset`, Ctrl+C) only looks in `twin/run-logs/`, so it does not see those files. The Twin's own events always reach `../logs/<run_id>.jsonl`; a partner's events reach it only if you do one of these before or after the run:
+
+1. copy the partner's part file into `twin/run-logs/` (keep the exact name, and the same `run_id` as the Twin's current run), then stop the scenario or run `reset` again; or
+2. run the merge by hand with the partner files, as in the second command above.
+
+A partner file whose `run_id` differs from the Twin's current one (for example after a `reset`, which gives a new run id) is skipped with a warning. The dashboard does not depend on the merge: it reads the part files from its `dashboard.sources` folders directly. This is a documented limit, not a fix (decided 2 Nov, no time before the freeze).
 
 What the Twin writes: `scenario` (run started, scenario started or stopped), `reading` (only readings that a scenario fault touched, 120 per tick would be huge), `action` (what `actuate` answered, with the token's ID, never the token) and `containment` (isolate, quarantine, rollback, release). Every line has `run_id`, `event_id`, `timestamp` (simulated time), `tick`, `wall` (real clock, orders events inside one tick), `layer`, `event_type`, `caused_by`, `data`.
 
@@ -178,6 +204,7 @@ Start the Twin in one terminal (`python -m twin`), then in a second terminal:
 ```
 python mocks/mock_brain.py incident                      # waits up to 60 s for a jam. A calm Twin answers "no_incident"
 python mocks/mock_brain.py incident --fake-jam           # starts a fake jam first, then the whole path runs
+python mocks/mock_brain.py incident --real-jam           # starts a REAL jam first (true value moves), then the whole path runs
 python mocks/mock_brain.py act --action set_valve_position --targets WAT-03 --params '{"position": 25}'
 python mocks/mock_brain.py act --action set_signal_plan --targets TRF-01 --params '{"plan": "normal"}' --sends 2
 python mocks/mock_guardian.py token --action set_signal_plan --targets TRF-01 --params '{"plan": "normal"}' --idempotency-key try-1
@@ -202,7 +229,7 @@ The jam in `incident` is the Brain team's S01 story, with their numbers copied: 
 
 What they cannot do (say it in the demo):
 
-* The Twin cannot make a **real** incident yet, only a fake reading. So `--fake-jam` is a sensor lying, and the mock Brain acts on the lie. The real Guardian is the one meant to distrust it. The mock Guardian does not read the feed and does not judge anything.
+* `--fake-jam` is a sensor lying, and the mock Brain acts on the lie. `--real-jam` is a real jam (scenario `real_jam`), and the mock Brain acts on it. Either way the mock Brain cannot tell them apart. The real Guardian is the one meant to distrust the lie and approve the real one. The mock Guardian does not read the feed and does not judge anything.
 * They write run logs (`run-logs/<run_id>.guardian.jsonl` and `.brain.jsonl`, every event marked `stand_in: true`: verdict, decision, partner_failure, escalation), so a run shows reading, verdict, decision, action on the dashboard. `--no-log` turns that off and `--log-dir` changes the folder. Start the Twin, the dashboard and the stand-ins from the `twin/` folder so they share `run-logs/`.
 * They are not a test of the real Brain or the real Guardian. A joint run with the real ones is a separate step.
 
@@ -347,6 +374,8 @@ This is reference data: no tool and no cap checks distances.
 
 ## Known limits right now
 
+* The real jam does not react to actions: nothing in the city answers a signal change yet. It is the only real incident (no flood, no power surge).
+* The log merge does not search the partners' own `run-logs/` folders. See "Known gap" in "The run log" above.
 * Wall-clock timestamps are used only for `/health` and the feed's hello and heartbeat. Readings use the simulated clock.
 * Sensor values wander slowly (waves of 5 to 20 simulated minutes), not through a realistic day. At real speed a daily cycle
   would never be visible in a demo. Incidents come from scenarios, not from the background pattern.

@@ -13,8 +13,9 @@ Every line has:
   run_id, event_id (twin-000001), timestamp (simulated time of the tick), tick, wall (real clock, orders events inside one
   tick), layer, event_type, caused_by (list of earlier event_ids), data (depends on event_type).
 Event types the Twin writes: scenario, reading, action, containment.
-  reading     only readings a scenario fault touched (109 per tick would be huge). A verdict that points at a normal reading
-              finds no matching reading here. That gap is on purpose.
+  reading     only readings a scenario touched: a fault (fake, stuck, replay) or a real incident (`real_jam`, added 2 Nov: the
+              jam sensors of every affected node, so a verdict can point at them). 120 per tick would be huge. A verdict that
+              points at a normal reading finds no matching reading here. That gap is on purpose.
   action      what `actuate` answered. Only the token's ID is logged, never the token (a logged token could be replayed).
 
 The shared log must never hold a true value. True values go to <parts_dir>/<run_id>.twin-private.jsonl, which is never merged.
@@ -112,29 +113,35 @@ class RunLog:
         """Write the readings a scenario fault touched at this tick, and (privately) the true values behind them."""
         if not self.enabled or self.scenarios is None:
             return
-        rows = []
+        rows = []                                              # (scenario_id, record id, kind, device, channel, reading)
         for f in self.scenarios.active_faults(tick):
             d = self.scenarios.devices[f.device_id]
             if self.sim.overlay is not None and self.sim.overlay.is_hidden(d.device_id, tick):
                 continue                                       # cut off from the feed: nobody saw it
             for ch in ([f.channel] if f.channel else list(d.channels or (None,))):
                 r = self.sim.reported(d, ch, tick)
-                rows.append((f, d, ch, r))
+                rows.append((f.scenario_id, f.fault_id, f.kind, d, ch, r))
+        for inc in self.scenarios.active_incidents(tick):      # a real incident: the readings it moves are logged too
+            for d in self.scenarios.incident_devices(inc):
+                if self.sim.overlay is not None and self.sim.overlay.is_hidden(d.device_id, tick):
+                    continue
+                for ch in (d.channels or (None,)):
+                    rows.append((inc.scenario_id, inc.incident_id, inc.kind, d, ch, self.sim.reported(d, ch, tick)))
         if not rows:
             return
         try:
             with self._lock:
                 self._open_run_if_new()
-                for f, d, ch, r in rows:
+                for sid, record_id, kind, d, ch, r in rows:
+                    started = self.scenarios.event_id_of(sid)
                     eid = self._write("reading", {"reading_id": r.reading_id, "reading_tick": r.tick, "node_id": r.node_id,
                                                   "device_id": r.device_id, "sensor": r.sensor, "channel": r.channel,
                                                   "value": r.value, "unit": r.unit},
-                                      [self.scenarios.event_id_of(f.scenario_id)] if self.scenarios.event_id_of(f.scenario_id) else [],
-                                      tick=tick)
+                                      [started] if started else [], tick=tick)
                     self._append(self.private_path(self._run_id), {
                         "run_id": self._run_id, "tick": tick, "wall": _wall(), "event_id": eid, "reading_id": r.reading_id,
                         "device_id": d.device_id, "channel": ch, "reported_value": r.value,
-                        "true_value": self.sim.model.true_value(d, ch, tick), "fault_id": f.fault_id, "fault_kind": f.kind})
+                        "true_value": self.sim.model.true_value(d, ch, tick), "fault_id": record_id, "fault_kind": kind})
         except OSError as e:
             self._warn(e)
 

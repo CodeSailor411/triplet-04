@@ -10,8 +10,9 @@ It follows one fixed script, with no AI and no real decision-making:
      "no", the mock Brain does NOT act, and says why.
 It can also send the same request twice with the same key, to show the Twin carries it out only once.
 
-IMPORTANT, say it in the demo: the Twin cannot make a REAL incident yet, only a fake reading (`run_scenario`). So the
-jam here is a lie told by a sensor, and this mock acts on it. The real Guardian is what is supposed to distrust that.
+IMPORTANT, say it in the demo: this mock cannot tell a lie from the truth. With --fake-jam the jam is a lie told by one
+sensor (`run_scenario fake_reading`); with --real-jam it is a real jam (`run_scenario real_jam`, the true value moves and
+the neighbours rise). It acts on both. The real Guardian is what is supposed to distrust the lie and approve the real one.
 
 Run log: it writes <run_id>.brain.jsonl (decision, partner_failure, escalation events, all marked stand_in), and the mock
 Guardian writes <run_id>.guardian.jsonl. Next to the Twin's own part file they give the dashboard a full chain: reading
@@ -22,6 +23,7 @@ Commands (start the Twin first: `python -m twin`):
 
     python mocks/mock_brain.py incident                  # waits up to 60 s for a jam; a calm Twin gives "no_incident"
     python mocks/mock_brain.py incident --fake-jam       # starts the fake jam itself (needs the scenario key)
+    python mocks/mock_brain.py incident --real-jam       # starts a REAL jam (the true value moves, needs the scenario key)
     python mocks/mock_brain.py incident --fake-jam --guardian-mode refuse     # Guardian says no: nothing is sent
     python mocks/mock_brain.py incident --fake-jam --guardian-mode silent     # Guardian never answers: timeout
     python mocks/mock_brain.py act --action set_signal_plan --targets TRF-01 --params '{"plan":"favor_main_road"}'
@@ -135,13 +137,16 @@ class MockBrain:
 
     async def incident(self, node_id: str | None = None, threshold: float = JAM_THRESHOLD, ticks: int = JAM_TICKS,
                        wait_seconds: float = 60.0, poll_seconds: float = 0.2,
-                       scenario: TwinClient | None = None, fake_value: float = 95.0) -> dict:
-        """The scripted S01 story. With `scenario` (a Twin client that holds the scenario key) it starts the fake jam."""
+                       scenario: TwinClient | None = None, fake_value: float = 95.0, real: bool = False) -> dict:
+        """The scripted S01 story. With `scenario` (a Twin client that holds the scenario key) it starts the jam itself:
+        a fake reading, or with real=True a real jam (scenario real_jam: the true value moves, neighbours rise a little)."""
         if node_id is None:
             carriers = next(a for a in (await self.twin.call("list_actions"))["actions"] if a["action"] == JAM_ACTION)
             node_id = carriers["target_nodes"][0]
         started = None
-        if scenario is not None:
+        if scenario is not None and real:
+            started = await scenario.call("run_scenario", {"name": "real_jam", "params": {"node_id": node_id, "delay_ticks": 2}})
+        elif scenario is not None:
             started = await scenario.call("run_scenario", {"name": "fake_reading", "params": {
                 "device_id": f"{node_id}.congestion_index", "value": fake_value, "delay_ticks": 2}})
         try:
@@ -151,7 +156,7 @@ class MockBrain:
             latest = seen["evidence"][-1].get("reading_id")
             result = await self.act(JAM_ACTION, [node_id], JAM_PARAMS, incident=f"traffic jam at {node_id}",
                                     reading_ids=[latest] if latest else None, device_id=f"{node_id}.congestion_index")
-            return {**result, "trigger": "fake reading started by this script" if started else "readings from the feed",
+            return {**result, "trigger": (("real jam" if real else "fake reading") + " started by this script") if started else "readings from the feed",
                     "evidence": seen["evidence"]}
         finally:
             if started is not None:                     # leave the Twin clean: stop the fake jam we started
@@ -170,9 +175,10 @@ async def _run(args: argparse.Namespace) -> dict:
         if args.cmd == "act":
             return await brain.act(args.action, args.targets.split(","), json.loads(args.params),
                                    args.idempotency_key, args.sends)
-        if args.fake_jam:
+        if args.fake_jam or args.real_jam:
             async with TwinClient(url, key_for("scenario", args.scenario_key)) as scenario:
-                return await brain.incident(args.node, args.threshold, args.ticks, args.wait_seconds, scenario=scenario)
+                return await brain.incident(args.node, args.threshold, args.ticks, args.wait_seconds, scenario=scenario,
+                                            real=args.real_jam)
         return await brain.incident(args.node, args.threshold, args.ticks, args.wait_seconds)
 
 
@@ -181,7 +187,7 @@ def main() -> int:
     common.add_argument("--url", help="where the Twin runs (default: TWIN_URL, then config/twin.yaml)")
     common.add_argument("--key", help="the Brain key (default: TWIN_KEY_CITY_BRAIN from the environment or twin/.env)")
     common.add_argument("--guardian-key", help="the Guardian key (default: TWIN_KEY_GUARDIAN)")
-    common.add_argument("--scenario-key", help="the scenario key (default: TWIN_KEY_SCENARIO), only for --fake-jam")
+    common.add_argument("--scenario-key", help="the scenario key (default: TWIN_KEY_SCENARIO), only for --fake-jam and --real-jam")
     common.add_argument("--guardian-mode", default="approve", choices=MODES, help="how the mock Guardian behaves")
     common.add_argument("--guardian-timeout", type=float, default=GUARDIAN_TIMEOUT_SECONDS,
                         help="real seconds the Brain waits for Guardian")
@@ -196,7 +202,9 @@ def main() -> int:
     i.add_argument("--threshold", type=float, default=JAM_THRESHOLD)
     i.add_argument("--ticks", type=int, default=JAM_TICKS)
     i.add_argument("--wait-seconds", type=float, default=60.0)
-    i.add_argument("--fake-jam", action="store_true", help="start a fake jam first (run_scenario fake_reading)")
+    kind = i.add_mutually_exclusive_group()
+    kind.add_argument("--fake-jam", action="store_true", help="start a fake jam first (run_scenario fake_reading)")
+    kind.add_argument("--real-jam", action="store_true", help="start a REAL jam first (run_scenario real_jam)")
     a = sub.add_parser("act", parents=[common], help="one action through the whole path (preview, token, actuate)")
     a.add_argument("--action", required=True)
     a.add_argument("--targets", required=True, help="comma separated node ids")

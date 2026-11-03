@@ -43,7 +43,7 @@ def test_list_names_every_scenario_and_control():
     _, _, sc = world()
     r = run(sc, "list")
     assert r.status == "listed"
-    assert {s.name for s in r.scenarios} == {"fake_reading", "stuck_sensor", "replay_exact", "list", "stop", "reset"}
+    assert {s.name for s in r.scenarios} == {"fake_reading", "stuck_sensor", "replay_exact", "real_jam", "list", "stop", "reset"}
 
 
 # ------------------------------------------------------------------ fake reading
