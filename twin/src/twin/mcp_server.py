@@ -2,7 +2,7 @@
 
 Right now: get_capabilities, list_nodes, get_readings, get_clock, list_actions, preview_action, actuate, the containment tools
 (isolate_sensor, quarantine_device, rollback_reading, release_device, get_containment_state, get_quarantine_lane)
-and run_scenario (hidden: fake_reading, stuck_sensor, replay_exact, list, stop, reset).
+and run_scenario (hidden: fake_reading, stuck_sensor, replay_exact, real_jam, list, stop, reset).
 Next (see the plan): two-step commit, congestion_index, actuator controls.
 """
 from importlib.metadata import version as pkg_version
@@ -244,10 +244,13 @@ def build_mcp(topology: Topology, keyring: KeyRing, sim: Simulation, book: Actio
 
     @mcp.tool()
     async def run_scenario(ctx: Context, name: str, params: dict[str, Any] | None = None) -> ScenarioResult:
-        """Start an attack on purpose. Hidden: only visible to a caller with the scenario key.
-        name: fake_reading, stuck_sensor or replay_exact (each works with no params), or list, stop, reset.
+        """Start an attack or a real event on purpose. Hidden: only visible to a caller with the scenario key.
+        name: fake_reading, stuck_sensor or replay_exact (attacks), real_jam (a real traffic jam), each works with no params,
+        or list, stop, reset.
         params: device_id, channel, delay_ticks, duration_ticks, plus value (fake_reading) or lag_ticks (replay_exact);
-        stop takes scenario_id. Faults change what a sensor REPORTS, never the true value."""
+        real_jam takes node_id, delay_ticks, ramp_ticks, hold_ticks, fade_ticks, spread; stop takes scenario_id.
+        Attacks change what a sensor REPORTS, never the true value. A real jam moves the true value, so every sensor
+        at the node reports what is really there."""
         require(ctx, "run_scenario")
         try:
             return await scenarios.run(name, params)

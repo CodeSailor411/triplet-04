@@ -210,6 +210,25 @@ async def test_a_fake_jam_with_a_refusing_guardian_changes_nothing(fast):
         assert await next_action_id(brain) == "ac-00001"
 
 
+async def test_a_real_jam_makes_one_signal_change_and_is_cleaned_up_afterwards(fast):
+    async with stand_ins(fast, scenario=True) as (brain, _g, scenario):
+        first = await brain.incident(wait_seconds=30, poll_seconds=0.02, scenario=scenario, real=True)
+        answer = first["twin_answers"][0]
+        assert first["outcome"] == "committed" and answer["action"] == "set_signal_plan" and len(answer["targets"]) == 1
+        assert first["trigger"].startswith("real jam") and all(e["value"] >= 80 for e in first["evidence"])
+        # The jam was stopped by the script, so another one on the same node is allowed (otherwise: INCIDENT_ALREADY_ACTIVE).
+        second = await brain.incident(wait_seconds=30, poll_seconds=0.02, scenario=scenario, real=True)
+        assert second["outcome"] == "committed" and second["twin_answers"][0]["action_id"] != answer["action_id"]
+
+
+async def test_a_real_jam_with_a_refusing_guardian_changes_nothing(fast):
+    async with stand_ins(fast, mode="refuse", scenario=True) as (brain, _g, scenario):
+        result = await brain.incident(wait_seconds=30, poll_seconds=0.02, scenario=scenario, real=True)
+        assert result["outcome"] == "not_sent" and result["reason"] == "GUARDIAN_REFUSED"
+    async with stand_ins(fast) as (brain, _g, _s):
+        assert await next_action_id(brain) == "ac-00001"
+
+
 # ---------------------------------------------------------------- the jam counting, with no Twin at all
 class ScriptedTwin:
     """Answers get_readings with a fixed list of (tick, value), one per call, and repeats the last one forever."""

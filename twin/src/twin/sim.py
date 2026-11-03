@@ -34,6 +34,11 @@ class Simulation:
         self.devices: list[Device] = devices_from_nodes(topology.nodes, sensor_domains(config))
         self.model = SensorModel(self.seed, config.sensor_model, self.devices)
         self.node_ids = {n.node_id for n in topology.nodes}
+        self.actuators = {n.node_id: list(n.actuators) for n in topology.nodes}   # which actions each node carries
+        self.links: dict[str, list[str]] = {n: [] for n in self.node_ids}      # neighbour links, both directions
+        for a, b in topology.edges:
+            self.links[a].append(b)
+            self.links[b].append(a)
         self.sensor_names = set(config.sensors)
         self.run_number = 1
         self.tick = 0

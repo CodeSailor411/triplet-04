@@ -50,6 +50,7 @@ class SensorModel:
         self.seed, self.cfg = seed, cfg
         self._by_node_sensor = {(d.node_id, d.sensor): d for d in devices}
         self._static: dict[tuple[str, str | None], tuple[float, float, float]] = {}
+        self.incident_source = None      # set by the app: the scenario book, which knows the running real incidents
         for d in devices:
             self._check(d)
 
@@ -96,7 +97,13 @@ class SensorModel:
         if prof.follows:
             leader = self._by_node_sensor[(d.node_id, prof.follows.sensor)]
             v += prof.follows.gain * self._swing(leader, None, tick)
-        return self._clamp(prof, v)
+        v = self._clamp(prof, v)
+        if self.incident_source is not None:              # a real incident (scenario `real_jam`) pulls the TRUE value
+            hit = self.incident_source.incident_effect(d.device_id, channel, tick)    # towards its target, by `weight` (0 to 1)
+            if hit is not None:
+                weight, target = hit
+                v = self._clamp(prof, v + weight * (target - v))
+        return v
 
     def observed_value(self, d: Device, channel: str | None, tick: int) -> float:
         prof = self.cfg.profiles[d.sensor]
