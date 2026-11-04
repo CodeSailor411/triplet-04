@@ -144,7 +144,8 @@ async def prepare(url, sid, *, denied=False, delay=0):
         sensor = "water_level" if sid == "S02" else "emergency_calls"
         row = next(r for r in batch["readings"] if r["sensor"] == sensor and (sid != "S02" or r["node_id"] == target)
                    and (sid == "S02" or r["channel"] == "medical"))
-        params = {"position": 30.0} if sid == "S02" else {"unit_type": "ambulance", "destination": row["node_id"], "units": 1}
+        # Match the published Twin/Guardian S02 virtual-command contract.
+        params = {"position": 40.0} if sid == "S02" else {"unit_type": "ambulance", "destination": row["node_id"], "units": 1}
         provider = RecordedPlan(action_name, [target], params, delay)
         if sid == "S02":
             # Test topology only, not an inferred hydraulic safety promise.
