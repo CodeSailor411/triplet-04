@@ -55,11 +55,11 @@ def brain_config() -> dict[str, Any] | None:
 def brain_mcp_config() -> dict[str, Any] | None:
     """Return the optional outbound Brain MCP settings used for containment notices."""
     endpoint = os.environ.get("BRAIN_MCP_URL", "").strip()
-    key = os.environ.get("GUARDIAN_BRAIN_BEARER_KEY", "").strip()
+    key = os.environ.get("BRAIN_GUARDIAN_CALLER_KEY", "").strip()
     if not endpoint and not key:
         return None
     if not endpoint or not key:
-        raise BrainDeliveryError("BRAIN_MCP_URL and GUARDIAN_BRAIN_BEARER_KEY must be configured together")
+        raise BrainDeliveryError("BRAIN_MCP_URL and BRAIN_GUARDIAN_CALLER_KEY must be configured together")
     parsed = urlparse(endpoint)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
         raise BrainDeliveryError("BRAIN_MCP_URL must be an absolute HTTP(S) URL without embedded credentials")
@@ -76,42 +76,50 @@ def brain_mcp_config() -> dict[str, Any] | None:
 
 def _containment_tool_arguments(schema: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
     properties = schema.get("properties", {})
-    if not isinstance(properties, dict) or not properties:
-        raise BrainDeliveryError("Brain notify_containment has an unsupported input schema")
     required = schema.get("required", [])
     if not isinstance(required, list) or any(not isinstance(name, str) for name in required):
         raise BrainDeliveryError("Brain notify_containment has an unsupported input schema")
-    event_id = event.get("event_id")
-    aliases = {
-        "event": event, "payload": event, "notification": event, "containment": event,
-        "event_id": event_id, "notification_id": event_id, "id": event_id,
-        "run_id": event.get("run_id"), "tool": event.get("tool"),
-        "tool_name": event.get("tool"), "action": event.get("tool"), "operation": event.get("tool"),
-        "event_type": "containment", "type": "containment", "source": "guardian", "layer": "guardian",
-        "status": event.get("status"), "outcome": event.get("status"),
-        "device_ids": event.get("device_ids", []),
-        "device_id": (event.get("device_ids") or [None])[0],
-        "reading_ids": event.get("reading_ids", []),
-        "reading_id": (event.get("reading_ids") or [None])[0],
-        "reason": event.get("reason"), "caused_by": event.get("caused_by", []),
-        "result": event.get("twin_result"), "twin_result": event.get("twin_result"),
-        "occurred_at": event.get("occurred_at"), "timestamp": event.get("occurred_at"),
+    if (not isinstance(properties, dict) or "notice" not in properties
+            or "notice" not in required):
+        raise BrainDeliveryError("Brain notify_containment has an unsupported input schema")
+    if "notice" in required and (not isinstance(properties["notice"], dict)
+                                  or properties["notice"].get("type") not in (None, "object")):
+        raise BrainDeliveryError("Brain notify_containment notice must be an object")
+
+    state_by_tool = {
+        "isolate_sensor": "isolated",
+        "quarantine_device": "quarantined",
+        "rollback_reading": "corrected",
+        "release_device": "released",
     }
-    args = {}
-    for name, definition in properties.items():
-        if name not in aliases:
-            continue
-        value = aliases[name]
-        if name == "event" and isinstance(definition, dict) and definition.get("type") == "string":
-            value = "containment"
-        if value is not None:
-            args[name] = value
-    missing = [name for name in required if name not in args]
+    tool = event.get("tool")
+    state = state_by_tool.get(tool)
+    if event.get("status") != "applied" or state is None:
+        raise BrainDeliveryError("Brain containment notice requires a confirmed Twin effect")
+    event_id, run_id = event.get("event_id"), event.get("run_id")
+    if not isinstance(event_id, str) or not event_id or not isinstance(run_id, str) or not run_id:
+        raise BrainDeliveryError("Brain containment notice requires event_id and run_id")
+    device_ids, reading_ids = event.get("device_ids", []), event.get("reading_ids", [])
+    if (not isinstance(device_ids, list) or not all(isinstance(item, str) and item for item in device_ids)
+            or not isinstance(reading_ids, list) or not all(isinstance(item, str) and item for item in reading_ids)):
+        raise BrainDeliveryError("Brain containment notice IDs must be arrays of non-empty strings")
+
+    notice = {"event_id": event_id, "run_id": run_id, "state": state,
+              "device_ids": device_ids, "reading_ids": reading_ids}
+    notice_schema = properties["notice"]
+    if not isinstance(notice_schema, dict) or notice_schema.get("type") not in (None, "object"):
+        raise BrainDeliveryError("Brain notify_containment notice must be an object")
+    notice_properties = notice_schema.get("properties")
+    if isinstance(notice_properties, dict) and set(notice) - notice_properties.keys():
+        raise BrainDeliveryError("Brain notify_containment notice schema is missing required fields")
+    nested_required = notice_schema.get("required", [])
+    if not isinstance(nested_required, list) or any(not isinstance(name, str) for name in nested_required):
+        raise BrainDeliveryError("Brain notify_containment has an unsupported notice schema")
+    missing = set(nested_required) - notice.keys()
     if missing:
-        raise BrainDeliveryError("Brain notify_containment requires unsupported fields: " + ", ".join(missing))
-    if not args:
-        raise BrainDeliveryError("Brain notify_containment schema has no supported arguments")
-    return args
+        raise BrainDeliveryError("Brain notify_containment notice requires unsupported fields: "
+                                 + ", ".join(sorted(missing)))
+    return {"notice": notice}
 
 
 async def _notify_containment_mcp(config: dict[str, Any], event: dict[str, Any]) -> Any:

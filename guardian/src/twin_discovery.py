@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any
 
 from guardian_config import TWIN_TOOLS
@@ -11,6 +12,24 @@ from twin_adapter import TwinConnectionError, twin_config, twin_mcp_session
 
 class TwinDiscoveryError(RuntimeError):
     pass
+
+
+class TwinToolRejected(TwinDiscoveryError):
+    def __init__(self, tool: str, message: str):
+        self.tool = tool
+        self.message = message
+        match = re.search(r"\b([A-Z][A-Z0-9_]{1,63}):", message)
+        self.code = match.group(1) if match else None
+        super().__init__(f"Twin tool rejected {tool}: {message}")
+
+
+def _tool_error_message(response: Any) -> str:
+    content = getattr(response, "content", None) or []
+    for block in content:
+        text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()[:240]
+    return "Twin MCP tool returned an error"
 
 
 def _tool_result_value(response: Any) -> tuple[bool, Any]:
@@ -108,18 +127,21 @@ async def call_twin_tool(name: str, arguments: dict[str, Any]) -> Any:
         cfg = twin_config()
     except TwinConnectionError as exc:
         raise TwinDiscoveryError("Twin connection settings unavailable") from exc
-    try:
-        async with twin_mcp_session(base_url=cfg["base_url"], bearer_key=cfg["bearer_key"],
-                                    timeout=cfg["timeout"]) as session:
-            response = await asyncio.wait_for(session.call_tool(name, arguments), timeout=cfg["timeout"])
-            is_error, value = _tool_result_value(response)
-            if is_error:
-                raise TwinDiscoveryError(f"Twin tool returned an error: {name}")
-            return value
-    except TwinDiscoveryError:
-        raise
-    except Exception as exc:
-        raise TwinDiscoveryError(f"Twin tool call failed: {name} ({type(exc).__name__})") from exc
+    for attempt in range(cfg["max_retries"] + 1):
+        try:
+            async with twin_mcp_session(base_url=cfg["base_url"], bearer_key=cfg["bearer_key"],
+                                        timeout=cfg["timeout"]) as session:
+                response = await asyncio.wait_for(session.call_tool(name, arguments), timeout=cfg["timeout"])
+                is_error, value = _tool_result_value(response)
+                if is_error:
+                    raise TwinToolRejected(name, _tool_error_message(response))
+                return value
+        except TwinDiscoveryError:
+            raise
+        except Exception as exc:
+            if attempt >= cfg["max_retries"]:
+                raise TwinDiscoveryError(f"Twin tool call failed: {name} ({type(exc).__name__})") from exc
+            await asyncio.sleep(min(cfg["retry_base_seconds"] * (2 ** attempt), 8.0))
 
 
 def call_twin_tool_sync(name: str, arguments: dict[str, Any]) -> Any:

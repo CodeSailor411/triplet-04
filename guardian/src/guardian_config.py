@@ -46,6 +46,7 @@ class GuardianSettings(BaseSettings):
     brain_mcp_bearer_key: str = Field(default="", alias="GUARDIAN_BRAIN_MCP_BEARER_KEY")
     api_bearer_key: str = Field(default="", alias="GUARDIAN_API_BEARER_KEY")
     brain_webhook_bearer_key: str = Field(default="", alias="GUARDIAN_BRAIN_BEARER_KEY")
+    require_reading_signatures: bool = Field(default=False, alias="GUARDIAN_REQUIRE_READING_SIGNATURES")
     trusted_min: float = Field(default=.7, ge=0, le=1, alias="GUARDIAN_TRUSTED_MIN")
     degraded_min: float = Field(default=.3, ge=0, le=1, alias="GUARDIAN_DEGRADED_MIN")
     r1_min: float = Field(default=.5, ge=0, le=1, alias="GUARDIAN_R1_MIN_SCORE")

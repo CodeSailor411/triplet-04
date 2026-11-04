@@ -138,7 +138,7 @@ class GuardianIntegration:
                 layer_a["status"] = "failed"
                 layer_a["replay"] = "failed"
                 layer_a["reason_codes"].append(reject_reason)
-            elif payload.get("require_signature"):
+            elif payload.get("require_signature") or payload.get("signature"):
                 if not payload.get("signature") or not verify_signature(
                     sid,
                     payload["sensor_type"],
@@ -153,8 +153,6 @@ class GuardianIntegration:
                     layer_a["reason_codes"].append(reject_reason)
                 else:
                     layer_a["signature"] = "verified"
-            elif payload.get("signature"):
-                layer_a["signature"] = "present_not_required"
 
             self._event("layer_a", reading_id, dict(layer_a))
             if reject_reason:

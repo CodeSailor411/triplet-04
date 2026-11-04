@@ -28,6 +28,7 @@ class CannedPeer:
 def _install_peer(monkeypatch, peer):
     monkeypatch.setattr(twin_discovery, "twin_config", lambda: {
         "base_url": "http://twin.invalid", "bearer_key": "test-only", "timeout": 3,
+        "max_retries": 1, "retry_base_seconds": 0,
     })
 
     @asynccontextmanager
@@ -99,3 +100,22 @@ def test_real_twin_discovery_reports_sdk_error_replies(start_real_twin_server, m
         _install_real_peer(monkeypatch, peer)
         with pytest.raises(twin_discovery.TwinDiscoveryError, match="Twin discovery call failed: get_clock"):
             twin_discovery.discover_twin_sync()
+
+
+def test_repeat_safe_twin_rollback_retries_transient_transport_failure(monkeypatch):
+    import asyncio
+
+    peer = CannedPeer([])
+    attempts = []
+
+    async def call_tool(name, arguments):
+        attempts.append((name, arguments))
+        if len(attempts) == 1:
+            raise ConnectionError("temporary disconnect")
+        return SimpleNamespace(isError=False, structuredContent={"status": "applied"})
+
+    peer.call_tool = call_tool
+    _install_peer(monkeypatch, peer)
+    result = twin_discovery.call_twin_tool_sync("rollback_reading", {"reading_ids": ["r-1"]})
+    assert result == {"status": "applied"}
+    assert attempts == [("rollback_reading", {"reading_ids": ["r-1"]})] * 2

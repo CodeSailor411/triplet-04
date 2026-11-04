@@ -26,7 +26,7 @@ class OriginalReading(BaseModel):
 class LayerAResult(BaseModel):
     status: Literal["passed", "failed"]
     replay: Literal["passed", "failed"]
-    signature: Literal["not_required", "present_not_required", "verified", "failed"]
+    signature: Literal["not_required", "verified", "failed"]
     reason_codes: list[str]
 
 

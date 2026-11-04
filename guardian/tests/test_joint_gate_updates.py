@@ -17,6 +17,7 @@ from brain_client import BrainDeliveryError, _containment_tool_arguments  # noqa
 from integration_service import service  # noqa: E402
 from token_service import ActionTokenService  # noqa: E402
 from twin_adapter import normalize_twin_reading  # noqa: E402
+from twin_discovery import TwinToolRejected  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -32,7 +33,7 @@ def reset_guardian(monkeypatch, tmp_path):
     monkeypatch.setenv("DEMO_MODE", "false")
     monkeypatch.setenv("GUARDIAN_API_BEARER_KEY", "joint-gate-key")
     for name in ("TWIN_BASE_URL", "GUARDIAN_TWIN_BEARER_KEY", "BRAIN_MCP_URL",
-                 "GUARDIAN_BRAIN_BEARER_KEY", "BRAIN_VERDICT_URL"):
+                 "BRAIN_GUARDIAN_CALLER_KEY", "GUARDIAN_BRAIN_BEARER_KEY", "BRAIN_VERDICT_URL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(unified_api, "_audit_log", JsonlAuditLog(tmp_path))
     monkeypatch.setattr(unified_api, "_token_service", ActionTokenService(
@@ -203,6 +204,55 @@ def test_s05_binds_medical_and_current_ambulance_capacity_readings(client, monke
     assert claims["reading_ids"] == ["medical-incident-1", "ambulance-capacity-1"]
 
 
+def test_s05_accepts_one_tick_feed_race_for_same_trusted_ambulance_reading(client, monkeypatch):
+    carrier = "EMG-01"
+    _install_manifest(monkeypatch, _manifest([{
+        "action": "dispatch", "domain": "Emergency", "risk": "R2",
+        "preview_required": False, "target_nodes": [carrier],
+    }]))
+    monkeypatch.setattr(unified_api, "call_twin_tool_sync", lambda *_: {
+        "run_id": "gate-run", "tick": 2, "readings": [{
+            "reading_id": "new-capacity-reading", "tick": 2, "node_id": carrier,
+            "sensor": "units_free", "channel": "ambulance", "value": 5, "unit": "units",
+        }],
+    })
+    readings = _dispatch_evidence()
+    readings[1]["tick"] = 1
+    _ingest(client, readings)
+    _trusted("medical-incident-1", "ambulance-capacity-1")
+    response = _authorize(client, reading_id="medical-incident-1",
+        reading_ids=["medical-incident-1", "ambulance-capacity-1"], action="dispatch",
+        parameters={"unit_type": "ambulance", "destination": "CALL-01", "units": 1},
+        targets=[carrier], risk="R2", domain="Emergency")
+    assert response.status_code == 200, response.text
+    claims = unified_api._token_service.verify(response.json()["token"], action="dispatch",
+        parameters={"unit_type": "ambulance", "destination": "CALL-01", "units": 1},
+        targets=[carrier], idempotency_key="gate-key", consume=False)
+    assert claims["reading_ids"] == ["medical-incident-1", "ambulance-capacity-1"]
+
+
+def test_s05_rejects_replayed_current_capacity_reading(client, monkeypatch):
+    carrier = "EMG-01"
+    _install_manifest(monkeypatch, _manifest([{
+        "action": "dispatch", "domain": "Emergency", "risk": "R2",
+        "preview_required": False, "target_nodes": [carrier],
+    }]))
+    monkeypatch.setattr(unified_api, "call_twin_tool_sync", lambda *_: {
+        "run_id": "gate-run", "tick": 4, "readings": [{
+            "reading_id": "ambulance-capacity-1", "tick": 1, "node_id": carrier,
+            "sensor": "units_free", "channel": "ambulance", "value": 5, "unit": "units",
+        }],
+    })
+    _ingest(client, _dispatch_evidence())
+    _trusted("medical-incident-1", "ambulance-capacity-1")
+    response = _authorize(client, reading_id="medical-incident-1",
+        reading_ids=["medical-incident-1", "ambulance-capacity-1"], action="dispatch",
+        parameters={"unit_type": "ambulance", "destination": "CALL-01", "units": 1},
+        targets=[carrier], risk="R2", domain="Emergency")
+    assert response.status_code == 409
+    assert response.json()["detail"] == "ambulance_capacity_evidence_not_current"
+
+
 def test_s05_rejects_stale_capacity_reading_and_multiple_units(client, monkeypatch):
     carrier = "EMG-01"
     _install_manifest(monkeypatch, _manifest([{
@@ -265,6 +315,40 @@ def test_rollback_calls_twin_then_brain_and_invalidates_trust(client, monkeypatc
     assert denied.json()["detail"] == "reading_invalidated"
 
 
+def test_rollback_maps_twin_reading_rejection_to_conflict_not_service_unavailable(client, monkeypatch):
+    calls = []
+
+    def twin(tool, arguments):
+        calls.append((tool, arguments))
+        raise TwinToolRejected(tool, "UNKNOWN_READING: reading id is not published")
+
+    monkeypatch.setattr(unified_api, "call_twin_tool_sync", twin)
+    monkeypatch.setattr(unified_api, "notify_containment_mcp_sync", lambda event: calls.append(event))
+    response = client.post("/rollback_reading", json={"reading_ids": ["unknown-reading"]},
+        headers={"Authorization": "Bearer joint-gate-key"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "UNKNOWN_READING"
+    assert len(calls) == 1
+
+
+def test_containment_validates_twin_reason_and_cause_limits_before_call(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(unified_api, "call_twin_tool_sync", lambda *args: calls.append(args))
+    too_many_causes = client.post("/rollback_reading", json={
+        "reading_ids": ["reading-1"], "caused_by": [f"event-{index}" for index in range(11)],
+    }, headers={"Authorization": "Bearer joint-gate-key"})
+    bad_cause = client.post("/isolate_sensor/WAT-01.water_level", json={
+        "caused_by": ["invalid cause id"],
+    }, headers={"Authorization": "Bearer joint-gate-key"})
+    too_long_reason = client.post("/quarantine_device/WAT-01.water_level", json={
+        "reason": "r" * 201,
+    }, headers={"Authorization": "Bearer joint-gate-key"})
+    assert too_many_causes.status_code == 422
+    assert bad_cause.status_code == 422
+    assert too_long_reason.status_code == 422
+    assert calls == []
+
+
 def test_rejected_twin_containment_does_not_change_local_state_or_notify_brain(client, monkeypatch):
     calls = []
     monkeypatch.setattr(unified_api, "call_twin_tool_sync", lambda tool, args: (
@@ -324,16 +408,36 @@ def test_action_token_signature_is_required_and_verified(client, monkeypatch):
     assert accepted.json()["verified"] is True
 
 
-def test_brain_notify_schema_mapping_requires_a_supported_payload_field():
+def test_brain_notify_schema_mapping_uses_confirmed_notice_contract():
     event = {"event_id": "event-1", "run_id": "gate-run", "tool": "rollback_reading",
         "status": "applied", "reading_ids": ["reading-1"], "device_ids": [],
         "caused_by": ["flag-1"], "twin_result": {"status": "applied"}}
     args = _containment_tool_arguments({"properties": {
-        "event_id": {"type": "string"}, "operation": {"type": "string"},
-        "reading_ids": {"type": "array"}, "result": {"type": "object"},
-    }, "required": ["event_id", "operation", "reading_ids", "result"]}, event)
-    assert args == {"event_id": "event-1", "operation": "rollback_reading",
-        "reading_ids": ["reading-1"], "result": {"status": "applied"}}
-    with pytest.raises(BrainDeliveryError, match="unsupported fields"):
+        "notice": {"type": "object", "properties": {
+            "event_id": {"type": "string"}, "run_id": {"type": "string"},
+            "state": {"type": "string"}, "device_ids": {"type": "array"},
+            "reading_ids": {"type": "array"},
+        }, "required": ["event_id", "run_id", "state", "device_ids", "reading_ids"]},
+    }, "required": ["notice"]}, event)
+    assert args == {"notice": {"event_id": "event-1", "run_id": "gate-run", "state": "corrected",
+        "device_ids": [], "reading_ids": ["reading-1"]}}
+    with pytest.raises(BrainDeliveryError, match="unsupported input schema"):
         _containment_tool_arguments({"properties": {"unmapped": {"type": "string"}},
             "required": ["unmapped"]}, event)
+
+
+@pytest.mark.parametrize(("tool", "state"), [
+    ("isolate_sensor", "isolated"), ("quarantine_device", "quarantined"),
+    ("rollback_reading", "corrected"), ("release_device", "released"),
+])
+def test_brain_notice_maps_only_confirmed_containment_states(tool, state):
+    schema = {"properties": {"notice": {"type": "object"}}, "required": ["notice"]}
+    event = {"event_id": "stable-id", "run_id": "twin-run", "tool": tool,
+        "status": "applied", "device_ids": ["device-1"], "reading_ids": ["reading-1"]}
+    assert _containment_tool_arguments(schema, event) == {"notice": {
+        "event_id": "stable-id", "run_id": "twin-run", "state": state,
+        "device_ids": ["device-1"], "reading_ids": ["reading-1"],
+    }}
+    event["status"] = "rejected"
+    with pytest.raises(BrainDeliveryError, match="confirmed Twin effect"):
+        _containment_tool_arguments(schema, event)

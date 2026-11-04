@@ -1,0 +1,24 @@
+Guardian joint-gate follow-up — 2026-11-04
+
+Changes prepared
+- Brain containment calls now send only the confirmed notice object and map
+  Twin tools to Brain states: isolated, quarantined, corrected, or released.
+- Brain MCP uses Authorization: Bearer <BRAIN_GUARDIAN_CALLER_KEY>.
+- S05 accepts a trusted ambulance capacity reading one Twin tick behind only
+  when the current value is unchanged; the evidence reading ID stays token-bound.
+- Twin MCP containment calls retry transient transport failures using the
+  repeat-safe contract. Rejections and unavailable-call details are audited.
+- Per-reading signature requirements are server-controlled; callers cannot
+  switch them off. Any provided signature is validated. Ed25519 g1 action-token
+  verification remains mandatory.
+
+Local checks
+- Python compileall for guardian/src and guardian/tests: passed.
+- Direct Brain notice mapping and caller-key configuration probe: passed.
+- pytest regression suite: not run; pytest, FastAPI, MCP, and Pydantic are not
+  installed in the available Python environment.
+
+Live joint gate
+- Not run. TWIN_BASE_URL, GUARDIAN_TWIN_BEARER_KEY, BRAIN_MCP_URL, and
+  BRAIN_GUARDIAN_CALLER_KEY are not configured in this environment.
+- No live Twin or Brain behavior is claimed by these local checks.

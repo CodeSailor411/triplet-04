@@ -12,7 +12,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from brain_client import BrainDeliveryError, VerdictOutbox, post_verdict, verdict_payload  # noqa: E402
+from brain_client import (BrainDeliveryError, VerdictOutbox, brain_mcp_config,
+                          post_verdict, verdict_payload)  # noqa: E402
 
 
 def _evaluation():
@@ -33,6 +34,15 @@ def _server(handler_type):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread
+
+
+def test_containment_mcp_uses_brains_configured_guardian_caller_key(monkeypatch):
+    monkeypatch.setenv("BRAIN_MCP_URL", "https://brain.example/mcp")
+    monkeypatch.setenv("BRAIN_GUARDIAN_CALLER_KEY", "shared-caller-key")
+    monkeypatch.setenv("GUARDIAN_BRAIN_BEARER_KEY", "different-verdict-webhook-key")
+    config = brain_mcp_config()
+    assert config["url"] == "https://brain.example/mcp"
+    assert config["bearer_key"] == "shared-caller-key"
 
 
 def test_verdict_payload_is_stable_and_excludes_raw_reading_data():

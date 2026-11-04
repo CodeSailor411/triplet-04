@@ -15,6 +15,7 @@ Run with:
   uvicorn guardian.main:app --reload --port 8001
 """
 
+import os
 import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -45,7 +46,6 @@ class IngestRequest(BaseModel):
     sequence_number: int
     signature: Optional[str] = None
     incident_type: Optional[str] = None  # set if this reading claims to signal an incident
-    require_signature: bool = False      # set True once your Twin actually signs
 
 
 class IncidentReport(BaseModel):
@@ -73,7 +73,10 @@ def ingest(req: IngestRequest):
             detail="replay_or_out_of_order_sequence_number",
         )
 
-    if req.require_signature:
+    require_signature = os.environ.get("GUARDIAN_REQUIRE_READING_SIGNATURES", "false").casefold() in {
+        "1", "true", "yes",
+    }
+    if require_signature or req.signature:
         if not req.signature or not verify_signature(
             req.sensor_id, req.sensor_type, req.value,
             req.timestamp, req.sequence_number, req.signature,

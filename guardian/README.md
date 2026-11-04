@@ -34,9 +34,10 @@ Open <http://127.0.0.1:5000>. Demo mode is for local use and bypasses authentica
   applies its 60-tick, one-commit preview rule when Brain commits.
 - S05 dispatch authorization requires Emergency/R2, the discovered dispatch
   carrier, one ambulance, and a medical incident node as destination. The token
-  binds both the incident reading ID and the current ambulance `units_free`
-  reading ID from that carrier. Twin's current capacity is checked again before
-  Guardian issues the token.
+  binds both the incident reading ID and the trusted ambulance `units_free`
+  reading ID from that carrier. Guardian checks Twin's latest capacity before
+  issuing the token, allowing a one-tick SSE race only when the reported unit
+  count is unchanged.
 - After a confirmed Twin containment effect, Guardian updates local trust state
   and calls Brain's `notify_containment` MCP tool. Twin containment calls use
   `isolate_sensor`, `quarantine_device`, `rollback_reading`, or `release_device`
@@ -48,7 +49,7 @@ Open <http://127.0.0.1:5000>. Demo mode is for local use and bypasses authentica
 
 ## Partner verification status
 
-Guardian uses the `twin-mock-3` tool names and arguments from the supplied interface card. Local integration tests mock partner effects; they do not establish that a live Twin accepts the configured credentials or that a live Brain exposes a compatible `notify_containment` schema. Configure `BRAIN_MCP_URL` and `GUARDIAN_BRAIN_BEARER_KEY` for Brain containment notices. A confirmed Twin effect remains applied if Brain notification fails; Guardian returns and audits that notification status for retry/operations handling. See [INTERFACE.md](INTERFACE.md) for the message contracts and trust values.
+Guardian uses the `twin-mock-3` tool names and arguments from the supplied interface card. Local integration tests mock partner effects; they do not establish that a live Twin accepts the configured credentials or that a live Brain exposes a compatible `notify_containment` schema. Configure `BRAIN_MCP_URL` and `BRAIN_GUARDIAN_CALLER_KEY` for Brain containment notices. A confirmed Twin effect remains applied if Brain notification fails; Guardian returns and audits that notification status for retry/operations handling. See [INTERFACE.md](INTERFACE.md) for the message contracts and trust values.
 
 ## Trust policy
 
@@ -69,7 +70,9 @@ A synthetic Twin-shaped water sequence ending at 180 cm scored 0.75 on its focus
 | POST /mcp | Brain-facing capability, advisory, verdict, and authorization tools |
 | GET /api/capabilities | Capability, trust policy, action, and public-key metadata |
 
-Protected routes require their corresponding bearer key when demo mode is off. Configure Guardian API, Brain MCP/webhook, and Twin credentials separately. `BRAIN_MCP_URL` plus `GUARDIAN_BRAIN_BEARER_KEY` enable the outbound `notify_containment` call.
+Protected routes require their corresponding bearer key when demo mode is off. Configure Guardian API, Brain MCP/webhook, and Twin credentials separately. `BRAIN_MCP_URL` plus `BRAIN_GUARDIAN_CALLER_KEY` enable outbound `notify_containment`; that key must equal Brain's configured `BRAIN_GUARDIAN_CALLER_KEY`. Brain receives `{"notice":{"event_id":"...","run_id":"...","state":"...","device_ids":[],"reading_ids":[]}}` only after Twin confirms the effect.
+
+Reading signature requirements are server controlled with `GUARDIAN_REQUIRE_READING_SIGNATURES`; callers cannot set a per-reading `require_signature` switch. A supplied invalid signature is rejected even when signatures are not required. The Twin feed in `twin-mock-3` uses Bearer authentication and does not sign readings. Guardian's Ed25519 `g1` action-token verification is always mandatory.
 
 ## Verify
 

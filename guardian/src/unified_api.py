@@ -37,7 +37,7 @@ from contract import (MCP_TOOL_AUTHORIZE_ACTION, MCP_TOOL_GET_TRUST_VERDICT,
                       MCP_TOOL_VERIFY_ACTION_TOKEN, TRUST_STATE_MAP)
 from guardian_config import GuardianSettings, MIN_HISTORY_FOR_STATISTICAL_DRIFT
 from twin_discovery import (TwinDiscoveryError, call_twin_tool_sync, discover_twin_sync,
-                            read_twin_clock_sync)
+                            read_twin_clock_sync, TwinToolRejected)
 
 
 SensorType = Literal["traffic_cam", "water_level", "power_load", "air_quality", "emergency_call", "units_free"]
@@ -50,6 +50,12 @@ ALLOWED_UNITS = {
     "emergency_call": {"calls_per_min", "calls/min"},
     "units_free": {"units"},
 }
+
+
+def _validate_twin_event_refs(values: list[str]) -> list[str]:
+    if len(values) > 10 or any(not re.fullmatch(r"[A-Za-z0-9._:-]{1,80}", value) for value in values):
+        raise ValueError("caused_by must contain at most 10 Twin event IDs (1-80 letters, digits, . _ : -)")
+    return values
 
 
 class IngestRequest(BaseModel):
@@ -66,7 +72,6 @@ class IngestRequest(BaseModel):
     node_id: str | None = Field(default=None, min_length=1, max_length=128)
     signature: str | None = Field(default=None, max_length=256)
     incident_type: IncidentType | None = None
-    require_signature: StrictBool = False
     reading_id: str | None = Field(default=None, min_length=1, max_length=128)
 
     @model_validator(mode="after")
@@ -98,10 +103,11 @@ class RollbackRequest(BaseModel):
     sensor_id: str | None = Field(default=None, min_length=1, max_length=128)
     reading_id: str | None = Field(default=None, min_length=1, max_length=128)
     reading_ids: list[str] = Field(default_factory=list, max_length=50)
-    caused_by: list[str] = Field(default_factory=list, max_length=100)
+    caused_by: list[str] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode="after")
     def validate_reading_ids(self):
+        _validate_twin_event_refs(self.caused_by)
         ids = self.reading_ids or ([self.reading_id] if self.reading_id else [])
         if not ids or any(not item for item in ids) or len(set(ids)) != len(ids):
             raise ValueError("provide unique reading_id or reading_ids")
@@ -112,8 +118,13 @@ class RollbackRequest(BaseModel):
 
 class ContainmentMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    reason: str | None = Field(default=None, max_length=500)
-    caused_by: list[str] = Field(default_factory=list, max_length=100)
+    reason: str | None = Field(default=None, max_length=200)
+    caused_by: list[str] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_twin_event_refs(self):
+        _validate_twin_event_refs(self.caused_by)
+        return self
 
 
 class SimulationRequest(BaseModel):
@@ -426,7 +437,9 @@ def simulate(scenario_id: str, request: SimulationRequest | None = Body(default=
 @app.post("/ingest")
 def ingest(request: IngestRequest, authorization: str | None = Header(default=None)):
     _require_integration_key(authorization)
-    result = service.process_reading(request.model_dump())
+    payload = request.model_dump()
+    payload["require_signature"] = GuardianSettings().require_reading_signatures
+    result = service.process_reading(payload)
     if result["layer_a"]["status"] == "failed":
         reason = result.get("rejection_reason", "security_rejection")
         status_code = 401 if reason == "invalid_signature" else 409
@@ -780,11 +793,30 @@ def _validate_dispatch_evidence(request: ActionAuthorizationRequest, reading_ids
         raise HTTPException(status_code=503, detail="twin_current_capacity_unavailable")
     current_value = current_ambulance.get("value")
     current_id = current_ambulance.get("reading_id")
-    matching_evidence = [evaluation for evaluation in capacity
+    if not isinstance(current_id, str) or not current_id:
+        raise HTTPException(status_code=503, detail="twin_current_capacity_unavailable")
+    current_tick = current.get("tick")
+    reported_tick = current_ambulance.get("tick")
+    if current_tick is not None and (isinstance(current_tick, bool) or not isinstance(current_tick, int)):
+        raise HTTPException(status_code=503, detail="twin_current_capacity_unavailable")
+    if current_tick is not None and (isinstance(reported_tick, bool) or not isinstance(reported_tick, int)):
+        raise HTTPException(status_code=503, detail="twin_current_capacity_unavailable")
+    if (isinstance(current_tick, int) and not isinstance(current_tick, bool)
+            and isinstance(reported_tick, int) and not isinstance(reported_tick, bool)
+            and current_tick - reported_tick not in {0, 1}):
+        raise HTTPException(status_code=409, detail="ambulance_capacity_evidence_not_current")
+    matching_evidence = []
+    for evaluation in capacity:
+        original = evaluation.get("original_reading") or {}
+        evidence_tick = original.get("sequence_number")
         if (evaluation.get("reading_id") == current_id
-            and isinstance((evaluation.get("original_reading") or {}).get("value"), (int, float))
-            and not isinstance((evaluation.get("original_reading") or {}).get("value"), bool)
-            and (evaluation.get("original_reading") or {}).get("value") == current_value)]
+                or (isinstance(current_tick, int) and not isinstance(current_tick, bool)
+                    and isinstance(evidence_tick, int) and not isinstance(evidence_tick, bool)
+                    and current_tick - evidence_tick == 1)):
+            if (isinstance(original.get("value"), (int, float))
+                    and not isinstance(original.get("value"), bool)
+                    and original.get("value") == current_value):
+                matching_evidence.append(evaluation)
     if not matching_evidence:
         raise HTTPException(status_code=409, detail="ambulance_capacity_evidence_not_current")
     if (isinstance(current_value, bool) or not isinstance(current_value, (int, float))
@@ -1059,7 +1091,24 @@ def _apply_twin_containment(tool: str, *, device_ids: list[str], reading_ids: li
         args = {"reading_ids": reading_ids or [], "caused_by": caused_by or []}
     try:
         twin_result = call_twin_tool_sync(tool, args)
+    except TwinToolRejected as exc:
+        _audit_log.record(run_id=_latest_twin_run_id or "untracked", event_type="containment_effect",
+            reading_id=(reading_ids or [None])[0], trust_score=None, verdict=None, action=tool,
+            decision="rejected", reason=exc.code or "twin_tool_rejected", caused_by=(caused_by or [None])[0],
+            data={"device_ids": device_ids, "reading_ids": list(reading_ids or []),
+                  "error": exc.message})
+        if exc.code in {"CAP_EXCEEDED", "INVALID_CAUSED_BY", "INVALID_DEVICE_IDS",
+                        "INVALID_REASON", "INVALID_READING_IDS", "NO_TRUSTED_VALUE",
+                        "READING_NOT_PUBLISHED", "UNKNOWN_DEVICE", "UNKNOWN_READING"}:
+            raise HTTPException(status_code=409,
+                detail={"code": exc.code, "message": exc.message}) from exc
+        raise HTTPException(status_code=503, detail="twin_containment_unavailable") from exc
     except TwinDiscoveryError as exc:
+        _audit_log.record(run_id=_latest_twin_run_id or "untracked", event_type="containment_effect",
+            reading_id=(reading_ids or [None])[0], trust_score=None, verdict=None, action=tool,
+            decision="failed", reason="twin_containment_unavailable", caused_by=(caused_by or [None])[0],
+            data={"device_ids": device_ids, "reading_ids": list(reading_ids or []),
+                  "error": str(exc)[:240]})
         raise HTTPException(status_code=503, detail="twin_containment_unavailable") from exc
     if not isinstance(twin_result, dict):
         raise HTTPException(status_code=502, detail="twin_containment_unconfirmed")
@@ -1067,7 +1116,8 @@ def _apply_twin_containment(tool: str, *, device_ids: list[str], reading_ids: li
     if tool in {"isolate_sensor", "quarantine_device", "rollback_reading"}:
         if twin_result.get("status") == "rejected":
             raise HTTPException(status_code=409, detail={"code": twin_result.get("code"), "twin": twin_result})
-        confirmed = twin_result.get("status") == "applied"
+        confirmed = (twin_result.get("status") == "applied"
+                     and isinstance(twin_result.get("run_id"), str) and bool(twin_result.get("run_id")))
     else:
         confirmed = (isinstance(twin_result.get("released"), list)
                      and isinstance(twin_result.get("not_contained"), list)

@@ -65,9 +65,12 @@ You should see:
 ## What's already working
 
 - **Layer A (protocol)**: sequence-number replay/out-of-order rejection;
-  optional HMAC signature verification (`security.py`) — turn it on by
-  setting `require_signature: true` in your ingest payload once your Twin
-  team actually signs readings.
+  optional HMAC signature verification (`security.py`) controlled by the
+  server-side `GUARDIAN_REQUIRE_READING_SIGNATURES` setting. Callers cannot
+  choose signature policy in an ingest payload, and supplied signatures are
+  always verified. The `twin-mock-3` SSE feed is Bearer-authenticated and does
+  not carry signed readings; Guardian's Ed25519 `g1` action-token verification
+  remains mandatory.
 - **Layer B (physical plausibility)**: hardcoded bounds + rate-of-change
   limits per sensor type, plus a z-score outlier check against recent
   history.
@@ -97,9 +100,9 @@ You should see:
    commands with your Twin and City Brain teammates. The `IngestRequest`
    model in `main.py` is your current proposal — get it locked in writing
    before anyone builds further on top of it.
-2. **Turn on signature verification** once the Twin team can sign
-   readings — this is the single highest-value security addition for the
-   least code (see `security.py`).
+2. **Coordinate reading signatures** with Twin before enabling
+   `GUARDIAN_REQUIRE_READING_SIGNATURES`; the current Twin tag authenticates
+   SSE with Bearer and does not sign individual readings.
 3. **Get visibility into City Brain's actuator dispatch calls** so you can
    implement Layer D (command/effect verification) — e.g. Twin logs every
    actuator command to a shared endpoint Guardian can also poll.

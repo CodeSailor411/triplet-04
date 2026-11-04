@@ -313,13 +313,23 @@ def test_replay_rejection_skips_inference_and_city_brain_blocks(client):
 
 def test_required_signature_failure_skips_inference(client):
     response = client.post("/ingest", json=request_body(
-        require_signature=True, signature="f" * 64,
+        signature="f" * 64,
     ))
     assert response.status_code == 401
     evaluation = response.json()["evaluation"]
     assert evaluation["layer_a"]["signature"] == "failed"
     assert evaluation["ml"]["status"] == "skipped_security_gate"
     assert evaluation["guardian"] is None
+
+
+def test_caller_cannot_disable_server_signature_policy(client, monkeypatch):
+    monkeypatch.setenv("GUARDIAN_REQUIRE_READING_SIGNATURES", "true")
+    response = client.post("/ingest", json=request_body())
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid_signature"
+
+    attempted_override = client.post("/ingest", json=request_body(require_signature=False))
+    assert attempted_override.status_code == 422
 
 
 def test_emergency_correlation_runs_through_real_scoring(client):
