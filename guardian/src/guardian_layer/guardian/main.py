@@ -5,8 +5,8 @@ Exposes:
   POST /ingest                     -- Twin pushes a new sensor reading here
   GET  /trust_verdict/{sid}/{rid}  -- City Brain calls this before acting
   POST /report_incident            -- log an incident for audit
-  POST /quarantine_device/{id}     -- LOCAL SIMULATION ONLY (Guardian memory)
-  POST /isolate_sensor/{id}        -- LOCAL SIMULATION ONLY (Guardian memory)
+  POST /quarantine_device/{id}     -- Twin-confirmed containment + local mirror
+  POST /isolate_sensor/{id}        -- Twin-confirmed containment + local mirror
   POST /rollback_reading           -- containment action
   GET  /reputation/{sensor_id}     -- debug/inspection endpoint
   GET  /health                     -- liveness check
@@ -16,8 +16,10 @@ Run with:
 """
 
 import os
+import sys
 import time
-from fastapi import FastAPI, HTTPException
+from pathlib import Path
+from fastapi import Body, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
@@ -26,6 +28,13 @@ from .buffer import SensorBuffer
 from .reputation import ReputationStore
 from .scoring import compute_trust_score
 from .security import verify_signature
+
+# The legacy standalone app still serves its own scoring demo, but containment
+# must use the same Twin-backed integration as the main Guardian service.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+import unified_api as _unified_api  # noqa: E402
 
 app = FastAPI(title="Guardian Layer", version="0.1.0")
 
@@ -131,20 +140,26 @@ def report_incident(report: IncidentReport):
     return {"status": "recorded", "device_id": report.device_id}
 
 
-@app.post("/quarantine_device/{device_id}", summary="LOCAL SIMULATION ONLY: quarantine device in Guardian state",
-          description="Updates only this process's in-memory reputation state. Does not call Twin or quarantine hardware.")
-def quarantine_device(device_id: str):
-    """LOCAL SIMULATION only; this does not perform real containment."""
+@app.post("/quarantine_device/{device_id}", summary="Quarantine a device through Twin")
+def quarantine_device(device_id: str,
+                      request: _unified_api.ContainmentMetadata | None = Body(default=None),
+                      authorization: str | None = Header(default=None)):
+    """Call Twin first; mirror the confirmed effect in this legacy process."""
+    metadata = request or _unified_api.ContainmentMetadata()
+    result = _unified_api.quarantine_device(device_id, metadata, authorization)
     reputation.set_quarantined(device_id, True)
-    return {"status": "quarantined", "device_id": device_id, "timestamp": time.time()}
+    return result
 
 
-@app.post("/isolate_sensor/{sensor_id}", summary="LOCAL SIMULATION ONLY: isolate sensor in Guardian state",
-          description="Updates only this process's in-memory reputation state. Does not call Twin or isolate hardware.")
-def isolate_sensor(sensor_id: str):
-    """LOCAL SIMULATION only; this does not perform real containment."""
+@app.post("/isolate_sensor/{sensor_id}", summary="Isolate a sensor through Twin")
+def isolate_sensor(sensor_id: str,
+                   request: _unified_api.ContainmentMetadata | None = Body(default=None),
+                   authorization: str | None = Header(default=None)):
+    """Call Twin first; mirror the confirmed effect in this legacy process."""
+    metadata = request or _unified_api.ContainmentMetadata()
+    result = _unified_api.isolate_sensor(sensor_id, metadata, authorization)
     reputation.set_isolated(sensor_id, True)
-    return {"status": "isolated", "sensor_id": sensor_id, "timestamp": time.time()}
+    return result
 
 
 @app.post("/rollback_reading")

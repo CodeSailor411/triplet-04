@@ -8,6 +8,8 @@ Changes prepared
   when the current value is unchanged; the evidence reading ID stays token-bound.
 - Twin MCP containment calls retry transient transport failures using the
   repeat-safe contract. Rejections and unavailable-call details are audited.
+- The legacy standalone `guardian.main` isolate/quarantine routes now delegate
+  to the same Twin-backed handler; their local reputation state is only a mirror.
 - Per-reading signature requirements are server-controlled; callers cannot
   switch them off. Any provided signature is validated. Ed25519 g1 action-token
   verification remains mandatory.

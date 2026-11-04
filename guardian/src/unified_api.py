@@ -1125,6 +1125,8 @@ def _apply_twin_containment(tool: str, *, device_ids: list[str], reading_ids: li
     if not confirmed:
         raise HTTPException(status_code=502, detail="twin_containment_unconfirmed")
 
+    # Twin's confirmed result is authoritative; this local state only mirrors
+    # the effect so Guardian's own scoring can see the containment.
     if tool == "isolate_sensor":
         for device_id in device_ids:
             service.reputation.set_isolated(device_id, True)

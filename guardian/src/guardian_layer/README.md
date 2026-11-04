@@ -31,9 +31,16 @@ guardian_layer/
 ## Running it
 
 ```bash
-pip install fastapi uvicorn pydantic requests
+pip install -r ../requirements.txt
 uvicorn guardian.main:app --reload --port 8001
 ```
+
+Run the command from `guardian/src/guardian_layer`. Configure `TWIN_BASE_URL`,
+`GUARDIAN_TWIN_BEARER_KEY`, and `GUARDIAN_API_BEARER_KEY` before using
+containment endpoints. Isolate and quarantine call Twin first, then mirror a
+confirmed result in this demo's local reputation store. For the primary
+integrated service, use `guardian/src/run.py` as documented in
+`guardian/README.md`.
 
 In another terminal:
 
@@ -57,8 +64,8 @@ You should see:
 | `POST /ingest` | Twin pushes a new sensor reading here |
 | `GET /trust_verdict/{sensor_id}/{reading_id}` | City Brain calls this **before acting** on a reading |
 | `POST /report_incident` | Log an incident for audit / manually flag a device |
-| `POST /quarantine_device/{device_id}` | **LOCAL SIMULATION ONLY** — changes in-memory Guardian state; no Twin call or real quarantine |
-| `POST /isolate_sensor/{sensor_id}` | **LOCAL SIMULATION ONLY** — changes in-memory Guardian state; no Twin call or real isolation |
+| `POST /quarantine_device/{device_id}` | Calls Twin `quarantine_device`; mirrors state only after Twin confirms |
+| `POST /isolate_sensor/{sensor_id}` | Calls Twin `isolate_sensor`; mirrors state only after Twin confirms |
 | `POST /rollback_reading` | Restore the last known-good value for a sensor |
 | `GET /reputation/{sensor_id}` | Debug: inspect a sensor's trust history |
 

@@ -38,8 +38,8 @@ Open <http://127.0.0.1:5000>. Demo mode is for local use and bypasses authentica
   reading ID from that carrier. Guardian checks Twin's latest capacity before
   issuing the token, allowing a one-tick SSE race only when the reported unit
   count is unchanged.
-- After a confirmed Twin containment effect, Guardian updates local trust state
-  and calls Brain's `notify_containment` MCP tool. Twin containment calls use
+- After a confirmed Twin containment effect, Guardian mirrors the state locally
+  for scoring and calls Brain's `notify_containment` MCP tool. Twin containment calls use
   `isolate_sensor`, `quarantine_device`, `rollback_reading`, or `release_device`
   with the Twin-published arguments. The `twin-mock-3` tools have no
   `idempotency_key`; they document repeat-safe behavior.
