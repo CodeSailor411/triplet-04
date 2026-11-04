@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (31 Oct 2026): 469 tests passing, plus 8 that need a PostgreSQL database and 10 that need a Redis server, skipped without them (with both: 487).** New on 27 to 31 Oct: scripted stand-ins for the Brain and the Guardian that write their own run logs (`mocks/`, see "Stand-ins"), and live sensor values on the dashboard. Earlier, on 23 Oct: the `congestion_index` sensor (percent, one per traffic node, 120 readings per tick) and Guardian's own `g1` token format. The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 120 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built yet: two-step commit, actuator effects on the city, signed-token check turned on (see the table at the bottom).
+**Status (4 Nov 2026): 544 tests passing and 18 skipped (8 need a PostgreSQL database, 10 need a Redis server).** New on 3 and 4 Nov: one real incident, the jam scenario `real_jam`, and one trigger script per scenario in `../scenarios/` (see "Scenario scripts"). Earlier, on 27 to 31 Oct: scripted stand-ins for the Brain and the Guardian that write their own run logs (`mocks/`, see "Stand-ins"), and live sensor values on the dashboard. Earlier, on 23 Oct: the `congestion_index` sensor (percent, one per traffic node, 120 readings per tick) and Guardian's own `g1` token format. The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 120 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built: two-step commit and actuator effects on the city. The signed-token check (Ed25519) is built and tested but off in the default config (see "Known limits right now").
 
 ## Run it
 
@@ -125,11 +125,11 @@ With no `params` it starts at SH-05 (the first traffic node that carries a signa
 | List nodes, readings, actions, the clock | Yes | `example_client.py` tools above |
 | Make the Twin act through the trust gate | Yes, with test tokens | `token_tool.py` plus `actuate` |
 | See the city as a map and a timeline screen (R3) | **Yes** | `python -m twin.dashboard`, see "The dashboard" below. The map and timeline show logged events; the newest sensor values come from the Twin's live feed, so a quiet Twin still shows a moving tick |
-| Start a scenario with one command or button (R2) | **Yes, one command** | `run_scenario` starts an attack. There is no button yet |
+| Start a scenario with one command or button (R2) | **Yes, one command** | `run_scenario` starts an attack or the real jam, and `python scenarios/T2_real_jam.py` (from the repo root) runs a whole scenario and saves its log. There is no button yet |
 | A log file for every run (R2) | **Yes, the Twin's part** | see "The run log" below. The shared format was reviewed with the partners on 9 Oct (JSON Lines, one part file per layer), and the merged file only holds the other layers' events once they write their parts |
 | Mock Brain and mock Guardian that call the Twin on their own (R1) | **Yes**, thin scripted stand-ins made by the Twin team | `python mocks/mock_brain.py incident --fake-jam`, see "Stand-ins" below |
-| Faults and attacks | **Yes**, fake reading, stuck sensor, exact replay | `run_scenario` above. The recycled-values replay comes 28 Oct |
-| An actuator changing a sensor | **No**, 15 Oct | `actuate` stores the commanded value and nothing reacts |
+| Faults, attacks and one real incident | **Yes**, fake reading, stuck sensor, exact replay, and the real traffic jam `real_jam` | `run_scenario` above |
+| An actuator changing a sensor | **No**, not built | `actuate` stores the commanded value and nothing reacts (a signal change does not ease the jam) |
 
 The generator (see below) also writes `topology.json` with every node's position.
 
@@ -157,6 +157,10 @@ A partner file whose `run_id` differs from the Twin's current one (for example a
 What the Twin writes: `scenario` (run started, scenario started or stopped), `reading` (only readings that a scenario fault touched, 120 per tick would be huge), `action` (what `actuate` answered, with the token's ID, never the token) and `containment` (isolate, quarantine, rollback, release). Every line has `run_id`, `event_id`, `timestamp` (simulated time), `tick`, `wall` (real clock, orders events inside one tick), `layer`, `event_type`, `caused_by`, `data`.
 
 Limits: normal readings are not logged, so a verdict that points at one will not find it in the log. A restart reuses the run id, so the part file continues (numbering carries on, the tick goes back to 0). The log is for reading afterwards, layers must not read it to decide anything.
+
+## Scenario scripts (R2)
+
+One script per Test Book scenario lives in `../scenarios/` (repo root, not inside `twin/`): `T1_calm_day.py` to `T7_repeated_command_once.py`. With the Twin running (`python -m twin`, started from this folder), run one from the repo root, for example `python scenarios/T3_fake_jam_refused.py`. Each script resets the run, pulls one trigger, merges the logs of all layers and saves them as `../logs/<ID>-<n>.jsonl` (for example `T3-1.jsonl`), checks the expected result and prints PASS or FAIL. By default our stand-ins play the Brain and the Guardian; `--layers real` (T1, T2, T3, T6) uses the partners' real layers when they run. `../scenarios/README.md` has the details, and `../logs/INDEX.md` says for every saved log whether each layer was a stand-in or real. The Twin also writes its own `../logs/run-42-NNN.jsonl` when a run ends: the same events, not needed in the repo.
 
 ## The dashboard (R3)
 
@@ -362,7 +366,8 @@ This is reference data: no tool and no cap checks distances.
 | Seeded city (38 nodes, 6 shared, layout file) | Done |
 | Sensor model, simulated clock, readings on the live feed, `get_readings`, `get_clock` | Done 6 Oct |
 | `actuate` with the trust gate, idempotency, caps, `list_actions` | Done 6 Oct |
-| Scenario engine (fake reading, stuck sensor, exact replay) | **Done 7 Oct** |
+| Scenario engine (fake reading, stuck sensor, exact replay) | **Done 7 Oct**; the real jam `real_jam` was added on 3 Nov |
+| Scenario scripts T1 to T7 in `../scenarios/` (R2), logs in `../logs/` | **Done 4 Nov** (logs from the stand-ins; not yet run against the partners' real layers) |
 | Run log: part file, private file, merge (R2) | **Done 7 Oct**, format reviewed with partners 9 Oct |
 | Containment tools (isolate, quarantine, rollback, release) | **Done 7 Oct** |
 | Shared log format, dashboard (dark look, node style spec, made-up map) | **Done 7 Oct, restyled 10 Oct** |
@@ -370,7 +375,7 @@ This is reference data: no tool and no cap checks distances.
 | Two-step commit, undo, actuator effects | Planned |
 | TimescaleDB history | **Done 12-13 Oct** (real hypertable step not verified) |
 | Redis action state (option A: used token IDs, idempotency answers) | **Done 14 Oct** |
-| Ed25519 token check turned on | 18 Oct |
+| Ed25519 token check | **Built and tested 18 Oct.** Off in the default config so a fresh Twin runs alone; switch on with `tokens.mode: signed` and Guardian's public key |
 
 ## Known limits right now
 
@@ -379,10 +384,11 @@ This is reference data: no tool and no cap checks distances.
 * Wall-clock timestamps are used only for `/health` and the feed's hello and heartbeat. Readings use the simulated clock.
 * Sensor values wander slowly (waves of 5 to 20 simulated minutes), not through a realistic day. At real speed a daily cycle
   would never be visible in a demo. Incidents come from scenarios, not from the background pattern.
-* Nothing changes the city yet: `actuate` stores the commanded value but no sensor reacts to it. Actuator effects come 15 Oct.
-  Readings are a pure function of (seed, tick) until then.
-* `tokens.mode` is `unsigned` for now, with a loud warning at startup. Signed mode (Ed25519) is built and tested but waits for 9antra's answer on
-  format and key. `tokens.min_score` is empty because nobody has agreed a number.
+* Nothing changes the city yet: `actuate` stores the commanded value but no sensor reacts to it. Readings are a function of the seed, the tick
+  and the scenarios you started (a fault or the real jam); the same seed and the same scenarios give the same run.
+* `tokens.mode` is `unsigned` in the default config, with a loud warning at startup, so a fresh Twin accepts our own unsigned test tokens. Signed mode
+  (Ed25519, Guardian's `g1` tokens) is built and tested: set `tokens.mode: signed` and `tokens.guardian_public_key` to Guardian's public key, and use it for
+  any run with the real Guardian. `tokens.min_score` is empty because nobody has agreed a number.
 * `preview_required` is enforced (`actions.preview_enforced: true`). Previews are remembered in memory only, so a restart forgets them and the Brain just previews again. `actions.preview_valid_ticks: 60` was agreed on 16 Oct (D9). Only the Brain may preview. Previews are not written to the run log (no new event type was agreed).
 * The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run.
 * `list_actions` shows both kinds of limit: `action_cap` on each action, and `isolation_caps` per domain (nodes, and the most that may be isolated or quarantined at once). The isolation numbers are the same as the pools in `get_containment_state`, which also shows how much is in use (D8, 16 Oct).
@@ -396,7 +402,19 @@ This is reference data: no tool and no cap checks distances.
 * `ServerMiddleware` in the `mcp` SDK is marked provisional by its authors. We pin `mcp==2.3.0`, so it cannot change
   under us, but upgrading needs a re-test.
 
-## Error codes and extra detail (moved here from the Interface Card on 10 Oct, so the card fits one page)
+## Rules and status (moved here from the Interface Card on 4 Nov, so the card fits one page)
+
+* **Token** (Guardian's permission for this exact action): Guardian's `g1.<payload>.<signature>` (Ed25519) or our unsigned test token. It names the exact `action`, `targets`, `params` and `run_id`, carries a score (0 to 1), lives 1 to 60 s, works once. `list_actions` shows `token_mode`.
+* **Order of checks:** valid request, idempotency, token, preview, caps. Same key and same request: the first answer again. `preview_required` actions need a `preview_action` of the same request first.
+* **Refusal codes:** `TOKEN_*`, `IDEMPOTENCY_CONFLICT`, `CAP_EXCEEDED`, `DEVICE_QUARANTINED`, `PREVIEW_REQUIRED`, `STATE_UNAVAILABLE` (nothing done, retry), `UNAUTHENTICATED`, `FORBIDDEN`. The full list is in the next section.
+* **Caps** count nodes per domain. `actuate` counts a shared node in every domain it belongs to.
+* **Messages:** strict JSON out, unknown extra fields ignored. Time is simulated UTC plus `tick`.
+* **Log:** `run-logs/<run_id>.twin.jsonl`, merged into `logs/`. Fields: `run_id`, `event_id`, `timestamp`, `tick`, `layer`, `event_type`, `caused_by`, `data`.
+* **Implemented:** everything on the card, including the city graph (`get_city_graph`, `get_nearest_nodes`), which is our extra and was agreed with CIVIS in a weekly meeting (recorded in the meeting notes).
+* **Planned, not built:** two-step commit (`commit_action`) and `get_flagged_readings`. Telecom and Waste were cut on 2 Nov.
+* **Final:** the dispatch place field is `destination`.
+
+## Error codes and extra detail
 
 **Refusals** (a normal result with `status: "rejected"` and a `code`): `TOKEN_MISSING`, `TOKEN_INVALID`, `TOKEN_WRONG_RUN`, `TOKEN_EXPIRED`, `TOKEN_REUSED`, `TOKEN_MISMATCH`, `TOKEN_SCORE_TOO_LOW`, `IDEMPOTENCY_CONFLICT`, `PREVIEW_REQUIRED`, `CAP_EXCEEDED`, `DEVICE_QUARANTINED`. Containment refusals: `CAP_EXCEEDED`, `NO_TRUSTED_VALUE`.
 
@@ -408,4 +426,13 @@ This is reference data: no tool and no cap checks distances.
 
 **Units:** congestion 0-100 %, water cm above the sensor's own zero, power kW, PM2.5 ug/m3. `channel` is set only for sensors split by type (`emergency_calls`: accident, fire, flood, medical; `units_free`: police, ambulance, fire). A reading's `timestamp` may be a few ms off its tick.
 
-**Planned (from the old card):** undo, emergency events with transcript, `congestion_index`.
+**Details cut from the Interface Card (v10 to v11, 4 Nov, so it fits one page):**
+* `get_capabilities` is what the decision report calls "describe capabilities"; Guardian's is named `describe_capabilities`. Its `features` list token formats and mode, preview, sensors and what is not built.
+* `get_city_graph` (`include_matrix`?, `include_roads`?) returns 38 nodes (GPS, zone, domains, sensors, actions with risk), 67 links (`distance_m`, `bearing_a_to_b_deg`, `kind`), zones, roads and `distance_matrix_m` between every pair in `node_order`. The distances are straight lines, not along roads or pipes, and fixed for the run. `get_nearest_nodes` takes `node_id`, `domain`?, `role`?, `limit`? (1 to 50, default 5) and refuses with `UNKNOWN_NODE`, `UNKNOWN_ROLE` or `BAD_LIMIT`.
+* `lat`/`lon` are the node's GPS (WGS84 degrees, 5 decimals, fixed for the run). The city is invented and the anchor point is arbitrary. Nothing in the Twin checks the distances.
+* Tokens: Guardian's `g1.<payload>.<signature>` is always signed (claims `token_id`, `trust_score`, `idempotency_key`, times in seconds); a `g1` token with an `idempotency_key` only works with that same key. Our own `header.payload.signature` uses `jti` and `score`. Both need `iss` guardian, `aud` twin, `run_id`, `exp`, `action`, `targets`, `params`; lifetime 1 to 60 s, score 0 to 1, single use. Times use the Twin's clock (`get_clock`); at real speed 1 tick = 1 s.
+* Previews: an action with `preview_required` needs a `preview_action` of exactly the same request first (valid 60 ticks, used up by one commit). A token is spent only on a commit.
+* No key gives `UNAUTHENTICATED`, a wrong caller `FORBIDDEN`. A malformed request fails as `CODE: message`. Messages are UTF-8, snake_case, time is simulated UTC (RFC 3339) plus `tick`; unknown `params` are refused. A run has 120 readings per tick.
+* Log timeline links: a verdict's `caused_by` is the `reading_id`, Guardian's approval has `data.token_id`, the Brain's decision has `data.idempotency_key`. The `wall` field is the real time of an event.
+
+**Planned (from the old card):** undo and emergency events with a transcript (neither built; `congestion_index` is built since 23 Oct).
