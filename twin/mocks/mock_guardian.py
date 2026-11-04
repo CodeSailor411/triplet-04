@@ -17,8 +17,8 @@ Use as a library (the mock Brain does) or from the command line:
     python mocks/mock_guardian.py isolate --devices WAT-01.water_level --reason "stuck sensor"
     python mocks/mock_guardian.py release --devices WAT-01.water_level
 
-Signed mode: make a key pair with `python mocks/token_tool.py keygen`, put the PUBLIC key in a copy of config/twin.yaml
-(tokens.mode: signed, tokens.guardian_public_key: <public>), start the Twin with TWIN_CONFIG pointing at that copy,
+Signed mode: make a key pair with `python mocks/token_tool.py keygen`, start the Twin with TWIN_TOKEN_MODE=signed and
+TWIN_GUARDIAN_PUBLIC_KEY=<the PUBLIC key> (or put both in a copy of config/twin.yaml and point TWIN_CONFIG at it),
 and give this tool the PRIVATE key with --private-key or the environment variable MOCK_GUARDIAN_PRIVATE_KEY.
 Never commit a private key.
 """

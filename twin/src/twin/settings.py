@@ -4,6 +4,7 @@ Two sources, kept apart on purpose:
   * config/twin.yaml  - normal settings, safe to commit
   * environment / .env - the secrets (one key per caller), never committed
 """
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,8 @@ from typing import Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+log = logging.getLogger("twin")
 
 TWIN_ROOT = Path(__file__).resolve().parents[2]      # the twin/ folder
 DEFAULT_CONFIG = TWIN_ROOT / "config" / "twin.yaml"
@@ -77,10 +80,6 @@ class SensorModelCfg(_Strict):
     device_spread: float = Field(0.12, ge=0, le=0.5)
     timing_wobble_ms: float = Field(40, ge=0)
     profiles: dict[str, ProfileCfg]
-
-
-class PartnerCfg(_Strict):
-    url: str
 
 
 class SensorCfg(_Strict):
@@ -271,7 +270,6 @@ class TwinConfig(_Strict):
     tokens: TokensCfg
     actions: ActionsCfg
     sensor_model: SensorModelCfg
-    partners: dict[str, PartnerCfg]
     sensors: dict[str, SensorCfg]
     actuators: dict[str, ActuatorCfg]
     caps: CapsCfg
@@ -308,14 +306,48 @@ class Secrets(BaseSettings):
     scenario: SecretStr = Field(min_length=8)
 
 
+# The values in .env.example. They are public (the file is in the repo), so a Twin that runs on them is open to
+# anyone who has read the repo, including the hidden scenario tool. tests/test_settings.py keeps this table equal
+# to the file (review F2).
+EXAMPLE_KEYS = {
+    "TWIN_KEY_CITY_BRAIN": "dev-city-brain-key-change-me",
+    "TWIN_KEY_GUARDIAN": "dev-guardian-key-change-me",
+    "TWIN_KEY_SCENARIO": "dev-scenario-key-change-me",
+}
+
+
+def example_keys_in_use(secrets: "Secrets") -> list[str]:
+    """Names of the keys that still hold the public example value."""
+    now = {"TWIN_KEY_CITY_BRAIN": secrets.city_brain, "TWIN_KEY_GUARDIAN": secrets.guardian,
+           "TWIN_KEY_SCENARIO": secrets.scenario}
+    return [name for name, secret in now.items() if secret.get_secret_value() == EXAMPLE_KEYS[name]]
+
+
 class Settings(BaseModel):
     config: TwinConfig
     secrets: Secrets
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
+def _apply_token_env(raw: dict) -> None:
+    """Two environment variables switch the token check on without editing any file (same idea as TWIN_SEED):
+         TWIN_TOKEN_MODE=signed            tokens must carry Guardian's Ed25519 signature
+         TWIN_GUARDIAN_PUBLIC_KEY=<key>    raw base64, PEM text, or a path to a PEM file
+    The token itself can never choose its mode. Only the person who starts the Twin can."""
+    mode, key = os.environ.get("TWIN_TOKEN_MODE"), os.environ.get("TWIN_GUARDIAN_PUBLIC_KEY")
+    if mode is None and key is None:
+        return
+    tokens = raw.setdefault("tokens", {})
+    if mode is not None:
+        if mode not in ("signed", "unsigned"):
+            raise ConfigError("TWIN_TOKEN_MODE must be 'signed' or 'unsigned', for example TWIN_TOKEN_MODE=signed")
+        tokens["mode"] = mode
+    if key is not None and key.strip():
+        tokens["guardian_public_key"] = key.strip()
+
+
 def load_config(config_path: Path | str | None = None) -> TwinConfig:
-    """Read config/twin.yaml (no secrets needed), apply the TWIN_SEED override, fail with a clear message."""
+    """Read config/twin.yaml (no secrets needed), apply the TWIN_SEED and token overrides, fail with a clear message."""
     path = Path(config_path or os.environ.get("TWIN_CONFIG") or DEFAULT_CONFIG)
     if not path.is_absolute():
         path = TWIN_ROOT / path
@@ -330,6 +362,10 @@ def load_config(config_path: Path | str | None = None) -> TwinConfig:
             raw["seed"] = int(os.environ["TWIN_SEED"])
         except ValueError:
             raise ConfigError("TWIN_SEED must be a whole number, for example TWIN_SEED=42") from None
+    if "partners" in raw:                      # removed 4 Nov (review F9): nothing ever read it. Old copies of the file still load.
+        raw.pop("partners")
+        log.warning("Config %s has a 'partners' section. It is ignored: the Twin calls nobody, partners call the Twin.", path)
+    _apply_token_env(raw)
     try:
         return TwinConfig.model_validate(raw)
     except ValidationError as exc:

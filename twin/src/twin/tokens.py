@@ -68,13 +68,25 @@ def make_token(payload: dict, private_key: Ed25519PrivateKey | None = None) -> s
     return f"{head}.{body}.{sig}"
 
 
+def _aware(text: str, name: str) -> datetime:
+    """Read a token time. It must carry a timezone (a Z or +00:00 at the end). A time with no timezone cannot be
+    compared with the Twin's clock, which has one, and used to crash the call with an unclear error (review F3)."""
+    try:
+        when = datetime.fromisoformat(text)
+    except ValueError:
+        raise TokenError("TOKEN_INVALID", f"Token time '{name}' is not a valid date and time.") from None
+    if when.tzinfo is None:
+        raise TokenError("TOKEN_INVALID", f"Token time '{name}' has no timezone. Write it like 2026-10-05T08:00:00Z.")
+    return when
+
+
 def _sane(claims: TokenClaims) -> None:
     """Checks that hold for every token format. A token that fails these is broken or hostile, not just unlucky."""
     if not claims.jti.strip():
         raise TokenError("TOKEN_INVALID", "Token has an empty id (jti).")
     if isinstance(claims.score, bool) or not math.isfinite(claims.score) or not 0 <= claims.score <= 1:
         raise TokenError("TOKEN_INVALID", "Token score must be a number from 0 to 1.")
-    life = (datetime.fromisoformat(claims.exp) - datetime.fromisoformat(claims.iat)).total_seconds()
+    life = (_aware(claims.exp, "exp") - _aware(claims.iat, "iat")).total_seconds()
     if not 0 < life <= MAX_LIFETIME_SECONDS:
         raise TokenError("TOKEN_INVALID", f"Token lifetime must be more than 0 and at most {MAX_LIFETIME_SECONDS} seconds.")
 
@@ -115,7 +127,7 @@ def _read_g1(token: str, parts: list[str], cfg: TokensCfg) -> TokenClaims:
             "targets": payload.get("targets"), "params": payload.get("params"),
             "score": payload.get("trust_score"), "score_scale": "0-1",
             "idempotency_key": payload.get("idempotency_key")})
-    except (ValidationError, ValueError):
+    except (ValidationError, ValueError, OverflowError, OSError):    # OverflowError / OSError: a time number too big for a date
         raise TokenError("TOKEN_INVALID", "g1 token payload is missing or has wrong fields.") from None
     return claims
 

@@ -21,7 +21,7 @@ from .containment import ContainmentBook
 from .scenarios import ScenarioBook
 from .runlog import RunLog
 from .storage import open_action_state, open_history
-from .settings import TWIN_ROOT, Settings, load_settings
+from .settings import TWIN_ROOT, Settings, example_keys_in_use, load_settings
 from .sim import Simulation
 from .util import now_iso
 
@@ -70,7 +70,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     runlog.sink = history.submit_event
     mcp = build_mcp(topology, keyring, sim, book, containment, scenarios, layout)
     if cfg.tokens.mode == "unsigned":
-        log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
+        log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Anyone who can reach this Twin can write a token it accepts. "
+                    "Fine for a run on your own laptop with the stand-ins. For the demo and any run with the real Guardian "
+                    "start with TWIN_TOKEN_MODE=signed and TWIN_GUARDIAN_PUBLIC_KEY=<Guardian's public key>.")
+    used = example_keys_in_use(settings.secrets)
+    if used:
+        log.warning("THESE KEYS STILL HAVE THE PUBLIC EXAMPLE VALUE: %s. The example file is in the repo, so anyone who read it "
+                    "can call this Twin%s. Put your own values in .env before you show the Twin to other people.", ", ".join(used),
+                    " and start attacks" if "TWIN_KEY_SCENARIO" in used else "")
     mcp_app = mcp.streamable_http_app()                # the MCP endpoint lives at /mcp inside this app
 
     @contextlib.asynccontextmanager
@@ -109,7 +116,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok", "service": "twin", "version": __version__, "seed": cfg.seed,
                 "city_fingerprint": fingerprint(topology), "nodes": len(topology.nodes), "time": now_iso(),
                 "run_id": sim.run_id, "tick": sim.tick, "sim_time": sim.clock.iso_of(sim.tick),
-                "history": history.status(), "action_state": action_state.status()}
+                "token_mode": cfg.tokens.mode, "history": history.status(), "action_state": action_state.status()}
 
     @app.get("/events")
     async def events(request: Request, max_events: int | None = Query(None, ge=1, le=1000)):
