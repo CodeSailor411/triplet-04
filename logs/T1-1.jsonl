@@ -1,0 +1,2 @@
+{"run_id":"run-42-002","event_id":"twin-000001","timestamp":"2026-10-05T08:00:22.000Z","tick":22,"wall":"2026-11-03T19:44:47.980Z","layer":"twin","event_type":"scenario","caused_by":[],"data":{"phase":"run_started","seed":42,"city_fingerprint":"a4e54d8a96b3","nodes":38,"tick_seconds":1.0,"twin_version":"0.1.0"}}
+{"run_id":"run-42-002","event_id":"twin-000002","timestamp":"2026-10-05T08:00:22.000Z","tick":22,"wall":"2026-11-03T19:44:47.980Z","layer":"twin","event_type":"scenario","caused_by":[],"data":{"phase":"run_ended"}}
