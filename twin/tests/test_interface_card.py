@@ -35,8 +35,9 @@ def test_every_sensor_and_its_unit_are_in_the_units_section():
 
 
 def test_card_names_the_tested_tag_and_separates_implemented_from_planned():
-    assert re.search(r"Tested version: tag `twin-mock-\d+`", CARD)
-    assert "**Implemented:**" in CARD and "**Planned, not built:**" in CARD
+    assert re.search(r"Tested version: tag `twin-v\d+\.\d+`", CARD)
+    readme = (__import__("pathlib").Path(__file__).resolve().parent.parent / "README.md").read_text(encoding="utf-8")
+    assert "**Implemented:**" in readme and "**Planned, not built:**" in readme
 
 
 async def test_get_capabilities_features_tell_the_truth_over_mcp(mcp_client):
