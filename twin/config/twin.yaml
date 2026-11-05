@@ -24,13 +24,8 @@ clock:
   speed: 1.0
   autorun: true               # false = the clock stands still until something advances it (tests)
 
-# Where the other layers live. The Twin itself does not call them yet.
-# Used later by the Twin's mocks and dashboard (R1: point at another partner by config).
-partners:
-  city_brain:
-    url: http://127.0.0.1:8001/mcp
-  guardian:
-    url: http://127.0.0.1:8002/mcp
+# There is no list of partner addresses here: the Twin calls nobody, the partners call the Twin (`server` above).
+# Our stand-ins and scripts find the Twin with --url, then TWIN_URL, then `server`.
 
 # ---------------------------------------------------------------------------
 # What exists in the city. Units are published to partners. Normal ranges are NOT here:
@@ -87,8 +82,11 @@ actuators:
 # Tokens (Guardian's signed permission for one exact action). Two formats are read: Guardian's own `g1.<payload>.<sig>` (since 23 Oct)
 # and our first proposal, JWS compact `header.payload.signature`. guardian_public_key: raw base64, PEM text, or a path to a PEM file.
 # mode is decided HERE, never by the token: a token cannot talk its way into "unsigned".
-#   unsigned  signature part must be empty (v0 hand-over, mock Guardian). The Twin logs a loud warning.
-#   signed    only EdDSA (Ed25519) accepted, checked against guardian_public_key. Planned default from 24 Oct.
+#   unsigned  signature part must be empty (our stand-ins on one laptop). The Twin logs a loud warning at start and
+#             /health shows token_mode. Anyone who can reach the Twin can write such a token.
+#   signed    only EdDSA (Ed25519) accepted, checked against guardian_public_key. Use it for the demo and any real run.
+# No file to edit: TWIN_TOKEN_MODE=signed and TWIN_GUARDIAN_PUBLIC_KEY=<raw base64, PEM text or PEM file path> in the
+# environment override the two lines below (same idea as TWIN_SEED). The Twin refuses to start in signed mode with no key.
 # min_score: risk level -> minimum score in the token. Empty on purpose: nobody has agreed a number yet (12 Oct call).
 # ---------------------------------------------------------------------------
 tokens:
@@ -105,7 +103,7 @@ actions:
   preview_valid_ticks: 60
 
 # ---------------------------------------------------------------------------
-# Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced from 7 Oct, only computed here for now.
+# Caps (blast radius). Agreed 4 Oct, confirmed by 9antra 5 Oct. Enforced (one request at a time, see the README).
 # Counts are per domain. A shared node counts in EACH domain it belongs to, and a request fails if it breaks
 # the cap of any one of them. Formula: floor(nodes x pct), minimum 2, maximum = domain size.
 # ---------------------------------------------------------------------------
@@ -256,7 +254,8 @@ generator:
       - { from_domain: emergency, from_role: call_place, to_domain: traffic,     count: 1 }
 
 # ---------------------------------------------------------------------------
-# Sensor model. PRIVATE: these numbers are never published to partners (the Twin publishes no datasheet).
+# Sensor model. NOT PUBLISHED: no tool, feed or log shows these numbers or a true value. They are in this repo, though, so
+# someone who reads it can recompute a true value from the seed and the tick. Do not call it secret.
 # Each reading = truth + the device's own bias + noise. Truth moves slowly: a base level, a slow wave and a
 # smooth random wander, all derived from the seed, so the same seed and tick always give the same value.
 #   base          normal level (each device gets its own, spread by device_spread)

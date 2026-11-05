@@ -1,11 +1,11 @@
-# Twin: Interface Card (v12, 4 Nov 2026)
+# Twin: Interface Card (v13, 4 Nov 2026)
 
 The Twin is the simulated city: it sends sensor readings and receives actuator commands. It calls no other layer. **Tested version: tag `twin-v1.0`.**
 
 ## Connect and authenticate
 * MCP over HTTP, protocol `2026-07-28`: `http://<twin-host>:8000/mcp`. Live feed (SSE, needs a key): `GET /events`, with `hello`, one `readings` event per tick, `heartbeat` when quiet. `GET /health` needs no key.
-* `Authorization: Bearer <key>` on every call, one key per caller: `city_brain`, `guardian`, and a hidden `scenario` key. Keys live in the Twin's `.env`, never in the repo: `TWIN_KEY_CITY_BRAIN`, `TWIN_KEY_GUARDIAN`, `TWIN_KEY_SCENARIO`.
-* Pointing at another partner: addresses are settings in your own config. Ours, `config/twin.yaml`: `server` (host, port), `partners` (URLs), `dashboard.sources` (log folders). Nothing is hard-coded.
+* `Authorization: Bearer <key>` on every call, one key per caller: `city_brain`, `guardian`, and a hidden `scenario` key. Keys live in the Twin's `.env`, never in the repo (copy `.env.example`, change the values): `TWIN_KEY_CITY_BRAIN`, `TWIN_KEY_GUARDIAN`, `TWIN_KEY_SCENARIO`. Tokens: unsigned by default, signed with `TWIN_TOKEN_MODE=signed` and `TWIN_GUARDIAN_PUBLIC_KEY`.
+* Pointing at another partner: the Twin calls nobody, partners call it (`server` in `config/twin.yaml`). Our stand-ins take `--url` or `TWIN_URL`.
 
 ## What it receives (tools)
 | Tool | Caller | Input | Returns |
@@ -16,7 +16,7 @@ The Twin is the simulated city: it sends sensor readings and receives actuator c
 | `preview_action` | Brain | `action`, `targets`, `params` | dry-run: old and new value, `would_pass_checks`. Changes nothing, no token |
 | `actuate` | Brain | `action`, `targets`, `params`, `token`, `idempotency_key` | `committed` or `rejected`, `code` |
 | `isolate_sensor`, `quarantine_device`, `release_device` | Guardian | `device_ids`, `reason`? | `applied` or `rejected`, `changed` |
-| `rollback_reading` | Guardian | `reading_ids` | corrections (`corrected: true`, never the true value) |
+| `rollback_reading` | Guardian | `reading_ids` | correction records (`corrected: true`, never the true value). The feed is not rewritten |
 | `get_containment_state`, `get_quarantine_lane` | Brain, Guardian | none | cut-off devices, cap use, held commands |
 | `run_scenario` | `scenario` key | `name`, `params`? | names: `fake_reading`, `stuck_sensor`, `replay_exact`, `real_jam`, `list`, `stop`, `reset` |
 

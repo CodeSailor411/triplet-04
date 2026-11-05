@@ -4,7 +4,7 @@ The Twin is the simulated city: sensors that report readings, actuators that act
 the City Brain and the Guardian call. It runs on its own. This README only covers the Twin. How the three layers
 fit together is in the root `INTEGRATION.md`. What the Twin sends and receives is in `INTERFACE.md`.
 
-**Status (4 Nov 2026): 544 tests passing and 18 skipped (8 need a PostgreSQL database, 10 need a Redis server).** New on 3 and 4 Nov: one real incident, the jam scenario `real_jam`, and one trigger script per scenario in `../scenarios/` (see "Scenario scripts"). Earlier, on 27 to 31 Oct: scripted stand-ins for the Brain and the Guardian that write their own run logs (`mocks/`, see "Stand-ins"), and live sensor values on the dashboard. Earlier, on 23 Oct: the `congestion_index` sensor (percent, one per traffic node, 120 readings per tick) and Guardian's own `g1` token format. The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 120 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built: two-step commit and actuator effects on the city. The signed-token check (Ed25519) is built and tested but off in the default config (see "Known limits right now").
+**Status (4 Nov 2026): 573 tests passing and 18 skipped (8 need a PostgreSQL database, 10 need a Redis server).** New on 4 Nov, after a code review: signed mode can be switched on with two environment variables (`TWIN_TOKEN_MODE`, `TWIN_GUARDIAN_PUBLIC_KEY`), a startup warning for the public example keys, a clear refusal (not a crash) for token times without a timezone, and the unused `partners` setting is gone. New on 3 and 4 Nov: one real incident, the jam scenario `real_jam`, and one trigger script per scenario in `../scenarios/` (see "Scenario scripts"). Earlier, on 27 to 31 Oct: scripted stand-ins for the Brain and the Guardian that write their own run logs (`mocks/`, see "Stand-ins"), and live sensor values on the dashboard. Earlier, on 23 Oct: the `congestion_index` sensor (percent, one per traffic node, 120 readings per tick) and Guardian's own `g1` token format. The app starts, partners log in with their own key, the city is generated from a seed, a simulated clock ticks, and every tick the 120 sensor readings go out on the live feed and through `get_readings`. `actuate` works behind the token gate, with idempotency and caps. Containment tools, attack scenarios, the run log and the dashboard (dark theme, node style spec) are built. History storage is built (memory by default, TimescaleDB optional; see "History storage"). Redis action state is built (14 Oct, optional, off by default). Dry-run preview is built (16 Oct, `preview_action`). Not built: two-step commit and actuator effects on the city. The signed-token check (Ed25519) is built and tested but off in the default config (see "Known limits right now").
 
 ## Run it
 
@@ -20,8 +20,8 @@ pip install -e . --no-deps
 python -m twin
 ```
 
-Then open http://127.0.0.1:8000/health. The three keys in `.env` are fake development keys. Change them for anything
-you show to other people. Never commit `.env`.
+Then open http://127.0.0.1:8000/health. The three keys in `.env` are fake development keys, and the same values are public in `.env.example`. Change them for anything
+you show to other people (the Twin warns at start when a key still has the example value). Never commit `.env`.
 
 Try a call as another layer would make it:
 
@@ -41,7 +41,7 @@ Use two terminals, both inside `twin/` with the venv active. Commands use bash q
 python -m twin
 ```
 
-You should see "38 nodes" and a warning that tokens are unsigned (that is expected for now). Stop it with Ctrl+C.
+You should see "38 nodes" and a warning that tokens are unsigned (expected on your own laptop; see "Signed mode" below for the demo). Stop it with Ctrl+C.
 
 **Terminal 2: look around**
 
@@ -227,7 +227,7 @@ The keys come from the environment (`TWIN_KEY_CITY_BRAIN`, `TWIN_KEY_GUARDIAN`, 
 | `slow` | Gives a token after `--slow-seconds` (default 2) | Waits. If that is longer than `--guardian-timeout` (default 3 real seconds), it gives up like `silent` |
 | `silent` | Never answers | Gives up after `--guardian-timeout`. Result `not_sent`, reason `GUARDIAN_TIMEOUT` |
 
-The token format follows the Twin's setting. An unsigned Twin gets our own unsigned token. A Twin with `tokens.mode: signed` gets Guardian's real `g1` token, signed with Ed25519 (a signature type with two keys: one signs, the other only checks). For that, make a key pair with `python mocks/token_tool.py keygen`, put the public key in a copy of `config/twin.yaml`, and give the mock Guardian the private key with `--private-key` or `MOCK_GUARDIAN_PRIVATE_KEY`. Never commit a private key.
+The token format follows the Twin's setting. An unsigned Twin gets our own unsigned token. A Twin with `tokens.mode: signed` gets Guardian's real `g1` token, signed with Ed25519 (a signature type with two keys: one signs, the other only checks). For that, make a key pair with `python mocks/token_tool.py keygen`, start the Twin in signed mode with the public key (see "Signed mode"), and give the mock Guardian the private key with `--private-key` or `MOCK_GUARDIAN_PRIVATE_KEY`. Never commit a private key.
 
 The jam in `incident` is the Brain team's S01 story, with their numbers copied: a congestion index of 80 % or more on two ticks in a row. A tick is one step of the simulated clock.
 
@@ -246,7 +246,7 @@ python -m pytest
 ```
 
 The tests start a real Twin on a free port. They cover the generator, the settings, the per-caller keys, the hidden
-scenario tool, `actuate` (token gate, idempotency, caps, signed and unsigned tokens), the clock, the sensor model (including a leak test: the true value never leaves the Twin) and the live feed.
+scenario tool, `actuate` (token gate, idempotency, caps, signed and unsigned tokens), the clock, the sensor model (including a leak test: no tool, feed or log shows the true value. Someone with the repo can still recompute it, see "Known limits") and the live feed.
 
 ## Generate the city alone
 
@@ -377,6 +377,20 @@ This is reference data: no tool and no cap checks distances.
 | Redis action state (option A: used token IDs, idempotency answers) | **Done 14 Oct** |
 | Ed25519 token check | **Built and tested 18 Oct.** Off in the default config so a fresh Twin runs alone; switch on with `tokens.mode: signed` and Guardian's public key |
 
+## Signed mode (use it for the demo and any run with the real Guardian)
+
+In the default mode (`unsigned`) the Twin accepts a token with no signature, so anyone who can reach it can write one. That is fine for a run on one laptop with our stand-ins and wrong for anything else. Signed mode checks Guardian's Ed25519 signature (a signature type with two keys: one signs, the other only checks). You switch it on with two environment variables, no file to edit:
+
+```
+python mocks/token_tool.py keygen          # prints a private and a public key (stand-ins only; the real Guardian has its own)
+# macOS / Linux
+TWIN_TOKEN_MODE=signed TWIN_GUARDIAN_PUBLIC_KEY=<public key> python -m twin
+# Windows PowerShell
+$env:TWIN_TOKEN_MODE="signed"; $env:TWIN_GUARDIAN_PUBLIC_KEY="<public key>"; python -m twin
+```
+
+`TWIN_GUARDIAN_PUBLIC_KEY` takes the raw base64 key, PEM text, or the path of a PEM file. The Twin refuses to start in signed mode without a valid key. `GET /health` shows `token_mode`, and `list_actions` shows it to the callers. With the stand-ins, give the mock Guardian the private key (`--private-key` or `MOCK_GUARDIAN_PRIVATE_KEY`). Never commit a private key. Tokens cannot choose their own mode: only the person who starts the Twin can.
+
 ## Known limits right now
 
 * The real jam does not react to actions: nothing in the city answers a signal change yet. It is the only real incident (no flood, no power surge).
@@ -386,11 +400,12 @@ This is reference data: no tool and no cap checks distances.
   would never be visible in a demo. Incidents come from scenarios, not from the background pattern.
 * Nothing changes the city yet: `actuate` stores the commanded value but no sensor reacts to it. Readings are a function of the seed, the tick
   and the scenarios you started (a fault or the real jam); the same seed and the same scenarios give the same run.
-* `tokens.mode` is `unsigned` in the default config, with a loud warning at startup, so a fresh Twin accepts our own unsigned test tokens. Signed mode
-  (Ed25519, Guardian's `g1` tokens) is built and tested: set `tokens.mode: signed` and `tokens.guardian_public_key` to Guardian's public key, and use it for
-  any run with the real Guardian. `tokens.min_score` is empty because nobody has agreed a number.
+* `tokens.mode` is `unsigned` in the default config, with a loud warning at startup and `token_mode` on `/health`, so a fresh Twin accepts our own unsigned test tokens, and **anyone who can reach it can write one**. Signed mode
+  (Ed25519, Guardian's `g1` tokens) is built and tested: see "Signed mode" above (`TWIN_TOKEN_MODE=signed` and `TWIN_GUARDIAN_PUBLIC_KEY`, or the same two lines in your own copy of the config). Use it for the demo and for
+  any run with the real Guardian. The dashboard does not show the mode yet. `tokens.min_score` is empty because nobody has agreed a number.
 * `preview_required` is enforced (`actions.preview_enforced: true`). Previews are remembered in memory only, so a restart forgets them and the Brain just previews again. `actions.preview_valid_ticks: 60` was agreed on 16 Oct (D9). Only the Brain may preview. Previews are not written to the run log (no new event type was agreed).
-* The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run.
+* The action cap is per request. The isolation and rollback pools are cumulative and hold until `release_device` or a new run. So two requests, each with its own token, can together change more nodes than the cap (three signal nodes, then three more: all six change). Each request still needs a valid Guardian token. The decision report also talks about a limit over time (all actions within a minute); that part is not built. A rolling window needs numbers nobody has agreed yet (N nodes per domain in M ticks) and both partners' yes.
+* **The true value is not a secret from the repo.** No tool, feed or log shows it (a test checks this), but it is computed from the seed, the config and the code, and all three are in this repo, and the seed is public (`/health`, the feed's `hello`, `list_nodes`). Someone who reads the repo can recompute a true value. Do not call it secret.
 * `list_actions` shows both kinds of limit: `action_cap` on each action, and `isolation_caps` per domain (nodes, and the most that may be isolated or quarantined at once). The isolation numbers are the same as the pools in `get_containment_state`, which also shows how much is in use (D8, 16 Oct).
 * Used token ids are remembered until they expire, in memory only. A restart forgets them. A restarted Twin starts again at tick 0 with the SAME run id
   (`run-42-001` for seed 42), so a token that was already used and has not expired yet would be accepted a second time. Only a scenario reset
@@ -422,7 +437,7 @@ This is reference data: no tool and no cap checks distances.
 
 **Token payload in full:** `iss` "guardian", `aud` "twin", `jti` (unique, single use), `run_id`, `iat`, `exp` (both in simulated time, issue them from `get_clock`, not your wall clock), `action`, `targets`, `params`, `score`.
 
-**Containment rules:** a device is one sensor at one node. `isolate_sensor` removes the device's readings from the feed and from `get_readings` from the current tick on. `quarantine_device` does the same, and an `actuate` aimed at that node is refused with `DEVICE_QUARANTINED` (token not spent, the command is recorded in the quarantine lane). `rollback_reading` returns the last value the sensor reported that was not already known bad and never uses the true value. The feed is not rewritten. Isolate and quarantine share one cap pool, rollback has its own. Repeating isolate or quarantine is harmless, `release_device` frees the slots. `release_device`, `get_containment_state` and `get_quarantine_lane` are our additions, not in the spec.
+**Containment rules:** a device is one sensor at one node. `isolate_sensor` removes the device's readings from the feed and from `get_readings` from the current tick on. `quarantine_device` does the same, and an `actuate` aimed at that node is refused with `DEVICE_QUARANTINED` (token not spent, the command is recorded in the quarantine lane). `rollback_reading` returns the last value the sensor reported that was not already known bad and never uses the true value. The feed is not rewritten: a correction is a record for the Guardian to hand on, and `get_readings` and the feed keep showing the reported value. Isolate and quarantine share one cap pool, rollback has its own. An isolated device shows in `get_containment_state` but not in `get_quarantine_lane` (that lane lists quarantined devices only), and `get_readings` returns nothing for it, so the Guardian cannot read an isolated sensor again before it releases it. Repeating isolate or quarantine is harmless, `release_device` frees the slots. `release_device`, `get_containment_state` and `get_quarantine_lane` are our additions, not in the spec.
 
 **Units:** congestion 0-100 %, water cm above the sensor's own zero, power kW, PM2.5 ug/m3. `channel` is set only for sensors split by type (`emergency_calls`: accident, fire, flood, medical; `units_free`: police, ambulance, fire). A reading's `timestamp` may be a few ms off its tick.
 
