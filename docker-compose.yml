@@ -1,0 +1,74 @@
+# Triplet 04: start the layers with one command.
+#   cp .env.example .env      (then change the keys; see the notes in .env.example)
+#   docker compose up --build
+# Twin: http://127.0.0.1:8000    Dashboard: http://127.0.0.1:8080
+#
+# Twin and dashboard are ready. The Brain and the Guardian are commented out below until CIVIS and
+# 9antra add them. A Brain block needs Docker Compose 2.24 or newer (optional brain/.env.partner).
+
+services:
+  twin:
+    build: ./twin
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # Run logs land on the host, so scenarios/ scripts and the log merge work from there.
+      - ./twin/run-logs:/app/twin/run-logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  dashboard:
+    build: ./twin
+    command: ["python", "-m", "twin.dashboard", "--host", "0.0.0.0", "--feed-url", "http://twin:8000", "--sources", "run-logs"]
+    env_file: .env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./twin/run-logs:/app/twin/run-logs:ro
+    depends_on:
+      twin:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # TODO CIVIS: the City Brain. Turned off here because brain/ is CIVIS's folder. To turn it on, add
+  # brain/Dockerfile and brain/.dockerignore (a draft is in the PR description), uncomment this block
+  # and try it. DRAFT: built from the names in brain/.env.example and brain/INTERFACE.md,
+  # never run. Create brain/.env.partner first: copy brain/config/partner.env.example and fill in
+  # the private keys. The values below only change the addresses, so the Brain can reach the others.
+  # brain:
+  #   build: ./brain
+  #   env_file:
+  #     - path: ./brain/.env.partner
+  #       required: false
+  #   environment:
+  #     BRAIN_HOST: "0.0.0.0"
+  #     TWIN_MCP_URL: http://twin:8000/mcp
+  #     TWIN_EVENTS_URL: http://twin:8000/events
+  #     TWIN_BRAIN_KEY: ${TWIN_KEY_CITY_BRAIN}
+  #     # GUARDIAN_MCP_URL: http://guardian:<guardian port>/mcp     # TODO 9antra: the port
+  #   ports:
+  #     - "8001:8001"
+  #   depends_on:
+  #     twin:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  # TODO 9antra: the Guardian.
+  # guardian:
+  #   build: ./guardian
+  #   command: ["<start command>"]
+  #   env_file: .env
+  #   environment:
+  #     <TWIN_URL_VARIABLE>: http://twin:8000
+  #     <TWIN_KEY_VARIABLE>: ${TWIN_KEY_GUARDIAN}
+  #   ports:
+  #     - "<guardian port>:<guardian port>"
+  #   depends_on:
+  #     twin:
+  #       condition: service_healthy
