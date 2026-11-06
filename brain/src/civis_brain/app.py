@@ -2,6 +2,7 @@
 
 import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from mcp.server.mcpserver import Context, MCPServer
@@ -29,6 +30,8 @@ IMPLEMENTED_TOOLS = [
 def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = None) -> FastAPI:
     settings = settings or load_settings()
     runtime = runtime or configured_runtime(settings)
+    if runtime.journal.run_log_dir is None:
+        runtime.journal.run_log_dir = Path(settings.brain_config_root).resolve() / "logs"
     bind_runtime(runtime)
     mcp = MCPServer("civis_brain", version=__version__)
     keys = [
@@ -54,56 +57,141 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
                 return caller
         return None
 
-    def require(ctx: Context, allowed: set[str]) -> str:
+    def require(ctx: Context, allowed: set[str], tool_name: str) -> str:
         caller = identity(ctx)
         if caller is None:
+            runtime.journal.append({
+                "event": "brain_request_rejected", "tool": tool_name,
+                "caller": None, "code": "UNAUTHENTICATED",
+            })
+            runtime.journal.append({
+                "event": "brain_response_sent", "tool": tool_name,
+                "outcome": "failure", "code": "UNAUTHENTICATED",
+            })
             raise ToolError("UNAUTHENTICATED: send your layer's Bearer key")
         if caller not in allowed:
+            runtime.journal.append({
+                "event": "brain_request_rejected", "tool": tool_name,
+                "caller": caller, "code": "FORBIDDEN",
+            })
+            runtime.journal.append({
+                "event": "brain_response_sent", "tool": tool_name, "caller": caller,
+                "outcome": "failure", "code": "FORBIDDEN",
+            })
             raise ToolError("FORBIDDEN: this layer may not call this tool")
         return caller
+
+    def record_request(ctx: Context, tool_name: str, **details) -> None:
+        runtime.journal.append({
+            "event": "brain_request_received", "tool": tool_name,
+            "caller": identity(ctx), **details,
+        })
+
+    def record_response(tool_name: str, *, run_id=None, tick=None, **details) -> None:
+        runtime.journal.append({
+            "event": "brain_response_sent", "tool": tool_name,
+            "run_id": run_id, "tick": tick, **details,
+        })
+
+    def record_failure(tool_name: str, error: Exception, *, run_id=None, tick=None) -> None:
+        runtime.journal.append({
+            "event": "brain_response_sent", "tool": tool_name, "run_id": run_id,
+            "tick": tick, "outcome": "failure",
+            "code": getattr(error, "code", "INTERNAL_ERROR"),
+        })
 
     @mcp.tool()
     def get_capabilities(ctx: Context) -> Capabilities:
         """Report implemented tools; full partner integration remains unverified."""
-        return Capabilities.model_validate(
-            {
-                "layer": "city_brain",
-                "layer_version": __version__,
-                "ready": False,
-                "protocol_version": ctx.request_context.protocol_version,
-                "required_protocol_version": "2026-07-28",
-                "authenticated_as": identity(ctx),
-                "implemented_tools": IMPLEMENTED_TOOLS,
-                "planned_tools": [],
-            }
-        )
+        record_request(ctx, "get_capabilities")
+        try:
+            result = Capabilities.model_validate(
+                {
+                    "layer": "city_brain",
+                    "layer_version": __version__,
+                    "ready": False,
+                    "protocol_version": ctx.request_context.protocol_version,
+                    "required_protocol_version": "2026-07-28",
+                    "authenticated_as": identity(ctx),
+                    "implemented_tools": IMPLEMENTED_TOOLS,
+                    "planned_tools": [],
+                }
+            )
+        except Exception as error:
+            record_failure("get_capabilities", error)
+            raise
+        record_response("get_capabilities", outcome="success", tool_count=len(IMPLEMENTED_TOOLS))
+        return result
 
     @mcp.tool()
     async def evaluate_tick(ctx: Context, batch: ReadingsBatch) -> DecisionBatch:
         """Evaluate candidate evidence through shared trust and response checks."""
-        require(ctx, {"twin", "guardian", "scenario"})
-        if getattr(runtime.twin, "is_fixture", False):
-            # Fixture mode uses the supplied simulated clock, never a live clock claim.
-            runtime.twin.advance(batch)
-        return await runtime.evaluate_tick(batch)
+        record_request(
+            ctx, "evaluate_tick", run_id=batch.run_id, tick=batch.tick, timestamp=batch.time,
+            count=batch.count, reading_ids=[row.reading_id for row in batch.readings],
+        )
+        require(ctx, {"twin", "guardian", "scenario"}, "evaluate_tick")
+        try:
+            if getattr(runtime.twin, "is_fixture", False):
+                # Fixture mode uses the supplied simulated clock, never a live clock claim.
+                runtime.twin.advance(batch)
+            result = await runtime.evaluate_tick(batch)
+        except Exception as error:
+            record_failure("evaluate_tick", error, run_id=batch.run_id, tick=batch.tick)
+            raise
+        record_response(
+            "evaluate_tick", run_id=batch.run_id, tick=batch.tick, outcome="success",
+            decision_count=len(result.decisions), statuses=[row.status for row in result.decisions],
+        )
+        return result
 
     @mcp.tool()
     def get_active_incidents(ctx: Context, run_id: str) -> dict:
         """Read active candidates for the specified run."""
-        require(ctx, {"twin", "guardian", "scenario"})
-        return runtime.get_active_incidents(run_id)
+        record_request(ctx, "get_active_incidents", run_id=run_id)
+        require(ctx, {"twin", "guardian", "scenario"}, "get_active_incidents")
+        try:
+            result = runtime.get_active_incidents(run_id)
+        except Exception as error:
+            record_failure("get_active_incidents", error, run_id=run_id)
+            raise
+        record_response("get_active_incidents", run_id=run_id, outcome="success",
+                        incident_count=len(result.get("incidents", [])))
+        return result
 
     @mcp.tool()
     def explain_decision(ctx: Context, decision_id: str) -> dict:
         """Read a saved decision with evidence IDs and redacted peer detail."""
-        require(ctx, {"twin", "guardian", "scenario"})
-        return runtime.explain_decision(decision_id)
+        record_request(ctx, "explain_decision", decision_id=decision_id)
+        require(ctx, {"twin", "guardian", "scenario"}, "explain_decision")
+        try:
+            result = runtime.explain_decision(decision_id)
+        except Exception as error:
+            record_failure("explain_decision", error)
+            raise
+        decision = result.get("decision") or {}
+        record_response("explain_decision", run_id=decision.get("run_id"),
+                        tick=decision.get("tick"), outcome="success", found=result.get("found"))
+        return result
 
     @mcp.tool()
     def notify_containment(ctx: Context, notice: ContainmentNotice) -> dict:
         """Guardian-only invalidation callback; Brain performs no containment operation."""
-        require(ctx, {"guardian"})
-        return runtime.notify_containment(notice)
+        record_request(
+            ctx, "notify_containment", run_id=notice.run_id, event_id=notice.event_id,
+            state=notice.state, device_ids=notice.device_ids, reading_ids=notice.reading_ids,
+        )
+        require(ctx, {"guardian"}, "notify_containment")
+        try:
+            result = runtime.notify_containment(notice)
+        except Exception as error:
+            record_failure("notify_containment", error, run_id=notice.run_id)
+            raise
+        record_response("notify_containment", run_id=notice.run_id,
+                        outcome="success" if result.get("accepted") else "refused",
+                        accepted=result.get("accepted"), invalidated=result.get("invalidated"),
+                        code=result.get("code"))
+        return result
 
     mcp_app = mcp.streamable_http_app()
     feed = None
@@ -114,6 +202,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        runtime.journal.append({"event": "brain_service_started", "peer_mode": settings.peer_mode})
         try:
             async with mcp.session_manager.run():
                 if feed:
@@ -125,6 +214,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
                         await feed.close()
         finally:
             await runtime.close()
+            runtime.journal.append({"event": "brain_service_stopped"})
 
     app = FastAPI(title="CIVIS Brain primary mock", version=__version__, lifespan=lifespan)
     app.state.runtime = runtime
@@ -145,6 +235,7 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
             "awaiting_scenarios": list(DETECTION_ONLY_SCENARIOS),
             "feed": feed.status if feed else {"state": "disabled"},
             "mock_integration_profile": settings.mock_integration_profile,
+            "event_log": runtime.journal.logging_status,
         }
 
     if settings.brain_debug_enabled:

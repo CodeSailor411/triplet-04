@@ -1,6 +1,7 @@
 import asyncio
 import json
 import re
+import time
 
 import httpx2
 from jsonschema import ValidationError, validate
@@ -8,6 +9,7 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
 from civis_brain.errors import BrainError
+from civis_brain.integration.journal import EVENT_CONTEXT
 
 PROTOCOL_VERSION = "2026-07-28"
 
@@ -21,9 +23,16 @@ class MCPPeer:
         self.url = url
         self.key = key
         self.timeout_seconds = timeout_seconds
+        self.journal = None
+        self.peer_name = "peer"
 
     async def list_tool_names(self) -> list[str]:
         """Read-only partner inventory for the handover connection check."""
+        started = time.monotonic()
+        context = dict(EVENT_CONTEXT.get())
+        if self.journal is not None:
+            self.journal.append({**context, "event": "mcp_inventory_request_sent",
+                                 "peer": self.peer_name})
         try:
             async with asyncio.timeout(self.timeout_seconds):
                 async with httpx2.AsyncClient(
@@ -42,14 +51,46 @@ class MCPPeer:
                             names.extend(tool.name for tool in page.tools)
                             cursor = page.next_cursor
                             if cursor is None:
+                                if self.journal is not None:
+                                    self.journal.append({
+                                        **context, "event": "mcp_inventory_response_received",
+                                        "peer": self.peer_name, "outcome": "success",
+                                        "tool_names": names,
+                                        "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                                    })
                                 return names
                         raise BrainError("PEER_SCHEMA_INVALID", "Peer inventory exceeds page limit")
-        except BrainError:
+        except BrainError as error:
+            if self.journal is not None:
+                self.journal.append({
+                    **context, "event": "mcp_inventory_response_received",
+                    "peer": self.peer_name, "outcome": "failure", "code": error.code,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                })
             raise
         except Exception:
+            if self.journal is not None:
+                self.journal.append({
+                    **context, "event": "mcp_inventory_response_received",
+                    "peer": self.peer_name, "outcome": "failure", "code": "PEER_UNAVAILABLE",
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                })
             raise BrainError("PEER_UNAVAILABLE", "Check peer URL, Bearer key and protocol") from None
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
+        started = time.monotonic()
+        event_context = dict(EVENT_CONTEXT.get())
+        refs = self._event_refs(arguments)
+        if self.journal is not None:
+            self.journal.append({
+                **event_context, "event": "mcp_tool_request_sent", "peer": self.peer_name, "tool": name,
+                **refs, "request_summary": self._event_summary(arguments),
+            })
+            if (self.journal.write_error and
+                    ((self.peer_name == "twin" and name in {"actuate", "commit_action"})
+                     or (self.peer_name == "guardian" and name == "authorize_action"))):
+                raise BrainError("AUDIT_LOG_UNAVAILABLE", "Brain cannot record the required MCP exchange")
+
         async def request():
             async with httpx2.AsyncClient(
                 headers={"Authorization": f"Bearer {self.key}"},
@@ -115,10 +156,22 @@ class MCPPeer:
                     return value
 
         try:
-            return await asyncio.wait_for(request(), self.timeout_seconds)
-        except BrainError:
+            result = await asyncio.wait_for(request(), self.timeout_seconds)
+        except BrainError as error:
+            if self.journal is not None:
+                self.journal.append({
+                    **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                    **refs, "outcome": "failure", "code": error.code,
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                })
             raise
         except TimeoutError:
+            if self.journal is not None:
+                self.journal.append({
+                    **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                    **refs, "outcome": "failure", "code": "PEER_TIMEOUT",
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                })
             raise BrainError("PEER_TIMEOUT", "Peer call timed out") from None
         except ExceptionGroup as group:
 
@@ -130,16 +183,78 @@ class MCPPeer:
             errors = leaves(group)
             refusal = next((error for error in errors if isinstance(error, BrainError)), None)
             if refusal is not None:
+                if self.journal is not None:
+                    self.journal.append({
+                        **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                        **refs, "outcome": "failure", "code": refusal.code,
+                        "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                    })
                 raise refusal from None
             if any(isinstance(error, TimeoutError) for error in errors):
+                if self.journal is not None:
+                    self.journal.append({
+                        **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                        **refs, "outcome": "failure", "code": "PEER_TIMEOUT",
+                        "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                    })
                 raise BrainError("PEER_TIMEOUT", "Peer call timed out") from None
+            if self.journal is not None:
+                self.journal.append({
+                    **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                    **refs, "outcome": "failure", "code": "PEER_UNAVAILABLE",
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                })
             raise BrainError(
                 "PEER_UNAVAILABLE", "Peer transport or response is unavailable"
             ) from None
         except Exception:
+            if self.journal is not None:
+                self.journal.append({
+                    **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                    **refs, "outcome": "failure", "code": "PEER_UNAVAILABLE",
+                    "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+                })
             raise BrainError(
                 "PEER_UNAVAILABLE", "Peer transport or response is unavailable"
             ) from None
+        if self.journal is not None:
+            self.journal.append({
+                **event_context, "event": "mcp_tool_response_received", "peer": self.peer_name, "tool": name,
+                **self._event_refs(result), "outcome": "success",
+                "response_summary": self._event_summary(result, response=True),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
+        return result
+
+    @staticmethod
+    def _event_summary(payload, *, response=False):
+        if not isinstance(payload, dict):
+            return {}
+        fields = ({
+            "run_id", "tick", "reading_id", "reading_ids", "source_reading_ids",
+            "device_id", "device_ids", "node_id", "node_ids", "action", "targets",
+            "params", "risk", "risk_level", "domain", "idempotency_key", "state",
+            "event_id", "fresh", "count", "unit_type", "scenario_id",
+        } if not response else {
+            "run_id", "tick", "status", "code", "decision", "decision_id", "accepted",
+            "duplicate", "invalidated", "trust_score", "score", "scale", "caused_by",
+            "reading_id", "valid_until_tick", "would_pass_checks", "blocked_by", "safe",
+            "protocol_version", "outcome",
+        })
+        result = {key: value for key, value in payload.items() if key in fields}
+        return {key: list(value[:100]) if isinstance(value, (list, tuple)) else value
+                for key, value in result.items()}
+
+    @staticmethod
+    def _event_refs(payload):
+        if not isinstance(payload, dict):
+            return {}
+        keys = {
+            "run_id", "tick", "reading_id", "reading_ids", "source_reading_ids",
+            "device_id", "device_ids", "node_id", "node_ids", "action_id", "jti",
+            "idempotency_key",
+        }
+        return {key: value for key, value in payload.items() if key in keys}
 
 
 def at_path(value: dict, path: str):

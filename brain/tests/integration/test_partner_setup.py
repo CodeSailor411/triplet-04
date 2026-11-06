@@ -22,6 +22,7 @@ def test_explicit_environment_reaches_app_factory(tmp_path, monkeypatch):
         health = client.get("/health").json()
         assert health["peer_mode"] == "live" and health["llm_mode"] == "gemini"
         assert health["guardian_contract_confirmed"] is True
+        assert health["event_log"] == {"enabled": True, "error": None}
         assert "test-key-only" not in str(health)
 
 
