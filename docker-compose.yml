@@ -1,0 +1,183 @@
+# Triplet 04 local stack. Copy .env.example to .env, replace the dev keys, then run:
+#   docker compose up --build
+# Twin: http://127.0.0.1:8000   Brain MCP: http://127.0.0.1:8001/mcp
+# Guardian: http://127.0.0.1:5000   Dashboard: http://127.0.0.1:8080
+# Requires Docker Compose v2.24+. Use a real Gemini API key before asking Brain to plan.
+
+services:
+  guardian-keygen:
+    build:
+      context: ./guardian
+      dockerfile: src/Dockerfile
+    command:
+      - sh
+      - -c
+      - >-
+        if [ ! -s /keys/private/guardian-private.pem ] || [ ! -s /keys/public/guardian-public.pem ]; then
+        python src/generate_token_keys.py --private /keys/private/guardian-private.pem --public /keys/public/guardian-public.pem;
+        fi
+    volumes:
+      - guardian-private-keys:/keys/private
+      - guardian-public-keys:/keys/public
+    restart: "no"
+
+  twin:
+    build: ./twin
+    environment:
+      TWIN_KEY_CITY_BRAIN: ${TWIN_KEY_CITY_BRAIN:-dev-city-brain-key-change-me}
+      TWIN_KEY_GUARDIAN: ${TWIN_KEY_GUARDIAN:-dev-guardian-key-change-me}
+      TWIN_KEY_SCENARIO: ${TWIN_KEY_SCENARIO:-dev-scenario-key-change-me}
+      TWIN_TOKEN_MODE: signed
+      TWIN_GUARDIAN_PUBLIC_KEY: /run/guardian-public/guardian-public.pem
+      TWIN_SEED: ${TWIN_SEED:-42}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./twin/run-logs:/app/twin/run-logs
+      - ./logs:/app/logs
+      - guardian-public-keys:/run/guardian-public:ro
+    depends_on:
+      guardian-keygen:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  guardian:
+    build:
+      context: ./guardian
+      dockerfile: src/Dockerfile
+    environment:
+      PORT: "5000"
+      TWIN_BASE_URL: http://twin:8000
+      GUARDIAN_TWIN_BEARER_KEY: ${TWIN_KEY_GUARDIAN:-dev-guardian-key-change-me}
+      GUARDIAN_API_BEARER_KEY: ${GUARDIAN_API_BEARER_KEY:-dev-guardian-api-key-change-me}
+      GUARDIAN_BRAIN_MCP_BEARER_KEY: ${GUARDIAN_BRAIN_MCP_BEARER_KEY:-dev-guardian-mcp-key-change-me}
+      BRAIN_MCP_URL: http://brain:8001/mcp
+      BRAIN_GUARDIAN_CALLER_KEY: ${BRAIN_GUARDIAN_CALLER_KEY:-dev-brain-guardian-caller-key-change-me}
+      GUARDIAN_TOKEN_PRIVATE_KEY: /run/guardian-private/guardian-private.pem
+      GUARDIAN_TOKEN_PUBLIC_KEY: /run/guardian-public/guardian-public.pem
+      GUARDIAN_AUDIT_DIR: /app/guardian/run-logs
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./guardian/run-logs:/app/guardian/run-logs
+      - guardian-private-keys:/run/guardian-private:ro
+      - guardian-public-keys:/run/guardian-public:ro
+    depends_on:
+      guardian-keygen:
+        condition: service_completed_successfully
+      twin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  brain:
+    build:
+      context: .
+      dockerfile: docker/brain.Dockerfile
+    environment:
+      BRAIN_HOST: 0.0.0.0
+      BRAIN_PORT: "8001"
+      BRAIN_TWIN_CALLER_KEY: ${BRAIN_TWIN_CALLER_KEY:-dev-brain-twin-caller-key-change-me}
+      BRAIN_GUARDIAN_CALLER_KEY: ${BRAIN_GUARDIAN_CALLER_KEY:-dev-brain-guardian-caller-key-change-me}
+      BRAIN_SCENARIO_KEY: ${BRAIN_SCENARIO_KEY:-dev-brain-scenario-key-change-me}
+      TWIN_MCP_URL: http://twin:8000/mcp
+      TWIN_EVENTS_URL: http://twin:8000/events
+      TWIN_BRAIN_KEY: ${TWIN_KEY_CITY_BRAIN:-dev-city-brain-key-change-me}
+      TWIN_FEED_ENABLED: ${TWIN_FEED_ENABLED:-true}
+      GUARDIAN_MCP_URL: http://guardian:5000/mcp
+      GUARDIAN_BRAIN_KEY: ${GUARDIAN_BRAIN_MCP_BEARER_KEY:-dev-guardian-mcp-key-change-me}
+      GUARDIAN_TRANSPORT: mcp_v3
+      GUARDIAN_CONTRACT_CONFIRMED: "true"
+      GUARDIAN_SCORE_TOOL: get_trust_verdict
+      GUARDIAN_TOKEN_TOOL: authorize_action
+      TWIN_PREVIEW_TOOL: preview_action
+      PEER_MODE: ${PEER_MODE:-live}
+      LLM_MODE: ${LLM_MODE:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-dev-gemini-key-change-me}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      MOCK_INTEGRATION_PROFILE: ${MOCK_INTEGRATION_PROFILE:-true}
+      SCENARIO_POLICY_FILE: config/integration/twin-mock-3.json
+      BRAIN_DEBUG_ENABLED: ${BRAIN_DEBUG_ENABLED:-true}
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./brain/run-logs:/app/brain/run-logs
+    depends_on:
+      twin:
+        condition: service_healthy
+      guardian:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  guardian-feed:
+    build:
+      context: ./guardian
+      dockerfile: src/Dockerfile
+    command: ["python", "src/twin_runner.py"]
+    environment:
+      TWIN_BASE_URL: http://twin:8000
+      GUARDIAN_TWIN_BEARER_KEY: ${TWIN_KEY_GUARDIAN:-dev-guardian-key-change-me}
+      GUARDIAN_API_BEARER_KEY: ${GUARDIAN_API_BEARER_KEY:-dev-guardian-api-key-change-me}
+      GUARDIAN_LOCAL_URL: http://guardian:5000
+      BRAIN_MCP_URL: http://brain:8001/mcp
+      BRAIN_GUARDIAN_CALLER_KEY: ${BRAIN_GUARDIAN_CALLER_KEY:-dev-brain-guardian-caller-key-change-me}
+    volumes:
+      - ./guardian/run-logs:/app/guardian/run-logs
+    depends_on:
+      twin:
+        condition: service_healthy
+      guardian:
+        condition: service_healthy
+      brain:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build: ./twin
+    command:
+      - python
+      - -m
+      - twin.dashboard
+      - --host
+      - 0.0.0.0
+      - --feed-url
+      - http://twin:8000
+      - --sources
+      - run-logs
+      - ../logs
+      - ../brain/run-logs
+    environment:
+      TWIN_KEY_CITY_BRAIN: ${TWIN_KEY_CITY_BRAIN:-dev-city-brain-key-change-me}
+      TWIN_KEY_GUARDIAN: ${TWIN_KEY_GUARDIAN:-dev-guardian-key-change-me}
+      TWIN_KEY_SCENARIO: ${TWIN_KEY_SCENARIO:-dev-scenario-key-change-me}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./twin/run-logs:/app/twin/run-logs:ro
+      - ./logs:/app/logs:ro
+      - ./brain/run-logs:/app/brain/run-logs:ro
+    depends_on:
+      twin:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  guardian-private-keys:
+  guardian-public-keys:
