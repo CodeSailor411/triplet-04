@@ -1,6 +1,6 @@
-# CIVIS Brain primary mock
+# CIVIS Brain
 
-Current Brain main snapshot, 3 November 2026. The optional S01 GraphSAGE-style forecast and Gemini interpretation run in shadow mode on deterministic synthetic Twin telemetry. They do not affect incident detection, evidence, risk, authorization or actuation. **555 Brain tests pass; Ruff passes.** The full gate against `twin-mock-3` and `guardian_final_version` is **22 passed, 8 failed**; full three-layer acceptance remains blocked by partner issues. The separate live Gemini graph check passed. See the [release handover](docs/mock-team/BRAIN_MOCK_3.md), [GNN experiment limits and metrics](experiments/traffic_gnn/README.md), and [setup and partner findings](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md). The `brain-mock-3` tag remains the historical 27 October checkpoint.
+Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Updated 6 November 2026. Brain detects incidents from Twin evidence, asks Guardian for trust and exact action authorization, then asks Twin to execute. Brain forwards Guardian's original `g1` token unchanged. It never signs tokens or performs containment.
 
 **Partners: follow [the current live setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md).** Use a private `.env.partner` based on `config/partner.env.example`. Windows: `scripts/start_partner.ps1`; Linux: `.venv/bin/python -m civis_brain --env-file .env.partner` from `brain`. This path uses actual peer services and Gemini. The developer commands below use ordinary `.env`; browser presets always use isolated simulated peers. The [brain-mock-2 handover](docs/mock-team/BRAIN_MOCK_2.md) describes that historical tag only.
 
@@ -13,6 +13,10 @@ Current Brain main snapshot, 3 November 2026. The optional S01 GraphSAGE-style f
 | S05 Medical | Maram | R2 ambulance dispatch to the reported destination |
 
 One FastAPI/MCP service, one Gemini adapter and one shared validation/approval/execution path serve all five modules. See the [individual reviews and test evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md), [handover](docs/mock-team/HANDOVER.md), [interface](INTERFACE.md) and [Windows setup](docs/mock-team/SETUP.md).
+
+## Optional Traffic graph forecast
+
+An opt-in GraphSAGE-style S01 forecast is implemented in the Brain runtime and disabled by default. It uses deterministic synthetic Twin telemetry to forecast `vehicle_count` and `avg_speed`. Gemini can provide a separate read-only interpretation. These outputs do not create incidents, change risk, provide authorization evidence or trigger actions. The experiment has not shown a meaningful improvement over its non-graph baseline. See the [experiment details and limits](experiments/traffic_gnn/README.md).
 
 ## Run on Windows
 
@@ -40,4 +44,8 @@ Change S01 to S02-S05 and base to refusal as needed. Power and Air produce alert
 
 Health: /health. MCP: /mcp, protocol 2026-07-28. Caller keys are required for evaluation and read tools. Gemini and peer secrets stay in ignored .env. Logs use ignored run-logs/<run_id>.brain.jsonl; debug traces use .artifacts/. See [debugging](docs/mock-team/DEBUGGING.md) for controls and [partner gaps](docs/mock-team/PARTNER_GAPS.md) before a joint run.
 
-Member PRs target codex/civis-elyes. Main and layer branches remain separate. Elyes authorized this limited checkpoint. Promotion into the brain layer branch still follows the agreed PR review flow; main is unchanged.
+## Current validation status
+
+As of the latest recorded gate on 3 November 2026, 555 Brain tests and Ruff passed. The gate against Twin `twin-mock-3` and Guardian `guardian_final_version` recorded 22 checks passed and 8 failed. Joint acceptance is not complete. S02 and S05 action workflows and live containment notification remain blocked by partner integration issues. See the [release handover](docs/mock-team/BRAIN_MOCK_3.md) for exact evidence and ownership.
+
+Member PRs target `codex/civis-elyes`; main and layer branches remain separate.
