@@ -37,6 +37,7 @@ Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). `setup.ps1` creates `
 powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
 cd brain
 .\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
 .\.venv\Scripts\python.exe scripts/doctor.py
 .\.venv\Scripts\python.exe scripts/setup_peer_keys.py
 .\.venv\Scripts\python.exe -m civis_brain
