@@ -1,0 +1,9 @@
+**
+!brain/
+!brain/requirements-lock.txt
+!brain/src/
+!brain/src/**
+!brain/config/
+!brain/config/**
+!brain/mocks/
+!brain/mocks/**
