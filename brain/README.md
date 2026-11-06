@@ -1,43 +1,68 @@
-# CIVIS Brain primary mock
+# CIVIS Brain
 
-Checkpoint **brain-mock-3**, 27 October 2026, branch **codex/civis-elyes**. It maps Guardian v3's `describe_capabilities`, individual `get_trust_verdict` and `authorize_action`, retaining the original Guardian `g1` token. Twin mock 3 supplies the Traffic metric. **522 CIVIS tests pass; full joint acceptance remains blocked.** See the [release handover](docs/mock-team/BRAIN_MOCK_3.md) and [setup, gate and partner findings](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md). Brain-mock-2 remains unchanged.
+Branch **codex/civis-elyes**, following checkpoint **brain-mock-3**. Updated 6 November 2026. Brain maps Guardian v3's `describe_capabilities`, `get_trust_verdict` and `authorize_action`, and keeps Guardian's original `g1` token unchanged.
 
-**Partners: follow [the current live setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md).** Use a private `.env.partner` based on `config/partner.env.example`. Windows: `scripts/start_partner.ps1`; Linux: `.venv/bin/python -m civis_brain --env-file .env.partner` from `brain`. This path uses actual peer services and Gemini. The developer commands below use ordinary `.env`; browser presets always use isolated simulated peers. The [brain-mock-2 handover](docs/mock-team/BRAIN_MOCK_2.md) describes that historical tag only.
+## What Brain does
 
-| Scenario | Original owner | Reduced mock response |
-| --- | --- | --- |
-| S01 Traffic | Yassine | Advertised R1 signal plan after persistent congestion |
-| S02 Water | Meriem | Topology-supported R3 valve request, with required safe preview |
-| S03 Power | Elyes | Evidence/uncertainty alert; no grid switching |
-| S04 Air Quality | Elyes | Sustained PM2.5 alert; no actuator |
-| S05 Medical | Maram | R2 ambulance dispatch to the reported destination |
+Brain is the decision layer between Twin and Guardian:
 
-One FastAPI/MCP service, one Gemini adapter and one shared validation/approval/execution path serve all five modules. See the [individual reviews and test evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md), [handover](docs/mock-team/HANDOVER.md), [interface](INTERFACE.md) and [Windows setup](docs/mock-team/SETUP.md).
+1. Reads Twin evidence (readings, clock, containment state).
+2. Detects and validates incidents against policy.
+3. Asks Guardian for a trust verdict and for exact approval of the specific action.
+4. Asks Twin to execute the approved action.
 
-## Run on Windows
+Brain never signs tokens and never performs containment.
 
-From the repository root:
+## Primary capabilities
+
+| ID | Capability | Original owner | Response |
+| --- | --- | --- | --- |
+| S01 | Traffic | Yassine | R1 signal plan after persistent congestion |
+| S02 | Water virtual command | Meriem | R3 virtual valve request with a required safe preview; not a hydraulic model |
+| S03 | Power alert | Elyes | Evidence/uncertainty alert; no grid switching |
+| S04 | Air Quality alert | Elyes | Sustained PM2.5 alert; no actuator |
+| S05 | Medical dispatch | Maram | R2 ambulance dispatch to the reported destination |
+
+One FastAPI/MCP service, one Gemini adapter and one shared validation/approval/execution path serve all five.
+
+## GNN (optional, shadow only)
+
+A GNN is an optional, shadow-only Traffic context experiment. It never approves an action and never changes risk. No GNN code is part of the Brain runtime on this branch, and no learned actuation is enabled.
+
+## Local setup and run
+
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). `setup.ps1` creates `.venv` with Python 3.12 and installs exactly the committed `requirements-lock.txt`. From the repository root (Windows):
 
 ~~~powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
 cd brain
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m ruff check src mocks tests scripts
 .\.venv\Scripts\python.exe scripts/doctor.py
 .\.venv\Scripts\python.exe scripts/setup_peer_keys.py
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
-Open http://127.0.0.1:8001/. Select any of the five scenarios and its base/refusal case. **Recorded response** uses no external API; **Gemini API** makes a real planning request for Traffic, Water or Medical. The page always uses fake Twin and Guardian services, with editable standard readings, request/response traces and JSON export.
-
-For an offline command-line replay, run:
+This runs with simulated peers (the defaults `PEER_MODE=fixture`, `LLM_MODE=fixture`). Brain serves `http://127.0.0.1:8001/`; the debug page there always uses simulated Twin and Guardian. For an offline replay of one case:
 
 ~~~powershell
 .\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base
 ~~~
 
-Change S01 to S02-S05 and base to refusal as needed. Power and Air produce alerts with zero actuator effects and no Gemini call.
+Use S01 to S05 and `base` or `refusal`.
 
-Health: /health. MCP: /mcp, protocol 2026-07-28. Caller keys are required for evaluation and read tools. Gemini and peer secrets stay in ignored .env. Logs use ignored run-logs/<run_id>.brain.jsonl; debug traces use .artifacts/. See [debugging](docs/mock-team/DEBUGGING.md) for controls and [partner gaps](docs/mock-team/PARTNER_GAPS.md) before a joint run.
+**Live partner run:** use a private `.env.partner` based on `config/partner.env.example` (obtain credentials privately, never commit them), then `scripts/start_partner.ps1` on Windows, or `python -m civis_brain --env-file .env.partner` from `brain`. See the [joint setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md) and [partner gaps](docs/mock-team/PARTNER_GAPS.md).
 
-Member PRs target codex/civis-elyes. Main and layer branches remain separate. Elyes authorized this limited checkpoint. Promotion into the brain layer branch still follows the agreed PR review flow; main is unchanged.
+Health: `/health`. MCP: `/mcp`, protocol 2026-07-28. Logs go to ignored `run-logs/<run_id>.brain.jsonl`; debug traces to ignored `.artifacts/`. See [debugging](docs/mock-team/DEBUGGING.md).
+
+## Limitation
+
+Joint acceptance is not complete. Current partner failures stay visible and are not hidden or worked around. Not every layer is integrated end to end.
+
+Member PRs target `codex/civis-elyes`; main and layer branches remain separate.
+
+## Documents
+
+- [INTERFACE.md](INTERFACE.md): MCP tools, caller permissions, workflow, time bases
+- [INTEGRATION.md](../INTEGRATION.md)
+- [TESTBOOK.md](../TESTBOOK.md)
+- [Release handover](docs/mock-team/BRAIN_MOCK_3.md), [Windows setup](docs/mock-team/SETUP.md)
