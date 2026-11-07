@@ -1,5 +1,7 @@
 # CIVIS input for INTEGRATION.md
 
+**7 November 2026 status:** This draft's rows describe the earlier gate. [Current source pins, corrections and evidence](../brain/docs/mock-team/JOINT_FIX_2026-11-07.md) now show real S02/S05 commits and the Guardian containment callback. The bounded 14-check actual-service gate passes with recorded planning. Rollback and caller-disabled-signature controls from this draft were not rerun in that gate; full Test Book completion and live Gemini are not claimed.
+
 ## 1. CIVIS role
 Brain handles incident detection, typed intent, evidence validation, the Guardian request and the Twin execution request.
 

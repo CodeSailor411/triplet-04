@@ -212,6 +212,33 @@ async def test_ai_timeout_and_budget():
     assert result.decisions[0].peer_code == "AI_BUDGET_EXCEEDED" and not twin.effects
 
 
+async def test_traffic_graph_interpretation_retains_completed_same_run_source_tick():
+    case = make_case()
+    runtime, _, _, provider = harness(case)
+    runtime.features.update(traffic_gnn_shadow_enabled=True, ai_timeout_seconds=60)
+    runtime.run_id = "test-run"
+    source_forecast = {
+        "status": "ready", "run_id": "test-run", "tick": 1,
+        "forecast_tick": 6, "forecasts": [],
+    }
+    runtime.traffic_gnn_shadow = source_forecast
+    runtime._traffic_gnn_key = ("test-run", 1)
+
+    async def interpret(forecast):
+        assert forecast == source_forecast
+        runtime._traffic_gnn_key = ("test-run", 2)
+        return {"trend": "rising"}
+
+    provider.interpret_graph = interpret
+
+    await runtime._interpret_traffic_gnn(("test-run", 1), source_forecast)
+
+    assert runtime.traffic_gnn_interpretation == {
+        "status": "ready", "run_id": "test-run", "tick": 1,
+        "interpretation": {"trend": "rising"},
+    }
+
+
 @pytest.mark.parametrize(
     "change,code",
     [

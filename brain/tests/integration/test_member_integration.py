@@ -186,12 +186,18 @@ async def test_token_lifetime_is_sixty_simulated_seconds_and_logs_link_action(tm
     assert claims[0]["score"] == .95
     assert result.decisions[0].status == "committed"
     rows = [json.loads(line) for line in
-            (tmp_path / "run-logs/fixture-s05-base.brain.jsonl").read_text().splitlines()]
-    decision = next(row for row in rows if row["event_type"] == "decision")
+            (tmp_path / "run-logs/s05-fixture-s05-base.city_brain.jsonl").read_text().splitlines()]
+    decision = next(row for row in rows if row["event"] == "decision_made")
     action = next(row for row in twin.calls if row["name"] == "actuate")
-    assert decision["data"]["idempotency_key"] == action["arguments"]["idempotency_key"]
-    assert decision["caused_by"] == case["expected"]["source_reading_ids"]
-    assert {"event_id", "timestamp", "wall", "layer", "tick", "run_id"} <= decision.keys()
+    assert decision["refs"]["idempotency_key"] == action["arguments"]["idempotency_key"]
+    assert decision["refs"]["reading_ids"] == case["expected"]["source_reading_ids"]
+    assert {"ts", "scenario", "seq", "summary", "refs", "data", "tick", "run_id", "layer"} <= decision.keys()
+    assert decision["layer"] == "city_brain" and decision["scenario"] == "S05"
+    events = [row["event"] for row in rows]
+    assert {"incident_detected", "authorization_received", "action_requested",
+            "action_outcome_received", "decision_made"} <= set(events)
+    assert [row["seq"] for row in rows] == list(range(1, len(rows) + 1))
+    assert all(row["layer"] == "city_brain" and row["scenario"] == "S05" for row in rows)
     assert "eyJ" not in json.dumps(rows)
 
 
@@ -290,15 +296,17 @@ async def test_twin_refusal_is_not_repeated_on_later_evidence(domain, tmp_path):
     assert not twin.effects
 
 
-async def test_log_disk_failure_does_not_change_committed_outcome(tmp_path, monkeypatch):
+async def test_log_disk_failure_fails_closed_before_guardian_authorization(tmp_path, monkeypatch):
     case = case_for("emergency")
-    runtime, twin, _, _ = harness(case, tmp_path)
+    runtime, twin, guardian, _ = harness(case, tmp_path)
 
     def full_disk(event):
         raise OSError("synthetic disk full")
     monkeypatch.setattr(runtime.journal, "_write_part", full_disk)
     result = (await evaluate(case, runtime, twin))[-1]
-    assert result.decisions[0].status == "committed" and len(twin.effects) == 1
+    assert result.decisions[0].status in {"blocked", "rejected"} and not twin.effects
+    assert result.decisions[0].peer_code == "AUDIT_LOG_UNAVAILABLE"
+    assert not any(row["name"] in {"fixture_approve", "actuate"} for row in guardian.calls + twin.calls)
     assert runtime.journal.write_error["code"] == "LOG_WRITE_FAILED"
     assert any(row["event"] == "log_failure" for row in runtime.journal.events)
 

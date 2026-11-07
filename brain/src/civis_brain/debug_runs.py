@@ -131,6 +131,31 @@ class TraceProvider:
             )
             entry["elapsed_ms"] = round((perf_counter() - started) * 1000, 1)
 
+    async def interpret_graph(self, forecast):
+        method = getattr(self.provider, "interpret_graph", None)
+        if not callable(method):
+            return None
+        entry = {
+            "step": len(self.trace) + 1,
+            "target": self.mode,
+            "operation": "interactions.create.graph_interpretation",
+            "request": self.journal.redact(copy.deepcopy(forecast)),
+        }
+        self.trace.append(entry)
+        started = perf_counter()
+        try:
+            result = await method(forecast)
+            entry["response"] = self.journal.redact(result)
+            return result
+        except BrainError as error:
+            entry["error"] = {"code": error.code, "message": error.message}
+            raise
+        finally:
+            entry["provider_response"] = self.journal.redact(
+                getattr(self.provider, "last_graph_response", {})
+            )
+            entry["elapsed_ms"] = round((perf_counter() - started) * 1000, 1)
+
 
 async def run_debug_case(settings, request: DebugRunRequest, *, live_provider=None, ai_budget=3):
     root = Path(settings.brain_config_root).resolve()
@@ -168,6 +193,7 @@ async def run_debug_case(settings, request: DebugRunRequest, *, live_provider=No
             "commit_tool": "fixture_commit",
             "ai_timeout_seconds": settings.ai_timeout_seconds,
             "ai_max_calls_per_run": ai_budget,
+            "traffic_gnn_shadow_enabled": settings.traffic_gnn_shadow_enabled,
         },
         artifact_dir=root / ".artifacts/debug" / f"{request.scenario}-{request.variant}",
     )

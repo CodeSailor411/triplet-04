@@ -1,5 +1,7 @@
 # Brain and Guardian integration contract
 
+Current verification, 7 November 2026: [shared-domain correction and actual Guardian callback proof](JOINT_FIX_2026-11-07.md). Use Guardian's `main` subtree at `45e0ccb` for the current S02/S05/containment contract; the older `guardian_final_version` snapshot below is historical. Containment MCP uses `BRAIN_MCP_URL` / `BRAIN_GUARDIAN_CALLER_KEY`, with a 3-second configured timeout. Do not configure the optional HTTP verdict webhook key without its separate URL; it is not required by Brain.
+
 28 October 2026. CIVIS adopts the existing Guardian v3 names and the verdict union now published in `guardian_final_version/guardian/INTERFACE.md`. Select `GUARDIAN_TRANSPORT=mcp_v3`. The pending/union compatibility update follows the immutable `brain-mock-3` checkpoint; it does not certify joint acceptance. Older checkpoints remain reproducible in Git history.
 
 ## Existing MCP tools and mappings
@@ -48,3 +50,4 @@ Brain's existing `notify_containment({notice})` MCP callback is Guardian-only. I
 CIVIS delivery profile, specified 28 October: send immediately after confirmed Twin containment, with 3 real seconds per call and at most one identical retry after a lost acknowledgment. Preserve event ID/payload and send in order per device. A successful acknowledgment confirms Brain invalidation only; failed delivery requires reconciliation. Deduplication is in memory, not a durable replay or ordering guarantee. The optional Guardian HTTP pushed-score setting `BRAIN_VERDICT_URL` is not this MCP callback. No pushed-score feed is required. Exact examples and policy confirmations: [CIVIS answers to 9antra](CIVIS_answers_to_9antra_questions_28_Oct_2026.md).
 
 The current gate and exact partner defects are in [joint acceptance](JOINT_ACCEPTANCE_2026-10-26.md). Internal mocks do not establish interoperability.
+

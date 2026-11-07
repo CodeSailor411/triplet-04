@@ -1,5 +1,7 @@
 # CIVIS failure table (draft)
 
+**7 November 2026 status:** This draft's rows describe the earlier gate. [Current source pins, corrections and evidence](../brain/docs/mock-team/JOINT_FIX_2026-11-07.md) now show real S02/S05 commits and the Guardian containment callback. The bounded 14-check actual-service gate passes with recorded planning. Rollback and caller-disabled-signature controls from this draft were not rerun in that gate; full Test Book completion and live Gemini are not claimed.
+
 | ID | Layer | Failure or limit | Trigger/reproduction | Observed result | Impact | Owner | Required correction | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | CIVIS-F01 | Brain / Guardian | S05 does not complete | S05 run in the latest joint gate | Guardian refused current ambulance evidence with `ambulance_capacity_evidence_not_current` | S05 medical dispatch not completed in the joint gate | To confirm (the evidence shows a refusal, not which side's evidence is stale) | Establish why the ambulance evidence was judged not current, correct it and rerun | Not run |

@@ -73,6 +73,8 @@ def attach_debug(app, runtime, settings):
                 "implemented_scenarios": list(IMPLEMENTED_SCENARIOS),
                 "pending_scenarios": list(DETECTION_ONLY_SCENARIOS),
                 "graph_context": runtime.graph_context,
+                "traffic_gnn_shadow": runtime.traffic_gnn_shadow,
+                "traffic_gnn_interpretation": runtime.traffic_gnn_interpretation,
                 "peer_mode": settings.peer_mode,
                 "llm_mode": settings.llm_mode,
                 "model": settings.gemini_model
