@@ -1,5 +1,7 @@
 # CIVIS Brain interface
 
+**7 November 2026 update:** [current source pins, SH-05 cap correction and joint proof](docs/mock-team/JOINT_FIX_2026-11-07.md). The current 14-check actual-service gate passes, including S02/S05 and Guardian-to-Twin-to-Brain containment. Planning was recorded, not live Gemini. The earlier gate counts and partner blockers below describe the older tagged snapshots and are superseded for those reviewed current sources. Public schemas and `ready:false` are unchanged.
+
 Updated 6 November 2026. Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Python 3.12, pinned MCP 2.3.0, protocol `2026-07-28`, Streamable HTTP at `http://127.0.0.1:8001/mcp`; `GET /health` is also available. The latest recorded gate used Twin `twin-mock-3` (`b012c94`) and Guardian `guardian_final_version` (`f23e570`): 22 checks passed and 8 failed. Joint acceptance is not complete. See [release handover](docs/mock-team/BRAIN_MOCK_3.md) and [Guardian contract](docs/mock-team/GUARDIAN_CONTRACT.md).
 
 | Brain tool | Input | Output | Allowed caller |

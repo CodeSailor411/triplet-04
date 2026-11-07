@@ -1,5 +1,9 @@
 # CIVIS Brain
 
+**Run all three real services with Docker:** follow [the CIVIS Compose setup](docs/COMPOSE.md). It uses the reviewed Twin/Guardian Compose PR and the current Brain checkout.
+
+**7 November 2026:** [current integration correction, source versions and verification](docs/mock-team/JOINT_FIX_2026-11-07.md). This update fixes shared-domain cap discovery and the generated Guardian feed/callback configuration. Current source acceptance supersedes the dated partner blockers in earlier handovers.
+
 Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Updated 6 November 2026. Brain detects incidents from Twin evidence, asks Guardian for trust and exact action authorization, then asks Twin to execute. Brain forwards Guardian's original `g1` token unchanged. It never signs tokens or performs containment.
 
 **Partners: follow [the current live setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md).** Use a private `.env.partner` based on `config/partner.env.example`. Windows: `scripts/start_partner.ps1`; Linux: `.venv/bin/python -m civis_brain --env-file .env.partner` from `brain`. This path uses actual peer services and Gemini. The developer commands below use ordinary `.env`; browser presets always use isolated simulated peers. The [brain-mock-2 handover](docs/mock-team/BRAIN_MOCK_2.md) describes that historical tag only.
