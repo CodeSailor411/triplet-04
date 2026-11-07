@@ -1,28 +1,39 @@
 # CIVIS Brain
 
-**7 November 2026:** [current integration correction, source versions and verification](docs/mock-team/JOINT_FIX_2026-11-07.md). This update fixes shared-domain cap discovery and the generated Guardian feed/callback configuration. Current source acceptance supersedes the dated partner blockers in earlier handovers.
+**7 November 2026:** [current source pins and verification](docs/mock-team/JOINT_FIX_2026-11-07.md). The 14-check actual-service gate passes for the reviewed Twin and Guardian sources, including S02/S05 and real containment notification. Planning was recorded; full production readiness and live Gemini are not certified. Public schemas and `ready:false` are unchanged.
 
-Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Updated 6 November 2026. Brain detects incidents from Twin evidence, asks Guardian for trust and exact action authorization, then asks Twin to execute. Brain forwards Guardian's original `g1` token unchanged. It never signs tokens or performs containment.
+Branch **codex/civis-elyes**, following checkpoint **brain-mock-3**. Updated 6 November 2026. Brain maps Guardian v3's `describe_capabilities`, `get_trust_verdict` and `authorize_action`, and keeps Guardian's original `g1` token unchanged.
 
-**Partners: follow [the current live setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md).** Use a private `.env.partner` based on `config/partner.env.example`. Windows: `scripts/start_partner.ps1`; Linux: `.venv/bin/python -m civis_brain --env-file .env.partner` from `brain`. This path uses actual peer services and Gemini. The developer commands below use ordinary `.env`; browser presets always use isolated simulated peers. The [brain-mock-2 handover](docs/mock-team/BRAIN_MOCK_2.md) describes that historical tag only.
+## What Brain does
 
-| Scenario | Original owner | Reduced mock response |
-| --- | --- | --- |
-| S01 Traffic | Yassine | Advertised R1 signal plan after persistent congestion |
-| S02 Water | Meriem | Topology-supported R3 valve request, with required safe preview |
-| S03 Power | Elyes | Evidence/uncertainty alert; no grid switching |
-| S04 Air Quality | Elyes | Sustained PM2.5 alert; no actuator |
-| S05 Medical | Maram | R2 ambulance dispatch to the reported destination |
+Brain is the decision layer between Twin and Guardian:
 
-One FastAPI/MCP service, one Gemini adapter and one shared validation/approval/execution path serve all five modules. See the [individual reviews and test evidence](docs/mock-team/INTEGRATION_REVIEW_2026-10-11.md), [handover](docs/mock-team/HANDOVER.md), [interface](INTERFACE.md) and [Windows setup](docs/mock-team/SETUP.md).
+1. Reads Twin evidence (readings, clock, containment state).
+2. Detects and validates incidents against policy.
+3. Asks Guardian for a trust verdict and for exact approval of the specific action.
+4. Asks Twin to execute the approved action.
 
-## Optional Traffic graph forecast
+Brain never signs tokens and never performs containment.
 
-An opt-in GraphSAGE-style S01 forecast is implemented in the Brain runtime and disabled by default. It uses deterministic synthetic Twin telemetry to forecast `vehicle_count` and `avg_speed`. Gemini can provide a separate read-only interpretation. These outputs do not create incidents, change risk, provide authorization evidence or trigger actions. The experiment has not shown a meaningful improvement over its non-graph baseline. See the [experiment details and limits](experiments/traffic_gnn/README.md).
+## Primary capabilities
 
-## Run on Windows
+| ID | Capability | Original owner | Response |
+| --- | --- | --- | --- |
+| S01 | Traffic | Yassine | R1 signal plan after persistent congestion |
+| S02 | Water virtual command | Meriem | R3 virtual valve request with a required safe preview; not a hydraulic model |
+| S03 | Power alert | Elyes | Evidence/uncertainty alert; no grid switching |
+| S04 | Air Quality alert | Elyes | Sustained PM2.5 alert; no actuator |
+| S05 | Medical dispatch | Maram | R2 ambulance dispatch to the reported destination |
 
-From the repository root:
+One FastAPI/MCP service, one Gemini adapter and one shared validation/approval/execution path serve all five.
+
+## GNN (optional, shadow only)
+
+The optional Traffic forecast is implemented in the Brain runtime and disabled by default. It uses synthetic Twin telemetry and a separate read-only Gemini interpretation. It never supplies action evidence, approval or risk changes; no learned actuation is enabled. See [experiment limits](experiments/traffic_gnn/README.md).
+
+## Local setup and run
+
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/). `setup.ps1` creates `.venv` with Python 3.12 and installs exactly the committed `requirements-lock.txt`. From the repository root (Windows):
 
 ~~~powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File brain/scripts/setup.ps1
@@ -34,21 +45,27 @@ cd brain
 .\.venv\Scripts\python.exe -m civis_brain
 ~~~
 
-Open http://127.0.0.1:8001/. Select any of the five scenarios and its base/refusal case. **Recorded response** uses no external API; **Gemini API** makes a real planning request for Traffic, Water or Medical. The page always uses fake Twin and Guardian services, with editable standard readings, request/response traces and JSON export.
-
-For an offline command-line replay, run:
+This runs with simulated peers (the defaults `PEER_MODE=fixture`, `LLM_MODE=fixture`). Brain serves `http://127.0.0.1:8001/`; the debug page there always uses simulated Twin and Guardian. For an offline replay of one case:
 
 ~~~powershell
 .\.venv\Scripts\python.exe scripts/run_case.py --scenario S01 --case base
 ~~~
 
-Change S01 to S02-S05 and base to refusal as needed. Power and Air produce alerts with zero actuator effects and no Gemini call.
+Use S01 to S05 and `base` or `refusal`.
 
-Health: /health. MCP: /mcp, protocol 2026-07-28. Caller keys are required for evaluation and read tools. Gemini and peer secrets stay in ignored .env. Logs use ignored run-logs/<run_id>.brain.jsonl; debug traces use .artifacts/. See [debugging](docs/mock-team/DEBUGGING.md) for controls and [partner gaps](docs/mock-team/PARTNER_GAPS.md) before a joint run.
+**Live partner run:** use a private `.env.partner` based on `config/partner.env.example` (obtain credentials privately, never commit them), then `scripts/start_partner.ps1` on Windows, or `python -m civis_brain --env-file .env.partner` from `brain`. See the [joint setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md) and [partner gaps](docs/mock-team/PARTNER_GAPS.md).
 
-## Current validation status
+Health: `/health`. MCP: `/mcp`, protocol 2026-07-28. Shared event logs go to ignored `logs/<scenario>-<run_id>.city_brain.jsonl`; debug traces to ignored `.artifacts/`. See [debugging](docs/mock-team/DEBUGGING.md).
 
-As of the latest recorded gate on 3 November 2026, 555 Brain tests and Ruff passed. The gate against Twin `twin-mock-3` and Guardian `guardian_final_version` recorded 22 checks passed and 8 failed. Joint acceptance is not complete. S02 and S05 action workflows and live containment notification remain blocked by partner integration issues. See the [release handover](docs/mock-team/BRAIN_MOCK_3.md) for exact evidence and ownership.
+## Limitation
+
+The current 14-check actual-service gate passes for the source revisions in the linked report. The planner is recorded, the optional RF advisory was unavailable in the temporary source snapshot, and this does not certify wider Test Book completion, live Gemini or production readiness.
 
 Member PRs target `codex/civis-elyes`; main and layer branches remain separate.
 
+## Documents
+
+- [INTERFACE.md](INTERFACE.md): MCP tools, caller permissions, workflow, time bases
+- [INTEGRATION.md](../INTEGRATION.md)
+- [TESTBOOK.md](../TESTBOOK.md)
+- [Release handover](docs/mock-team/BRAIN_MOCK_3.md), [Windows setup](docs/mock-team/SETUP.md)
