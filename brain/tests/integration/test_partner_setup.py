@@ -88,7 +88,8 @@ def test_private_handover_separates_roles_and_preserves_keys(tmp_path):
     houssem = dotenv_values(target.parent / "houssem.env")
     assert dali["TWIN_KEY_CITY_BRAIN"] == full["TWIN_BRAIN_KEY"]
     assert houssem["BRAIN_GUARDIAN_CALLER_KEY"] == full["BRAIN_GUARDIAN_CALLER_KEY"]
-    assert houssem["GUARDIAN_BRAIN_BEARER_KEY"] == full["BRAIN_GUARDIAN_CALLER_KEY"]
+    assert "GUARDIAN_BRAIN_BEARER_KEY" not in houssem
+    assert houssem["BRAIN_TIMEOUT_SECONDS"] == "3"
     assert "private-test-gemini" not in str(dali) + str(houssem)
     assert full["PEER_MODE"] == "live" and full["TWIN_FEED_ENABLED"] == "true"
     assert full["GUARDIAN_TRANSPORT"] == "mcp_v3"
@@ -97,6 +98,12 @@ def test_private_handover_separates_roles_and_preserves_keys(tmp_path):
     assert houssem["GUARDIAN_BRAIN_MCP_BEARER_KEY"] == full["GUARDIAN_BRAIN_KEY"]
     assert "GUARDIAN_BRAIN_KEY" not in houssem
     prepare(source, target.parent)
+    assert dotenv_values(target) == full
+    # Migrate an old generated role file without changing handed-over credentials.
+    with (target.parent / "houssem.env").open("a") as stream:
+        stream.write("GUARDIAN_BRAIN_BEARER_KEY=old-orphan-webhook-key\n")
+    prepare(source, target.parent)
+    assert "GUARDIAN_BRAIN_BEARER_KEY" not in dotenv_values(target.parent / "houssem.env")
     assert dotenv_values(target) == full
 
 
@@ -154,3 +161,4 @@ async def test_medical_restricts_general_twin_manifest_before_gemini(tmp_path):
     params = schema["properties"]["proposals"]["items"]["anyOf"][0]["properties"]["params"]["properties"]
     assert params["units"]["minimum"] == params["units"]["maximum"] == 1
     assert params["unit_type"]["enum"] == ["ambulance"]
+

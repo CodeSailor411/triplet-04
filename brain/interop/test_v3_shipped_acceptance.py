@@ -152,6 +152,7 @@ class NativeIntentPlanner:
                         and row.value is not None and row.value >= 1}
             targets = [next(node for node in action.target_nodes if node in eligible)]
             params = {"unit_type": "ambulance", "destination": context.incidents[0].node_ids[0], "units": 1}
+            source_ids = context.incidents[0].source_reading_ids
         else:
             nodes = {node.node_id: node for node in context.nodes}
             eligible = [node for node in action.target_nodes if len(nodes[node].domains) == 1]
@@ -163,6 +164,26 @@ class NativeIntentPlanner:
             "source_reading_ids": source_ids,
             "reason": "Recorded acceptance plan using native evidence and published manifest",
         }], "alerts": []})
+
+
+async def test_native_medical_planner_retains_one_incident_and_its_availability():
+    """A second medical call must not be added to the first dispatch's evidence."""
+    action = SimpleNamespace(action="dispatch", target_nodes=["CARRIER"], risk="R2",
+                             preview_required=False)
+    context = SimpleNamespace(actions=[action], incidents=[
+        SimpleNamespace(kind="medical", node_ids=["EMG-01"],
+                        source_reading_ids=["medical-1", "available"]),
+        SimpleNamespace(kind="medical", node_ids=["EMG-02"],
+                        source_reading_ids=["medical-2", "available"]),
+    ], evidence_readings=[
+        SimpleNamespace(reading_id="medical-1", node_id="EMG-01", sensor="emergency_calls"),
+        SimpleNamespace(reading_id="medical-2", node_id="EMG-02", sensor="emergency_calls"),
+        SimpleNamespace(reading_id="available", node_id="CARRIER", sensor="units_free",
+                        channel="ambulance", value=2),
+    ])
+    proposal = (await NativeIntentPlanner().generate(context)).proposals[0]
+    assert proposal.params["destination"] == "EMG-01"
+    assert proposal.source_reading_ids == ["medical-1", "available"]
 
 
 def observe_actuations(runtime):
@@ -495,3 +516,4 @@ async def test_shipped_guardian_key_matches_twin_configuration(shipped_twin, mon
         write_evidence(stack.directory, "public-key", {"kid": published["kid"],
             "sha256": hashlib.sha256(actual_bytes).hexdigest(), "private_key_published": False})
         assert actual_bytes == expected.public_bytes_raw()
+

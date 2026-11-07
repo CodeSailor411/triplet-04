@@ -1,5 +1,7 @@
 # CIVIS Brain interface
 
+**7 November 2026 update:** [current source pins, SH-05 cap correction and joint proof](docs/mock-team/JOINT_FIX_2026-11-07.md). The current 14-check actual-service gate passes, including S02/S05 and Guardian-to-Twin-to-Brain containment. Planning was recorded, not live Gemini. The earlier gate counts and partner blockers below describe the older tagged snapshots and are superseded for those reviewed current sources. Public schemas and `ready:false` are unchanged.
+
 Updated 6 November 2026. Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Python 3.12, pinned MCP 2.3.0, protocol `2026-07-28`, Streamable HTTP at `http://127.0.0.1:8001/mcp`; `GET /health` is also available. The latest recorded gate used Twin `twin-mock-3` (`b012c94`) and Guardian `guardian_final_version` (`f23e570`): 22 checks passed and 8 failed. Joint acceptance is not complete. See [release handover](docs/mock-team/BRAIN_MOCK_3.md) and [Guardian contract](docs/mock-team/GUARDIAN_CONTRACT.md).
 
 | Brain tool | Input | Output | Allowed caller |
@@ -53,3 +55,4 @@ The working branch accepts Guardian's new MCP `{"result":{...}}` scored/pending 
 **Optional local experiment:** `TRAFFIC_GNN_SHADOW_ENABLED=true` enables the S01 five-tick traffic forecast and separate, read-only Gemini interpretation. It is disabled by default, uses Twin `vehicle_count`/`avg_speed` reports and same-domain geographic neighbour links, and never enters action planning or authorization. Output appears in `/debug/state`; no MCP tool is added. The graph links are not confirmed road links and the experiment has not shown a meaningful improvement over its non-graph baseline. See `experiments/traffic_gnn/README.md` for training details and limits.
 
 The tested Guardian contract comes from `guardian_final_version`, not the older bundled `guardian/` snapshot. Its published MCP tools include `describe_capabilities`, `get_trust_verdict` and `authorize_action`. Tool availability does not mean the full workflow passes. The latest gate did not show Guardian confirming containment in Twin and then notifying Brain; that live path remains blocked.
+

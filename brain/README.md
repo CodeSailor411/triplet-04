@@ -1,5 +1,7 @@
 # CIVIS Brain
 
+**7 November 2026:** [current integration correction, source versions and verification](docs/mock-team/JOINT_FIX_2026-11-07.md). This update fixes shared-domain cap discovery and the generated Guardian feed/callback configuration. Current source acceptance supersedes the dated partner blockers in earlier handovers.
+
 Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Updated 6 November 2026. Brain detects incidents from Twin evidence, asks Guardian for trust and exact action authorization, then asks Twin to execute. Brain forwards Guardian's original `g1` token unchanged. It never signs tokens or performs containment.
 
 **Partners: follow [the current live setup](docs/mock-team/JOINT_ACCEPTANCE_2026-10-26.md).** Use a private `.env.partner` based on `config/partner.env.example`. Windows: `scripts/start_partner.ps1`; Linux: `.venv/bin/python -m civis_brain --env-file .env.partner` from `brain`. This path uses actual peer services and Gemini. The developer commands below use ordinary `.env`; browser presets always use isolated simulated peers. The [brain-mock-2 handover](docs/mock-team/BRAIN_MOCK_2.md) describes that historical tag only.
@@ -49,3 +51,4 @@ Health: /health. MCP: /mcp, protocol 2026-07-28. Caller keys are required for ev
 As of the latest recorded gate on 3 November 2026, 555 Brain tests and Ruff passed. The gate against Twin `twin-mock-3` and Guardian `guardian_final_version` recorded 22 checks passed and 8 failed. Joint acceptance is not complete. S02 and S05 action workflows and live containment notification remain blocked by partner integration issues. See the [release handover](docs/mock-team/BRAIN_MOCK_3.md) for exact evidence and ownership.
 
 Member PRs target `codex/civis-elyes`; main and layer branches remain separate.
+

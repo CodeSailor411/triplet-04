@@ -25,6 +25,7 @@ from civis_brain.contracts import (
 )
 from civis_brain.errors import BrainError
 from civis_brain.inputs.service import normalize_batch, utc_time
+from civis_brain.integration.action_caps import discover_action_caps
 from civis_brain.integration.journal import EVENT_CONTEXT, Journal
 from civis_brain.integration.recovery import recover
 from civis_brain.integration.water_policy import validate_water_choices
@@ -540,6 +541,8 @@ class BrainRuntime:
         nodes = [Node.model_validate(row) for row in nodes_response["nodes"]]
         actions = [ActionInfo.model_validate(row) for row in actions_response["actions"]]
         normalize_batch(batch, nodes)
+        capabilities = {**capabilities, "action_caps": discover_action_caps(
+            nodes_response, actions_response, capabilities.get("action_caps", {}))}
         self.discovery_snapshot = (copy.deepcopy(nodes_response), copy.deepcopy(actions_response))
         return nodes, actions, capabilities
 
@@ -1222,12 +1225,7 @@ class BrainRuntime:
         tools = capabilities.get("tools_you_can_call", [])
         if "actuate" not in tools:
             raise BrainError("TOOL_UNAVAILABLE", "Twin does not advertise actuation")
-        caps = capabilities.get("action_caps", {})
-        # Single-domain manifest caps are usable; shared domains still need their own limit.
-        caps = dict(caps)
-        for row in actions:
-            caps.setdefault(row.domain, row.action_cap)
-        check_caps(proposal, nodes, caps)
+        check_caps(proposal, nodes, capabilities["action_caps"])
         if proposal.action == "set_valve_position":
             if not any(
                 (sid != "S07" or (choice.get("supply_preserving") is True
@@ -1584,3 +1582,4 @@ def build_runtime(
         features=features,
         artifact_dir=artifact_dir,
     )
+

@@ -57,7 +57,7 @@ def prepare(source: Path, output: Path):
                      "TWIN_KEY_CITY_BRAIN": values["TWIN_BRAIN_KEY"]},
         "houssem.env": {"BRAIN_MCP_URL": "http://127.0.0.1:8001/mcp",
                         "BRAIN_GUARDIAN_CALLER_KEY": values["BRAIN_GUARDIAN_CALLER_KEY"],
-                        "GUARDIAN_BRAIN_BEARER_KEY": values["BRAIN_GUARDIAN_CALLER_KEY"],
+                        "BRAIN_TIMEOUT_SECONDS": "3",
                         "GUARDIAN_BRAIN_MCP_BEARER_KEY": values["GUARDIAN_BRAIN_KEY"]},
     }
     for filename, fields in role_files.items():
@@ -65,6 +65,12 @@ def prepare(source: Path, output: Path):
         destination.touch(exist_ok=True)
         if filename == "houssem.env" and "GUARDIAN_BRAIN_KEY" in dotenv_values(destination):
             unset_key(str(destination), "GUARDIAN_BRAIN_KEY")
+        role = dotenv_values(destination)
+        if (filename == "houssem.env" and role.get("GUARDIAN_BRAIN_BEARER_KEY")
+                and not role.get("BRAIN_VERDICT_URL")):
+            # This is a separate optional HTTP webhook setting. An orphan key
+            # makes Guardian's own SSE runner fail before it ingests any data.
+            unset_key(str(destination), "GUARDIAN_BRAIN_BEARER_KEY")
         for name, value in fields.items():
             set_key(str(destination), name, value)
     (output / "README.txt").write_text(
@@ -76,8 +82,10 @@ def prepare(source: Path, output: Path):
         "with Dali's issued value in BOTH Twin and Brain's TWIN_BRAIN_KEY.\n"
         "BRAIN_TWIN_CALLER_KEY is the Bearer key for Twin calls to Brain.\n"
         "Houssem: use houssem.env. BRAIN_GUARDIAN_CALLER_KEY authorizes callbacks to Brain.\n"
-        "Its Guardian-side name is GUARDIAN_BRAIN_BEARER_KEY. This sets a credential,\n"
-        "not a callback implementation or an HTTP verdict endpoint on Brain.\n"
+        "BRAIN_MCP_URL selects Brain's notify_containment endpoint; timeout is 3 seconds.\n"
+        "GUARDIAN_BRAIN_BEARER_KEY is for a separate optional HTTP verdict webhook.\n"
+        "Do not set it alone: Guardian's feed runner requires a matching BRAIN_VERDICT_URL.\n"
+        "Brain does not require that pushed-score webhook.\n"
         "GUARDIAN_BRAIN_MCP_BEARER_KEY on Guardian must equal GUARDIAN_BRAIN_KEY on Brain.\n"
         "Guardian and Brain each consume Twin's real feed independently. Neither\n"
         "role file configures that bridge automatically. Guardian must give Twin\n"
@@ -102,3 +110,4 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     print("Private handover prepared at:", prepare(args.source, args.output).parent)
+
