@@ -43,12 +43,14 @@ def configured_runtime(settings):
     features = {
         "ai_max_calls_per_run": settings.ai_max_calls_per_run,
         "ai_timeout_seconds": settings.ai_timeout_seconds,
+        "traffic_gnn_shadow_enabled": settings.traffic_gnn_shadow_enabled,
         "peer_timeout_seconds": settings.peer_timeout_seconds,
         "max_evidence_age_seconds": settings.max_evidence_age_seconds,
         "mock_integration_profile": settings.mock_integration_profile,
         "evidence_recovery_enabled": settings.peer_mode == "live",
         "one_response_per_episode": settings.peer_mode == "live",
-        "run_log_dir": str(root / "run-logs"),
+        # Always-on, Brain-owned JSONL stream in the shared event format.
+        "run_log_dir": str(root / "logs"),
     }
     if settings.peer_mode == "fixture":
         case_path = root / settings.brain_fixture_case

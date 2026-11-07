@@ -218,6 +218,38 @@ async def test_new_feed_can_withdraw_old_plan(change, tmp_path):
     assert not twin.effects
 
 
+@pytest.mark.parametrize(
+    "latest_value,expected_status,expected_code",
+    [(95.0, "committed", "FIXTURE_COMMITTED"),
+     (0.0, "blocked", "EVIDENCE_CHANGED")],
+)
+async def test_traffic_authorization_uses_newest_congestion_state(
+    latest_value, expected_status, expected_code, tmp_path
+):
+    case = case_for("traffic")
+    case["batches"][0]["tick_seconds"] = 1.0
+    runtime, twin, _, provider = harness(case, tmp_path)
+    original = provider.generate
+
+    async def plan_with_newer_twin_reading(context):
+        plan = await original(context)
+        raw = advance(context.batch.model_dump())
+        for row in raw["readings"]:
+            if row["sensor"] == "congestion_index":
+                row["value"] = latest_value
+        fresh = ReadingsBatch.model_validate(raw)
+        twin.advance(raw)
+        runtime.observe_feed(fresh)
+        return plan
+
+    provider.generate = plan_with_newer_twin_reading
+    result = (await evaluate(case, runtime, twin))[-1]
+
+    assert result.decisions[0].status == expected_status
+    assert result.decisions[0].peer_code == expected_code
+    assert len(twin.effects) == int(expected_status == "committed")
+
+
 async def test_mismatched_receipt_is_not_success(tmp_path):
     case = case_for("emergency")
     runtime, twin, _, _ = harness(case, tmp_path)

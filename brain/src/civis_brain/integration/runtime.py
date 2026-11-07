@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from pydantic import ValidationError
 
 from civis_brain.context_graph import ContextGraph
+from civis_brain.context_graph.traffic_forecast import forecast_traffic
 from civis_brain.contracts import (
     ActionInfo,
     ContainmentNotice,
@@ -24,7 +25,8 @@ from civis_brain.contracts import (
 )
 from civis_brain.errors import BrainError
 from civis_brain.inputs.service import normalize_batch, utc_time
-from civis_brain.integration.journal import Journal
+from civis_brain.integration.action_caps import discover_action_caps
+from civis_brain.integration.journal import EVENT_CONTEXT, Journal
 from civis_brain.integration.recovery import recover
 from civis_brain.integration.water_policy import validate_water_choices
 from civis_brain.planning.service import check_caps, validate_plan
@@ -58,24 +60,83 @@ def fingerprint(value: dict) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, allow_nan=False).encode()).hexdigest()
 
 
+def _canonical_state(value):
+    if isinstance(value, dict):
+        return {str(key): _canonical_state(item) for key, item in sorted(value.items(), key=lambda row: str(row[0]))}
+    if isinstance(value, (set, frozenset)):
+        return sorted((_canonical_state(item) for item in value), key=repr)
+    if isinstance(value, (list, tuple)):
+        return [_canonical_state(item) for item in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def state_fingerprint(value) -> str:
+    normalized = json.dumps(_canonical_state(value), sort_keys=True, allow_nan=False)
+    return hashlib.sha256(normalized.encode()).hexdigest()
+
+
 class BudgetProvider:
-    def __init__(self, runtime):
+    def __init__(self, runtime, scenario_id=None):
         self.runtime = runtime
+        self.scenario_id = scenario_id
 
     async def generate(self, context):
         runtime = self.runtime
         if runtime.ai_calls >= runtime.features.get("ai_max_calls_per_run", 3):
             raise BrainError("AI_BUDGET_EXCEEDED", "Configured AI call budget exhausted")
         runtime.ai_calls += 1
+        batch = context.batch
+        scenario_ids = sorted({self.scenario_id} if self.scenario_id else set())
+        runtime.journal.append({
+            "event": "ai_request_sent",
+            "provider": runtime.features.get("llm_mode", "configured"),
+            "operation": "plan_generation",
+            "run_id": batch.run_id,
+            "tick": batch.tick,
+            "scenario_id": scenario_ids[0] if len(scenario_ids) == 1 else None,
+            "incident_count": len(context.incidents),
+            "evidence_reading_ids": [row.reading_id for row in context.evidence_readings],
+        })
+        started = time.monotonic()
         try:
-            return await asyncio.wait_for(
+            plan = await asyncio.wait_for(
                 runtime.provider.generate(context), runtime.features.get("ai_timeout_seconds", 15)
             )
+            runtime.journal.append({
+                "event": "ai_response_received", "provider": runtime.features.get("llm_mode", "configured"),
+                "operation": "plan_generation", "run_id": batch.run_id, "tick": batch.tick,
+                "scenario_id": scenario_ids[0] if len(scenario_ids) == 1 else None,
+                "outcome": "success", "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
+            return plan
         except TimeoutError:
+            runtime.journal.append({
+                "event": "ai_response_received", "provider": runtime.features.get("llm_mode", "configured"),
+                "operation": "plan_generation", "run_id": batch.run_id, "tick": batch.tick,
+                "scenario_id": scenario_ids[0] if len(scenario_ids) == 1 else None,
+                "outcome": "failure", "code": "AI_TIMEOUT",
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             raise BrainError("AI_TIMEOUT", "Plan generation timed out") from None
-        except BrainError:
+        except BrainError as error:
+            runtime.journal.append({
+                "event": "ai_response_received", "provider": runtime.features.get("llm_mode", "configured"),
+                "operation": "plan_generation", "run_id": batch.run_id, "tick": batch.tick,
+                "scenario_id": scenario_ids[0] if len(scenario_ids) == 1 else None,
+                "outcome": "failure", "code": error.code,
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             raise
         except Exception:
+            runtime.journal.append({
+                "event": "ai_response_received", "provider": runtime.features.get("llm_mode", "configured"),
+                "operation": "plan_generation", "run_id": batch.run_id, "tick": batch.tick,
+                "scenario_id": scenario_ids[0] if len(scenario_ids) == 1 else None,
+                "outcome": "failure", "code": "AI_UNAVAILABLE",
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             raise BrainError("AI_UNAVAILABLE", "Plan provider failed") from None
 
 
@@ -109,14 +170,33 @@ class BrainRuntime:
             run_log_dir=Path(features["run_log_dir"]) if features.get("run_log_dir")
             else artifact_dir / "run-logs" if artifact_dir else None,
         )
+        self._attach_transport_journal(self.twin, "twin")
+        self._attach_transport_journal(self.guardian, "guardian")
         self.run_id = None
         self.feed_generation = 0
         self.latest_feed = None
         self.feed_connected = None
         self.discovery_snapshot = None
+        self._traffic_gnn_tasks = set()
         self._reset()
 
+    def _attach_transport_journal(self, peer, label):
+        current = peer
+        visited = set()
+        for _ in range(5):
+            if current is None or id(current) in visited:
+                return
+            visited.add(id(current))
+            if hasattr(current, "url") and hasattr(current, "key"):
+                current.journal = self.journal
+                current.peer_name = label
+                return
+            current = getattr(current, "peer", None)
+
     def _reset(self):
+        for task in getattr(self, "_traffic_gnn_tasks", set()):
+            task.cancel()
+        self._traffic_gnn_tasks = set()
         self.states = {scenario.scenario_id: {} for scenario in self.scenarios}
         self.ledger = {}
         self.invalid_ids = set()
@@ -138,19 +218,156 @@ class BrainRuntime:
         self.sent_requests = {}
         self.reconciliation_attempts = set()
         self.dispatch_allocations = {}
+        self.traffic_gnn_shadow = {"status": "disabled"}
+        self.traffic_gnn_interpretation = {"status": "not_started"}
+        self.traffic_gnn_interpretation_count = 0
+        self._traffic_gnn_key = None
         self.observed_feed_generation = self.feed_generation
+
+    def _update_traffic_gnn_shadow(self, batch, nodes):
+        if not self.features.get("traffic_gnn_shadow_enabled", False):
+            self.traffic_gnn_shadow = {"status": "disabled"}
+            return
+        try:
+            graph = ContextGraph(nodes)
+            forecast = forecast_traffic(
+                nodes,
+                list(self.ledger.values()),
+                run_id=batch.run_id,
+                tick=batch.tick,
+                tick_seconds=batch.tick_seconds,
+                graph_version=graph.version,
+                invalid_ids=self.invalid_ids,
+                blocked_devices=self.blocked_devices,
+            )
+        except Exception:
+            # The optional forecast must never block the established detector path.
+            forecast = {"status": "unavailable", "code": "GNN_INFERENCE_FAILED"}
+        self.traffic_gnn_shadow = forecast
+        self._traffic_gnn_key = (batch.run_id, batch.tick)
+        self.journal.append({
+            "event": "traffic_gnn_shadow", "run_id": batch.run_id, "tick": batch.tick,
+            "scenario_id": "S01", "status": forecast.get("status"),
+            "model_id": forecast.get("model_id"),
+            "graph_version": forecast.get("graph_version"),
+            "input_window_ticks": forecast.get("input_window_ticks"),
+            "forecast_tick": forecast.get("forecast_tick"),
+            "horizon_ticks": forecast.get("horizon_ticks"),
+            "node_count": len(forecast.get("forecasts", [])),
+            "input_reading_ids": forecast.get("input_reading_ids", []),
+            "code": forecast.get("code"),
+        })
+
+    def _schedule_traffic_gnn_interpretation(self, batch):
+        forecast = self.traffic_gnn_shadow
+        interpreter = getattr(self.provider, "interpret_graph", None)
+        if (not self.features.get("traffic_gnn_shadow_enabled", False)
+                or forecast.get("status") != "ready"
+                or self._traffic_gnn_key != (batch.run_id, batch.tick)
+                or self.traffic_gnn_interpretation_count > 0):
+            return
+        if not callable(interpreter):
+            self.traffic_gnn_interpretation = {"status": "interpreter_unavailable"}
+            self.traffic_gnn_interpretation_count = 1
+            self.journal.append({
+                "event": "graph_interpretation_skipped", "run_id": batch.run_id,
+                "tick": batch.tick, "scenario_id": "S01", "code": "AI_UNAVAILABLE",
+            })
+            return
+        if self.ai_calls >= self.features.get("ai_max_calls_per_run", 3):
+            self.traffic_gnn_interpretation = {"status": "ai_budget_exhausted"}
+            self.traffic_gnn_interpretation_count = 1
+            self.journal.append({
+                "event": "graph_interpretation_skipped", "run_id": batch.run_id,
+                "tick": batch.tick, "scenario_id": "S01", "code": "AI_BUDGET_EXCEEDED",
+            })
+            return
+        self.ai_calls += 1
+        self.traffic_gnn_interpretation_count += 1
+        key = self._traffic_gnn_key
+        self.traffic_gnn_interpretation = {
+            "status": "pending", "run_id": key[0], "tick": key[1],
+        }
+        task = asyncio.create_task(self._interpret_traffic_gnn(key, copy.deepcopy(forecast)))
+        self._traffic_gnn_tasks.add(task)
+        task.add_done_callback(self._traffic_gnn_tasks.discard)
+
+    async def _interpret_traffic_gnn(self, key, forecast):
+        started = time.monotonic()
+        refs = {"input_reading_ids": forecast.get("input_reading_ids", [])}
+        self.journal.append({
+            "event": "ai_request_sent", "provider": self.features.get("llm_mode", "configured"),
+            "operation": "graph_interpretation", "run_id": key[0], "tick": key[1],
+            "scenario_id": "S01", "model_id": forecast.get("model_id"),
+            "input_count": len(refs["input_reading_ids"]), **refs,
+        })
+        try:
+            interpretation = await asyncio.wait_for(
+                self.provider.interpret_graph(forecast),
+                self.features.get("ai_timeout_seconds", 60),
+            )
+            result = {"status": "ready", "run_id": key[0], "tick": key[1],
+                      "interpretation": interpretation}
+        except TimeoutError:
+            result = {"status": "unavailable", "run_id": key[0], "tick": key[1],
+                      "code": "AI_TIMEOUT"}
+        except BrainError as error:
+            result = {"status": "unavailable", "run_id": key[0], "tick": key[1],
+                      "code": error.code}
+        except Exception:
+            result = {"status": "unavailable", "run_id": key[0], "tick": key[1],
+                      "code": "AI_UNAVAILABLE"}
+        outcome = "success" if result["status"] == "ready" else "failure"
+        self.journal.append({
+            "event": "ai_response_received", "provider": self.features.get("llm_mode", "configured"),
+            "operation": "graph_interpretation", "run_id": key[0], "tick": key[1],
+            "scenario_id": "S01", "outcome": outcome, "status": result["status"],
+            "code": result.get("code"),
+            "elapsed_ms": round((time.monotonic() - started) * 1000, 1), **refs,
+        })
+        self.journal.append({
+            "event": "traffic_gnn_interpretation", "run_id": key[0], "tick": key[1],
+            "scenario_id": "S01", "status": result["status"], "code": result.get("code"),
+            "interpretation_received": result["status"] == "ready", **refs,
+        })
+        # Keep the completed snapshot visible while the same run advances. The
+        # result carries its source tick; only a new run makes it stale enough
+        # to discard.
+        if self.run_id == key[0]:
+            self.traffic_gnn_interpretation = result
 
     def observe_feed(self, batch=None, *, discontinuity=False, connected=True):
         """Called by the independent receiver, including while Gemini is awaiting I/O."""
+        previous = self.feed_connected
         self.feed_connected = connected
+        if previous is not connected:
+            self.journal.append({
+                "event": "twin_feed_state_changed",
+                "run_id": batch.run_id if batch is not None else self.run_id,
+                "tick": batch.tick if batch is not None else self.last_tick if self.last_tick >= 0 else None,
+                "state": "connected" if connected else "disconnected",
+            })
         if discontinuity or not connected or (
             batch and self.run_id and batch.run_id != self.run_id
         ):
             self.graph_context = {}
             self.feed_generation += 1
             self.generation += 1
+            if discontinuity or not connected:
+                self.journal.append({
+                    "event": "feed_gap", "run_id": batch.run_id if batch is not None else self.run_id,
+                    "tick": batch.tick if batch is not None else self.last_tick if self.last_tick >= 0 else None,
+                    "connected": connected, "generation": self.feed_generation,
+                })
         if batch is not None:
             self.latest_feed = batch
+            self.journal.set_clock(batch)
+            self.journal.append({
+                "event": "readings_batch_received", "run_id": batch.run_id, "tick": batch.tick,
+                "timestamp": batch.time, "reading_ids": [row.reading_id for row in batch.readings],
+                "count": batch.count,
+                "sensors": sorted({row.sensor for row in batch.readings}),
+            })
 
     def _validate_clock(self, batch, clock, *, execution=False):
         tick = clock.get("tick")
@@ -177,33 +394,110 @@ class BrainRuntime:
                                       "episodes": episodes or [batch.tick], **intent})
         return key
 
-    async def _call(self, peer, name, arguments):
+    async def _call(self, peer, name, arguments, *, scenario_id=None):
         if asyncio.current_task().cancelling():
             raise asyncio.CancelledError
+        peer_name = "twin" if peer is self.twin else "guardian" if peer is self.guardian else "peer"
+        run_id = arguments.get("run_id") if isinstance(arguments, dict) else None
+        tick = arguments.get("tick") if isinstance(arguments, dict) else None
+        scenario = scenario_id or (arguments.get("scenario_id") if isinstance(arguments, dict) else None)
+        self.journal.append({
+            "event": "peer_request_sent", "peer": peer_name, "tool": name,
+            "run_id": run_id, "tick": tick, "scenario_id": scenario,
+            "request_summary": self._communication_summary(arguments),
+        })
         if not name:
+            self.journal.append({
+                "event": "peer_response_received", "peer": peer_name, "tool": name,
+                "run_id": run_id, "tick": tick, "scenario_id": scenario,
+                "outcome": "failure", "code": "TOOL_UNAVAILABLE",
+            })
             raise BrainError("TOOL_UNAVAILABLE", "Required peer tool has no confirmed mapping")
+        critical = ((peer is self.twin and name in {"actuate", self.features.get("commit_tool")})
+                    or (peer is self.guardian
+                        and name == self.features.get("guardian_token_tool")))
+        if critical and self.journal.write_error:
+            raise BrainError("AUDIT_LOG_UNAVAILABLE", "Brain cannot record the required peer exchange")
+        started = time.monotonic()
+        journal_clock = self.journal.clock or {}
+        context_token = EVENT_CONTEXT.set({
+            key: value for key, value in {
+                "run_id": run_id or self.run_id or journal_clock.get("run_id"),
+                "tick": tick if type(tick) is int else (
+                    self.last_tick if self.last_tick >= 0 else journal_clock.get("tick")
+                ),
+                "scenario_id": scenario,
+            }.items() if value is not None
+        })
         try:
             result = await asyncio.wait_for(
                 peer.call_tool(name, arguments), self.features.get("peer_timeout_seconds", 5)
             )
             if not isinstance(result, dict):
                 raise BrainError("PEER_SCHEMA_INVALID", "Peer response must be an object")
+            self.journal.append({
+                "event": "peer_response_received", "peer": peer_name, "tool": name,
+                "run_id": run_id or result.get("run_id"), "tick": tick or result.get("tick"),
+                "scenario_id": scenario, "outcome": "success",
+                "response_summary": self._communication_summary(result, response=True),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             return result
-        except BrainError:
+        except BrainError as error:
+            self.journal.append({
+                "event": "peer_response_received", "peer": peer_name, "tool": name,
+                "run_id": run_id, "tick": tick, "scenario_id": scenario,
+                "outcome": "failure", "code": error.code,
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             raise
         except TimeoutError:
+            self.journal.append({
+                "event": "peer_response_received", "peer": peer_name, "tool": name,
+                "run_id": run_id, "tick": tick, "scenario_id": scenario,
+                "outcome": "failure", "code": "PEER_TIMEOUT",
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             raise BrainError("PEER_TIMEOUT", "Peer request timed out") from None
         except Exception:
+            self.journal.append({
+                "event": "peer_response_received", "peer": peer_name, "tool": name,
+                "run_id": run_id, "tick": tick, "scenario_id": scenario,
+                "outcome": "failure", "code": "PEER_UNAVAILABLE",
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 1),
+            })
             raise BrainError(
                 "PEER_UNAVAILABLE", "Peer call failed; no success was assumed"
             ) from None
         finally:
+            EVENT_CONTEXT.reset(context_token)
             if peer is self.guardian and name == "guardian_v3_scores":
                 summary = getattr(peer, "last_retrieval", None)
                 if isinstance(summary, dict):
                     self.journal.append({"event": "guardian_verdict_retrieval",
                                          "run_id": arguments.get("run_id"),
                                          "tick": arguments.get("tick"), **summary})
+
+    @staticmethod
+    def _communication_summary(payload, *, response=False):
+        if not isinstance(payload, dict):
+            return {}
+        fields = ({
+            "run_id", "tick", "reading_id", "reading_ids", "source_reading_ids",
+            "device_id", "device_ids", "node_id", "node_ids", "action", "targets",
+            "params", "risk", "risk_level", "domain", "idempotency_key", "state",
+            "event_id", "fresh", "count", "unit_type", "scenario_id",
+        } if not response else {
+            "run_id", "tick", "status", "code", "decision", "decision_id", "accepted",
+            "duplicate", "invalidated", "trust_score", "score", "scale", "caused_by",
+            "reading_id", "valid_until_tick", "would_pass_checks", "blocked_by", "safe",
+            "protocol_version", "outcome",
+        })
+        result = {key: value for key, value in payload.items() if key in fields}
+        for key, value in tuple(result.items()):
+            if isinstance(value, (list, tuple)):
+                result[key] = list(value[:100])
+        return result
 
     def _decision(
         self, batch, scenario, status, reason, evidence=(), proposal=None, code=None, details=None
@@ -247,15 +541,17 @@ class BrainRuntime:
         nodes = [Node.model_validate(row) for row in nodes_response["nodes"]]
         actions = [ActionInfo.model_validate(row) for row in actions_response["actions"]]
         normalize_batch(batch, nodes)
+        capabilities = {**capabilities, "action_caps": discover_action_caps(
+            nodes_response, actions_response, capabilities.get("action_caps", {}))}
         self.discovery_snapshot = (copy.deepcopy(nodes_response), copy.deepcopy(actions_response))
         return nodes, actions, capabilities
 
-    async def _sync_containment(self, batch, capabilities):
+    async def _sync_containment(self, batch, capabilities, *, scenario_id=None):
         if "get_containment_state" not in capabilities.get("tools_you_can_call", []):
             if not getattr(self.twin, "is_fixture", False):
                 raise BrainError("CONTAINMENT_UNAVAILABLE", "Twin must advertise containment discovery")
             return
-        state = await self._call(self.twin, "get_containment_state", {})
+        state = await self._call(self.twin, "get_containment_state", {}, scenario_id=scenario_id)
         self._validate_clock(batch, {**state, "tick_seconds": batch.tick_seconds})
         devices, corrections = state.get("devices"), state.get("corrections")
         if not isinstance(devices, list) or not isinstance(corrections, list):
@@ -344,7 +640,7 @@ class BrainRuntime:
             scores[row["reading_id"]] = score
         return scores
 
-    async def _trusted(self, batch, incidents, nodes=()):
+    async def _trusted(self, batch, incidents, nodes=(), *, scenario_id=None):
         if not (
             getattr(self.guardian, "is_fixture", False)
             or self.features.get("guardian_contract_confirmed") is True
@@ -357,7 +653,7 @@ class BrainRuntime:
             raise BrainError(
                 "EVIDENCE_INVALID", "Missing, null or contained evidence cannot be used"
             )
-        capability = await self._call(self.guardian, "get_capabilities", {})
+        capability = await self._call(self.guardian, "get_capabilities", {}, scenario_id=scenario_id)
         if capability.get("protocol_version") != PROTOCOL:
             raise BrainError("PROTOCOL_MISMATCH", "Guardian must support the required MCP protocol")
         scale = capability.get("score_scale")
@@ -398,6 +694,7 @@ class BrainRuntime:
                 "tick": batch.tick,
                 "readings": [self.ledger[source].model_dump() for source in ids],
             },
+            scenario_id=scenario_id,
         )
         scores = self._parse_scores(response, scale)
         if set(scores) != set(ids) or any(score < cutoff for score in scores.values()):
@@ -417,7 +714,8 @@ class BrainRuntime:
                 # not start a new ten-second recovery on every arriving tick.
                 for key in attempts_keys:
                     self.trust_attempts[key] = 3
-                response, recovery_ids = await recover(self, batch, ids, nodes)
+                response, recovery_ids = await recover(self, batch, ids, nodes,
+                                                       scenario_id=scenario_id)
                 recovered = self._parse_scores(response, scale)
                 if (set(recovered) != recovery_ids
                         or any(score < cutoff for score in recovered.values())):
@@ -494,12 +792,21 @@ class BrainRuntime:
     async def evaluate_tick(self, batch: ReadingsBatch) -> DecisionBatch:
         async with self.lock:
             self.journal.set_clock(batch)
+            self.journal.append({
+                "event": "evaluation_started", "run_id": batch.run_id, "tick": batch.tick,
+                "timestamp": batch.time, "count": batch.count,
+                "reading_ids": [row.reading_id for row in batch.readings],
+            })
             signature = fingerprint(batch.model_dump())
             if batch.run_id == self.run_id and batch.tick in self.cached_ticks:
                 previous, result = self.cached_ticks[batch.tick]
                 if signature == previous:
+                    self.journal.append({
+                        "event": "evaluation_replayed", "run_id": batch.run_id, "tick": batch.tick,
+                        "outcome": "cached_identical_batch",
+                    })
                     return result.model_copy(deep=True)
-                return DecisionBatch(
+                result = DecisionBatch(
                     run_id=batch.run_id,
                     tick=batch.tick,
                     decisions=[
@@ -512,8 +819,13 @@ class BrainRuntime:
                         )
                     ],
                 )
+                self.journal.append({
+                    "event": "evaluation_completed", "run_id": batch.run_id, "tick": batch.tick,
+                    "decision_count": len(result.decisions), "statuses": [row.status for row in result.decisions],
+                })
+                return result
             if batch.run_id == self.run_id and batch.tick < self.last_tick:
-                return DecisionBatch(
+                result = DecisionBatch(
                     run_id=batch.run_id,
                     tick=batch.tick,
                     decisions=[
@@ -526,15 +838,27 @@ class BrainRuntime:
                         )
                     ],
                 )
+                self.journal.append({
+                    "event": "evaluation_completed", "run_id": batch.run_id, "tick": batch.tick,
+                    "decision_count": len(result.decisions), "statuses": [row.status for row in result.decisions],
+                })
+                return result
             try:
                 nodes, actions, capabilities = await self._discovery(batch)
                 if batch.run_id != self.run_id:
+                    previous_run_id = self.run_id
                     self.run_id = batch.run_id
                     self._reset()
+                    self.journal.set_clock(batch)
+                    self.journal.append({
+                        "event": "run_started", "run_id": batch.run_id, "tick": batch.tick,
+                        "previous_run_id": previous_run_id,
+                    })
                 if (self.observed_feed_generation != self.feed_generation
                         or (self.last_tick >= 0 and batch.tick > self.last_tick + 1)):
                     # Missing ticks cannot establish persistence. Keep operation receipts
                     # and episode identity so reconnects cannot duplicate an action.
+                    reset_scenarios = sorted(sid for sid, state in self.states.items() if state)
                     self.states = {scenario.scenario_id: {} for scenario in self.scenarios}
                     self.trust_attempts.clear()
                     self.invalid_ids.update(self.ledger)
@@ -542,6 +866,12 @@ class BrainRuntime:
                     self.observed_feed_generation = self.feed_generation
                     self.journal.append({"event": "feed_gap", "run_id": batch.run_id,
                                          "tick": batch.tick, "previous_tick": self.last_tick})
+                    if reset_scenarios:
+                        self.journal.append({
+                            "event": "scenario_state_reset", "run_id": batch.run_id,
+                            "tick": batch.tick, "scenario_ids": reset_scenarios,
+                            "reason": "feed_gap",
+                        })
                 await self._sync_containment(batch, capabilities)
                 for reading in batch.readings:
                     prior = self.ledger.get(reading.reading_id)
@@ -557,6 +887,7 @@ class BrainRuntime:
                 )
                 while len(self.ledger) > 2000:
                     self.ledger.pop(next(iter(self.ledger)))
+                self._update_traffic_gnn_shadow(batch, nodes)
                 decisions = await self._evaluate_scenarios(batch, nodes, actions, capabilities)
             except BrainError as error:
                 decisions = [
@@ -579,7 +910,12 @@ class BrainRuntime:
                         code="INPUT_INVALID",
                     )
                 ]
+            self._schedule_traffic_gnn_interpretation(batch)
             result = DecisionBatch(run_id=batch.run_id, tick=batch.tick, decisions=decisions)
+            self.journal.append({
+                "event": "evaluation_completed", "run_id": batch.run_id, "tick": batch.tick,
+                "decision_count": len(result.decisions), "statuses": [row.status for row in result.decisions],
+            })
             if batch.run_id != self.run_id:
                 return result
             self.last_tick = batch.tick
@@ -619,6 +955,11 @@ class BrainRuntime:
             if sid not in self.enabled or not relevant:
                 continue
             incidents = []
+            previous_state = copy.deepcopy(self.states[sid])
+            previous_active = {
+                key: incident.model_copy(deep=True)
+                for key, (owner, incident) in self.active.items() if owner == sid
+            }
             try:
                 policy = self.policies.get(sid, {})
                 if sid == "S02" and policy.get("policy_scope") == "virtual-command-test-only":
@@ -642,6 +983,13 @@ class BrainRuntime:
                     self.states[sid],
                 )
                 incidents = detected.incidents
+                if self.states[sid] != previous_state:
+                    self.journal.append({
+                        "event": "scenario_state_changed", "run_id": batch.run_id,
+                        "tick": batch.tick, "scenario_id": sid,
+                        "state_keys": sorted(str(key) for key in self.states[sid]),
+                        "state_fingerprint": state_fingerprint(self.states[sid]),
+                    })
                 touched = {row.node_id for row in relevant}
                 current_episode_keys = {(sid, item.kind, tuple(sorted(item.node_ids)))
                                         for item in incidents}
@@ -652,8 +1000,14 @@ class BrainRuntime:
                 for episode_key in list(self.episodes):
                     if (episode_key[0] == sid and episode_key not in current_episode_keys
                             and set(episode_key[2]).issubset(clear_nodes)):
-                        self.episode_receipts.pop(self.episodes.pop(episode_key), None)
+                        incident_id = self.episodes.pop(episode_key)
+                        self.episode_receipts.pop(incident_id, None)
                         self.trust_attempts.pop((episode_key[1], episode_key[2]), None)
+                        self.journal.append({
+                            "event": "incident_cleared", "run_id": batch.run_id,
+                            "tick": batch.tick, "scenario_id": sid,
+                            "incident_id": incident_id, "node_ids": list(episode_key[2]),
+                        })
                 for incident in incidents:
                     episode_key = (sid, incident.kind, tuple(sorted(incident.node_ids)))
                     stable_id = self.episodes.setdefault(
@@ -664,6 +1018,22 @@ class BrainRuntime:
                         self.active.pop(key)
                 for incident in incidents:
                     self.active[incident.incident_id] = (sid, incident)
+                    previous = previous_active.get(incident.incident_id)
+                    if previous is None:
+                        self.journal.append({
+                            "event": "incident_detected", "run_id": batch.run_id,
+                            "tick": batch.tick, "scenario_id": sid,
+                            "incident_id": incident.incident_id, "incident_kind": incident.kind,
+                            "node_ids": incident.node_ids,
+                            "source_reading_ids": incident.source_reading_ids,
+                        })
+                    elif previous.source_reading_ids != incident.source_reading_ids:
+                        self.journal.append({
+                            "event": "incident_updated", "run_id": batch.run_id,
+                            "tick": batch.tick, "scenario_id": sid,
+                            "incident_id": incident.incident_id, "node_ids": incident.node_ids,
+                            "source_reading_ids": incident.source_reading_ids,
+                        })
                 # A confirmed operation resolves this episode. Continuous input
                 # must not spend another Gemini call on the same completed action.
                 if self.features.get("one_response_per_episode"):
@@ -682,7 +1052,9 @@ class BrainRuntime:
                 if not incidents:
                     continue
                 generation = self.generation
-                evidence, scores, thresholds, scale = await self._trusted(batch, incidents, nodes)
+                evidence, scores, thresholds, scale = await self._trusted(
+                    batch, incidents, nodes, scenario_id=sid
+                )
                 graph = ContextGraph(nodes)
                 self.graph_context = graph.explain(
                     run_id=batch.run_id, tick=batch.tick, evidence=evidence,
@@ -700,7 +1072,7 @@ class BrainRuntime:
                     graph_context=copy.deepcopy(self.graph_context),
                 )
                 plan = await scenario.draft_plan(
-                    context.model_copy(deep=True), BudgetProvider(self)
+                    context.model_copy(deep=True), BudgetProvider(self, sid)
                 )
                 plan = validate_plan(context, plan)
                 if self.generation != generation or not self._eligible(
@@ -797,9 +1169,9 @@ class BrainRuntime:
         return results
 
     async def _check_execution_state(self, batch, capabilities, generation, proposal, sid):
-        clock = await self._call(self.twin, "get_clock", {})
+        clock = await self._call(self.twin, "get_clock", {}, scenario_id=sid)
         current = self._validate_clock(batch, clock, execution=True)
-        await self._sync_containment(batch, capabilities)
+        await self._sync_containment(batch, capabilities, scenario_id=sid)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
             raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
         if proposal.action == "dispatch":
@@ -853,12 +1225,7 @@ class BrainRuntime:
         tools = capabilities.get("tools_you_can_call", [])
         if "actuate" not in tools:
             raise BrainError("TOOL_UNAVAILABLE", "Twin does not advertise actuation")
-        caps = capabilities.get("action_caps", {})
-        # Single-domain manifest caps are usable; shared domains still need their own limit.
-        caps = dict(caps)
-        for row in actions:
-            caps.setdefault(row.domain, row.action_cap)
-        check_caps(proposal, nodes, caps)
+        check_caps(proposal, nodes, capabilities["action_caps"])
         if proposal.action == "set_valve_position":
             if not any(
                 (sid != "S07" or (choice.get("supply_preserving") is True
@@ -910,7 +1277,7 @@ class BrainRuntime:
                                     idempotency_key=key, reading_ids=proposal.source_reading_ids, risk=proposal.risk)
                 self.reconciliation_attempts.add(key)
                 try:
-                    response = await self._call(self.twin, "actuate", request)
+                    response = await self._call(self.twin, "actuate", request, scenario_id=sid)
                 except BrainError:
                     return self._decision(batch, sid, "pending", "Reconciliation failed; original outcome remains unknown",
                                           proposal.source_reading_ids, proposal, code="OUTCOME_UNCERTAIN")
@@ -926,7 +1293,7 @@ class BrainRuntime:
                     and request.get("action") == proposal.action
                     and set(request.get("targets", [])) & set(proposal.targets)):
                 raise BrainError("OUTCOME_UNCERTAIN", "An earlier operation on this actuator is unresolved")
-        await self._sync_containment(batch, capabilities)
+        await self._sync_containment(batch, capabilities, scenario_id=sid)
         if self.generation != generation or not self._eligible(proposal.source_reading_ids):
             raise BrainError("EVIDENCE_INVALIDATED", "Containment invalidated the queued command")
         preview = None
@@ -934,7 +1301,7 @@ class BrainRuntime:
             preview_tool = self.features.get("preview_tool")
             if not preview_tool or preview_tool not in tools:
                 raise BrainError("PREVIEW_UNAVAILABLE", "Required preview is not advertised")
-            preview = await self._call(self.twin, preview_tool, intent)
+            preview = await self._call(self.twin, preview_tool, intent, scenario_id=sid)
             if preview_tool == "preview_action":
                 if (preview.get("run_id") != batch.run_id
                         or any(preview.get(field) != intent[field] for field in intent)):
@@ -959,6 +1326,7 @@ class BrainRuntime:
                 "source_reading_ids": proposal.source_reading_ids,
                 **({"idempotency_key": key} if self.features.get("guardian_exact_idempotency") else {}),
             },
+            scenario_id=sid,
         )
         if approval.get("approved") is not True:
             raise BrainError(
@@ -978,14 +1346,16 @@ class BrainRuntime:
         self.journal.set_clock(current)
         claims = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "=" * (-len(token.split(".")[1]) % 4)))
         self.journal.append({"event": "guardian_approval", "run_id": batch.run_id,
-                             "tick": current.tick, "token_id": claims.get("jti", claims.get("token_id")),
+                             "tick": current.tick, "timestamp": current.time, "scenario_id": sid,
+                             "jti": claims.get("jti", claims.get("token_id")),
                              "source_reading_ids": proposal.source_reading_ids,
                              "idempotency_key": key})
         self.journal.append(
             {
                 "event": "actuate_requested",
                 "run_id": batch.run_id,
-                "tick": batch.tick,
+                "tick": current.tick,
+                "timestamp": current.time,
                 "scenario_id": sid,
                 "idempotency_key": key,
                 **intent,
@@ -1001,6 +1371,7 @@ class BrainRuntime:
                 self.twin,
                 "actuate",
                 self.sent_requests[key],
+                scenario_id=sid,
             )
         except BrainError as error:
             if error.code in {"PEER_TIMEOUT", "PEER_UNAVAILABLE"}:
@@ -1051,7 +1422,7 @@ class BrainRuntime:
                                             current, 0, 1, idempotency_key=key,
                                             reading_ids=proposal.source_reading_ids, risk=proposal.risk)
                     response = await asyncio.wait_for(
-                        self._call(self.twin, tool, {"idempotency_key": key}), min(3, remaining))
+                        self._call(self.twin, tool, {"idempotency_key": key}, scenario_id=sid), min(3, remaining))
                 return self._save_receipt(batch, sid, proposal, key, response)
             except (TimeoutError, BrainError) as error:
                 if isinstance(error, BrainError) and error.code not in {"PEER_TIMEOUT", "PEER_UNAVAILABLE"}:
@@ -1081,6 +1452,14 @@ class BrainRuntime:
                 code="PEER_SCHEMA_INVALID",
             )
         self.intents[key] = response
+        self.journal.append({
+            "event": "action_outcome_received", "run_id": batch.run_id,
+            "tick": response.get("tick", batch.tick), "scenario_id": sid,
+            "action": proposal.action, "targets": proposal.targets,
+            "params": proposal.params, "status": status, "code": response.get("code"),
+            "source_reading_ids": proposal.source_reading_ids,
+            "idempotency_key": key,
+        })
         if status in {"committed", "rejected"}:
             self.sent_requests.pop(key, None)
             self.pending_started.pop(key, None)
@@ -1109,8 +1488,19 @@ class BrainRuntime:
 
     def notify_containment(self, notice: ContainmentNotice):
         if notice.run_id != self.run_id:
+            self.journal.append({
+                "event": "containment_notice_rejected", "run_id": notice.run_id,
+                "event_id": notice.event_id, "state": notice.state,
+                "device_ids": notice.device_ids, "reading_ids": notice.reading_ids,
+                "code": "RUN_MISMATCH",
+            })
             return {"accepted": False, "code": "RUN_MISMATCH"}
         if notice.event_id in self.containment_events:
+            self.journal.append({
+                "event": "containment_notice_duplicate", "run_id": notice.run_id,
+                "event_id": notice.event_id, "state": notice.state,
+                "device_ids": notice.device_ids, "reading_ids": notice.reading_ids,
+            })
             return {"accepted": True, "duplicate": True}
         self.containment_events.add(notice.event_id)
         self.graph_context = {}
@@ -1127,6 +1517,11 @@ class BrainRuntime:
         # Release never resurrects old evidence. Corrected evidence must arrive with new IDs.
         for state in self.states.values():
             state.clear()
+        self.journal.append({
+            "event": "scenario_state_reset", "run_id": notice.run_id,
+            "scenario_ids": sorted(self.states), "reason": "containment_notice",
+            "event_id": notice.event_id,
+        })
         for key, (_, incident) in list(self.active.items()):
             if set(incident.source_reading_ids) & affected:
                 self.active.pop(key)
@@ -1135,6 +1530,8 @@ class BrainRuntime:
                 "event": "containment_notice",
                 **notice.model_dump(),
                 "invalidated_reading_ids": sorted(affected),
+                "invalidated_count": len(affected),
+                "blocked_device_count": len(self.blocked_devices),
             }
         )
         return {"accepted": True, "invalidated": len(affected), "committed_effects_unchanged": True}
@@ -1157,6 +1554,12 @@ class BrainRuntime:
         }
 
     async def close(self):
+        if self._traffic_gnn_tasks:
+            _done, pending = await asyncio.wait(self._traffic_gnn_tasks, timeout=0.1)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
         closer = getattr(self.provider, "aclose", None)
         if closer:
             await closer()
@@ -1179,3 +1582,4 @@ def build_runtime(
         features=features,
         artifact_dir=artifact_dir,
     )
+

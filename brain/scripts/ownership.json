@@ -1,6 +1,14 @@
 {
   "integration_branch": "codex/civis-elyes",
   "branches": {
+    "docs/meriem-brain-docs": [
+      "brain/README.md",
+      "brain/INTERFACE.md"
+    ],
+    "codex/civis-maram-docs": [
+      "docs/CIVIS_FAILURE_TABLE_DRAFT.md",
+      "docs/CIVIS_INTEGRATION_INPUT.md"
+    ],
     "codex/civis-yassine": [
       "brain/src/civis_brain/scenarios/traffic/",
       "brain/tests/scenarios/traffic/",
@@ -32,3 +40,4 @@
     ]
   }
 }
+

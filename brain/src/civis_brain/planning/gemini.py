@@ -25,6 +25,31 @@ SYSTEM_INSTRUCTION = (
     "Air Quality and Power are alert-only in this reduced version."
 )
 
+GRAPH_INTERPRETATION_INSTRUCTION = (
+    "Interpret the supplied CIVIS traffic forecast only. It is a five-Twin-tick synthetic-model "
+    "forecast from raw Twin reports that were not individually Guardian-verified for this model. "
+    "The neighbour links are geographic proxies, not roads. State a concise trend and uncertainty. "
+    "Do not confirm an incident, treat predictions as readings, cite them as evidence, propose an "
+    "action, set a risk tier, or infer road reachability. If the signal is weak or ambiguous, say so. "
+    "Return only the requested JSON object."
+)
+
+GRAPH_INTERPRETATION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string", "maxLength": 240},
+        "trend": {"type": "string", "enum": ["rising", "falling", "stable", "mixed", "unclear"]},
+        "uncertainty": {"type": "string", "enum": ["high", "medium", "low"]},
+        "caveats": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 160},
+            "maxItems": 4,
+        },
+    },
+    "required": ["summary", "trend", "uncertainty", "caveats"],
+    "additionalProperties": False,
+}
+
 
 def response_schema(context: PlanningContext) -> dict:
     """Constrain parameters to discovery, rather than an unconstrained JSON object."""
@@ -113,6 +138,7 @@ class GeminiPlanProvider:
         self._client = client
         self._owned = client is None
         self.last_response = {}
+        self.last_graph_response = {}
         if self.model not in {"gemini-3.5-flash-lite"}:
             raise BrainError(
                 "AI_MODEL_UNVERIFIED", "Use the selected Gemini Flash-Lite free-tier model"
@@ -204,6 +230,79 @@ class GeminiPlanProvider:
             }.get(status, "AI_UNAVAILABLE")
             detail = f" (HTTP {status})" if isinstance(status, int) else ""
             raise BrainError(code, f"Gemini request failed{detail}; no fallback was used") from None
+
+    async def interpret_graph(self, forecast: dict) -> dict:
+        """Ask the same Gemini model for a read-only interpretation, outside the plan path."""
+        self.last_graph_response = {}
+        if not self.api_key and self._client is None:
+            raise BrainError("AI_KEY_MISSING", "Set GEMINI_API_KEY locally in brain/.env")
+        contents = json.dumps(forecast, ensure_ascii=False, allow_nan=False)
+        if len(contents) > 12000:
+            raise BrainError("AI_CONTEXT_TOO_LARGE", "Traffic forecast exceeds the interpretation budget")
+        if self._client is None:
+            self._client = genai.Client(
+                api_key=self.api_key,
+                vertexai=False,
+                http_options=types.HttpOptions(
+                    timeout=int(self.timeout_seconds * 1000),
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                ),
+            )
+            self._client.aio.interactions.sdk_configuration.retry_config.max_retries = 0
+        timeout_seconds = self.timeout_seconds
+        request = {
+            "model": self.model,
+            "system_instruction": GRAPH_INTERPRETATION_INSTRUCTION,
+            "input": contents,
+            "response_format": {
+                "type": "text",
+                "mime_type": "application/json",
+                "schema": GRAPH_INTERPRETATION_SCHEMA,
+            },
+            "generation_config": {
+                "temperature": 0.1,
+                "top_p": 0.9,
+                "max_output_tokens": 512,
+                "thinking_level": "low",
+            },
+            "store": False,
+        }
+        try:
+            result = await asyncio.wait_for(
+                self._client.aio.interactions.create(**request, timeout=timeout_seconds),
+                timeout=timeout_seconds,
+            )
+            output = result.output_text
+            self.last_graph_response = {
+                "status": str(getattr(result, "status", "completed")),
+                "output_text": output[:2000] if isinstance(output, str) else None,
+            }
+            if getattr(result, "status", "completed") != "completed":
+                raise BrainError("AI_OUTPUT_INCOMPLETE", "Gemini did not complete the graph interpretation")
+            if not isinstance(output, str) or not output.strip() or len(output) > 2000:
+                raise BrainError("AI_OUTPUT_INVALID", "Gemini returned no graph interpretation")
+            parsed = json.loads(output)
+            validate(parsed, GRAPH_INTERPRETATION_SCHEMA)
+            return parsed
+        except BrainError:
+            raise
+        except (ValidationError, SchemaError, ValueError, TypeError):
+            raise BrainError(
+                "AI_OUTPUT_INVALID", "Gemini graph interpretation does not match its restricted schema"
+            ) from None
+        except TimeoutError:
+            raise BrainError("AI_TIMEOUT", "Gemini graph interpretation timed out") from None
+        except Exception as error:
+            status = getattr(error, "code", None) or getattr(error, "status_code", None)
+            code = {
+                400: "AI_REQUEST_REJECTED",
+                401: "AI_AUTH_FAILED",
+                403: "AI_ACCESS_DENIED",
+                404: "AI_MODEL_UNAVAILABLE",
+                429: "AI_QUOTA_EXCEEDED",
+            }.get(status, "AI_UNAVAILABLE")
+            detail = f" (HTTP {status})" if isinstance(status, int) else ""
+            raise BrainError(code, f"Gemini graph interpretation failed{detail}") from None
 
     async def aclose(self) -> None:
         if self._owned and self._client is not None:

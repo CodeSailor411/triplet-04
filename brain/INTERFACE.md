@@ -1,5 +1,7 @@
 # CIVIS Brain interface
 
+**7 November 2026:** [current source pins and verification](docs/mock-team/JOINT_FIX_2026-11-07.md). The 14-check actual-service gate passes for the reviewed Twin and Guardian sources, including S02/S05 and real containment notification. Planning was recorded; full production readiness and live Gemini are not certified. Public schemas and `ready:false` are unchanged.
+
 Updated 6 November 2026. Branch `codex/civis-elyes`, following checkpoint `brain-mock-3`. Python 3.12, pinned MCP 2.3.0, protocol `2026-07-28`, Streamable HTTP at `http://127.0.0.1:8001/mcp` (`GET /health` also served). Joint acceptance is not complete. [Release handover](docs/mock-team/BRAIN_MOCK_3.md).
 
 ## Public tools and caller permissions
@@ -56,7 +58,7 @@ Output (no incident): `{"run_id":"r1","tick":1,"decisions":[]}`. Decisions carry
 
 Brain never signs tokens and never performs containment. Twin keeps its own `get_capabilities`. Guardian tool names are exactly `describe_capabilities`, `get_trust_verdict` and `authorize_action`.
 
-Guardian `authorize_action` receives `run_id`, `reading_ids`, `params`, `risk_level`, `domain` and `idempotency_key`. Brain reads Guardian's `decision` (`approved` with a `token`, or `refused` with `refusal_code`) and `trust_score`. It accepts both the MCP `{"result":{...}}` wrapper and flat replies. A `pending` verdict (with `retry_after_ms` and `last_scored_tick`) is retried within a bounded window and never authorizes. [Exact mapping](docs/mock-team/GUARDIAN_CONTRACT.md).
+Guardian `authorize_action` receives `run_id`, `reading_ids`, `action`, `targets`, `params`, `risk_level`, `domain` and `idempotency_key`. Brain reads Guardian's `decision` (`approved` with a `token`, or `refused` with `refusal_code`) and `trust_score`. It accepts both the MCP `{"result":{...}}` wrapper and flat replies. A `pending` verdict (with `retry_after_ms` and `last_scored_tick`) is retried within a bounded window and never authorizes. [Exact mapping](docs/mock-team/GUARDIAN_CONTRACT.md).
 
 ## Time bases
 
@@ -72,7 +74,7 @@ From `brain`: `python -m civis_brain --env-file .env.partner`. Copy [partner tem
 - Capabilities: S01 signal R1, S02 virtual valve R3, S03 Power alert, S04 Air Quality alert, S05 one ambulance R2.
 - The S02 policy permits only `WAT-01 → WAT-01`, `position: 40`, for Twin mock 3 seed 42. It is a virtual-command allowlist and does not model hydraulics. It is marked `fixture_only`, so a live run needs `MOCK_INTEGRATION_PROFILE=true` (set in the partner template).
 - S06, S07 and S08 are disabled in the shipped scenario policy files.
-- Joint acceptance is not complete; current partner failures remain visible.
+- The current bounded service gate passes; wider Test Book acceptance and a teammate-attended live Gemini run remain separate.
 - Brain keeps incident, deduplication and containment state in memory.
-- On this branch, the `guardian/` directory serves only `describe_capabilities` and `evaluate_reading_advisory` over MCP; `get_trust_verdict` and `authorize_action` are REST routes there. All three MCP names Brain calls are present on `origin/guardian-mock-v3`.
-- No `notify_containment` caller exists in the `guardian/` or `twin/` code on this branch, so the Guardian-to-Brain notification path is not shown working here.
+- Use the reviewed Guardian `main` subtree at `45e0ccb`, rather than the older bundled snapshot or `guardian_final_version`. Its verdict/authorization MCP tools and containment sender were exercised against Brain.
+- Guardian uses `BRAIN_MCP_URL`, `BRAIN_GUARDIAN_CALLER_KEY` and `BRAIN_TIMEOUT_SECONDS=3` for containment. Its actual callback was observed after a confirmed Twin quarantine. The unrelated HTTP verdict webhook is not required.

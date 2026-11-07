@@ -2,7 +2,8 @@ param(
     [switch]$IncludeBrainTests,
     [string]$TwinTag = 'twin-mock-3',
     [string]$GuardianTag = 'guardian_mock_v3',
-    [switch]$DiagnosticsOnly
+    [switch]$DiagnosticsOnly,
+    [switch]$LiveGeminiGraph
 )
 $ErrorActionPreference = 'Stop'
 $brainDirectory = Split-Path -Parent $PSScriptRoot
@@ -15,7 +16,7 @@ $artifacts = Join-Path $brainDirectory ('.artifacts\tagged-v3\' + $runId)
 $environmentNames = @(
     'CIVIS_TEST_TWIN_ROOT', 'CIVIS_TEST_GUARDIAN_ROOT', 'CIVIS_TEST_GUARDIAN_PYTHON',
     'CIVIS_TEST_ARTIFACT_DIR', 'GUARDIAN_TOKEN_PRIVATE_KEY', 'GUARDIAN_TOKEN_PUBLIC_KEY',
-    'GUARDIAN_AUDIT_DIR', 'PYTHONUTF8'
+    'GUARDIAN_AUDIT_DIR', 'PYTHONUTF8', 'UV_CACHE_DIR'
 )
 $previousEnvironment = @{}
 foreach ($name in $environmentNames) {
@@ -23,6 +24,8 @@ foreach ($name in $environmentNames) {
 }
 Push-Location -LiteralPath $repoDirectory
 try {
+    $env:UV_CACHE_DIR = Join-Path $repoDirectory '.interop\tagged-v3\uv-cache'
+    New-Item -ItemType Directory -Force -Path $env:UV_CACHE_DIR | Out-Null
     $brainPython = Join-Path $brainDirectory '.venv\Scripts\python.exe'
     if (-not (Test-Path -LiteralPath $brainPython)) { throw 'Run Brain setup first.' }
     # Fresh extraction avoids ghost files; annotated and lightweight tags resolve alike.
@@ -106,28 +109,38 @@ data = {'python': sys.version, 'platform': platform.platform(),
     $env:GUARDIAN_TOKEN_PUBLIC_KEY = $publicKey
     $env:GUARDIAN_AUDIT_DIR = Join-Path $artifacts 'guardian-logs'
     $env:PYTHONUTF8 = '1'
+    # Run from brain/ so Python imports this checkout's interop package instead
+    # of any historic `brain` package installed from another project folder.
+    Set-Location -LiteralPath $brainDirectory
     $brainExit = 0
     if ($IncludeBrainTests) {
-        & $testPython -m pytest -c brain/pyproject.toml brain/tests -q --tb=short "--junitxml=$artifacts\brain.xml"
+        & $testPython -m pytest -c pyproject.toml tests -q --tb=short "--junitxml=$artifacts\brain.xml"
         $brainExit = $LASTEXITCODE
     }
     $targets = @(
-        'brain/interop/test_partner_acceptance.py::test_twin_enforces_signed_claim_semantics',
-        'brain/interop/test_v3_joint.py'
+        'interop/test_partner_acceptance.py::test_twin_enforces_signed_claim_semantics',
+        'interop/test_v3_joint.py'
     )
-    if (-not $DiagnosticsOnly) { $targets += 'brain/interop/test_v3_shipped_acceptance.py' }
-    & $testPython -m pytest -c brain/pyproject.toml @targets -q --tb=short "--junitxml=$artifacts\partners.xml"
+    if (-not $DiagnosticsOnly) { $targets += 'interop/test_v3_shipped_acceptance.py' }
+    & $testPython -m pytest -c pyproject.toml @targets -q --tb=short "--junitxml=$artifacts\partners.xml"
     $partnerExit = $LASTEXITCODE
+    $liveGraphExit = 0
+    if ($LiveGeminiGraph) {
+        & $testPython -m pytest -c pyproject.toml interop/test_v3_live_gnn_gemini.py `
+            -q --tb=short "--junitxml=$artifacts\live-graph-gemini.xml"
+        $liveGraphExit = $LASTEXITCODE
+    }
     @{
-        brain_exit = $brainExit; partner_exit = $partnerExit
+        brain_exit = $brainExit; partner_exit = $partnerExit; live_graph_gemini_exit = $liveGraphExit
         complete_gate_requested = (-not $DiagnosticsOnly)
-        acceptance_passed = (-not $DiagnosticsOnly -and $brainExit -eq 0 -and $partnerExit -eq 0)
+        live_graph_gemini_requested = $LiveGeminiGraph.IsPresent
+        acceptance_passed = (-not $DiagnosticsOnly -and $brainExit -eq 0 -and $partnerExit -eq 0 -and $liveGraphExit -eq 0)
         evidence_directory = $artifacts
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifacts 'result.json') -Encoding UTF8
     Write-Output "Evidence: $artifacts"
-    Write-Output "Brain exit: $brainExit; required partner acceptance exit: $partnerExit"
+    Write-Output "Brain exit: $brainExit; required partner acceptance exit: $partnerExit; live graph Gemini exit: $liveGraphExit"
     if ($DiagnosticsOnly) { Write-Output 'Diagnostics only: this cannot certify complete integration.' }
-    if ($brainExit -ne 0 -or $partnerExit -ne 0) { exit 1 }
+    if ($brainExit -ne 0 -or $partnerExit -ne 0 -or $liveGraphExit -ne 0) { exit 1 }
 } finally {
     foreach ($name in $environmentNames) {
         [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name], 'Process')

@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.5-flash-lite"
     ai_timeout_seconds: float = Field(default=60, gt=0, le=60)
     ai_max_calls_per_run: int = Field(default=3, ge=1, le=20)
+    traffic_gnn_shadow_enabled: bool = False
     peer_timeout_seconds: float = Field(default=3, gt=0, le=30)
     max_evidence_age_seconds: float = Field(default=10, gt=0, le=60)
     twin_feed_enabled: bool = False
