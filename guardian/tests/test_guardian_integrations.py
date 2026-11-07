@@ -231,7 +231,7 @@ def test_audit_correlates_and_redacts(tmp_path):
         decision="approved", reason=None, caused_by="reading-1",
         data={"token_id": "id", "token": "FULLTOKEN", "authorization": "Bearer secret"})
     record = json.loads(path.read_text(encoding="utf-8"))
-    assert record["caused_by"] == "reading-1"
+    assert record["caused_by"] == ["reading-1"]
     assert record["data"]["token_id"] == "id"
     assert "FULLTOKEN" not in path.read_text(encoding="utf-8")
     assert "Bearer secret" not in path.read_text(encoding="utf-8")
