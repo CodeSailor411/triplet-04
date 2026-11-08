@@ -22,9 +22,10 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | T2 | Approved traffic congestion | Twin, Guardian, Brain | Run a sustained congestion incident | One approved signal-control action commits | Reading, trust verdict, Brain intent, and one Twin commit share the run ID |
 | T3 | Untrusted traffic reading | Twin, Guardian, Brain | Send the agreed untrusted traffic reading | Guardian refuses or marks it untrusted; Brain blocks; Twin makes no action | Guardian refusal, Brain block, and zero Twin action events share the run ID |
 | T4 | Guardian unavailable | Twin, Guardian, Brain | Run an action-capable incident while Guardian does not respond | Brain fails closed and Twin makes no action | Guardian timeout or unavailable event, Brain block, and zero Twin action events |
-| T5 | Approval-token replay | Twin, Guardian, Brain | Submit an authorized request, then replay the same approval token | First request commits once; replay is rejected | First commit, replay rejection, token ID and run ID in Twin and Guardian evidence |
+| T5 | Approval-token replay | Twin, Guardian | Submit an authorized request, then replay the same approval token | First request commits once; replay is rejected | First commit, replay rejection, token ID and run ID in Twin and Guardian evidence |
 | T6 | Stuck sensor containment | Twin, Guardian, Brain | Run the agreed stuck-sensor case | Guardian requests containment; Twin confirms it; Brain invalidates affected evidence | Containment request and effect, then Brain notification and invalidation, under one run ID |
 | T7 | Duplicate command | Twin, Guardian, Brain | Send the same action request twice with the same idempotency key | One physical effect; duplicate returns the saved result | Both requests, one Twin effect, replayed response, idempotency key and run ID |
+| T8 | Forged approval token | Twin, Guardian | Submit an action request with a token the Guardian never issued | Twin rejects the request and no action commits | Twin rejection, zero Twin action events, and no matching Guardian token ID under one run ID |
 
 ## Scenario specifications
 
@@ -88,12 +89,12 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | Field | Definition |
 | --- | --- |
 | ID | `T5` |
-| Layers involved | Twin, Guardian, Brain |
+| Layers involved | Twin, Guardian |
 | Description | The same already-consumed approval token is submitted a second time. |
 | Trigger | Submit one valid authorized action, then resubmit it with the same token. |
 | Expected Twin result | Commits the first request once and rejects the replay. |
 | Expected Guardian result | The original authorization remains traceable by token ID only. |
-| Expected Brain result | Records the first result and any replay/refusal result. |
+| Expected Brain result | Not involved in this scenario. |
 | Pass rule | Exactly one commit occurs and the replay is rejected. |
 | Evidence | First request/receipt, replay request/rejection, token ID, effect count, `run_id`. |
 
@@ -125,16 +126,32 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | Pass rule | One effect is recorded and the duplicate receives the original response without a second action. |
 | Evidence | Both requests, shared idempotency key, original and replayed response, Twin effect count, `run_id`. |
 
+### T8 - Forged approval token
+
+| Field | Definition |
+| --- | --- |
+| ID | `T8` |
+| Layers involved | Twin, Guardian |
+| Description | A request carries an approval token that the Guardian did not issue. |
+| Trigger | Submit an action request with a forged token. |
+| Expected Twin result | Rejects the request and performs no action. |
+| Expected Guardian result | Has no record of issuing the presented token. |
+| Expected Brain result | Not involved in this scenario. |
+| Pass rule | The Twin rejects the forged token and records zero commits for the shared `run_id`. |
+| Evidence | Forged request, Twin rejection, Twin action count, Guardian record, `run_id`. |
+
 ## Execution record
 
-Fill this table only after a run. Link or name the saved layer logs and preserve their shared `run_id`.
+Fill this table only after a run. Link or name the saved layer logs and preserve their shared `run_id`. One row per saved log file. The run ID restarts when the Twin restarts, so the same ID can appear on different days (for example `run-42-005` on 3 Nov and 8 Nov); the evidence file identifies the run.
 
 | Test ID | Execution label | Result | Shared run ID | Evidence location | Notes |
 | --- | --- | --- | --- | --- | --- |
-| T1 | `not run` | Pending |  |  |  |
-| T2 | `not run` | Pending |  |  |  |
-| T3 | `not run` | Pending |  |  |  |
-| T4 | `not run` | Pending |  |  |  |
-| T5 | `not run` | Pending |  |  |  |
-| T6 | `not run` | Pending |  |  |  |
-| T7 | `not run` | Pending |  |  |  |
+| T1 | `real` | PASS | run-42-002 | `logs/T1-1.jsonl` | Run on 3 Nov 2026. Calm run: the log holds only the run start and end. |
+| T2 | `stand-in` | PASS | run-42-004 | `logs/T2-1.jsonl` | Run on 3 Nov 2026. Stand-in Brain and stand-in Guardian. |
+| T3 | `stand-in` | PASS | run-42-005 | `logs/T3-1.jsonl` | Run on 3 Nov 2026. Stand-in Guardian set to refuse. |
+| T4 | `stand-in` | PASS | run-42-006 | `logs/T4-1.jsonl` | Run on 3 Nov 2026. Stand-in Guardian set to stay silent, so it wrote no events; the stand-in Brain logged the failure. |
+| T5 | `stand-in` | PASS | run-42-007 | `logs/T5-1.jsonl` | Run on 3 Nov 2026. Stand-in Guardian; no Brain events. |
+| T5 | `real` | PASS | run-42-003 | `logs/T5-2.jsonl` | Run on 8 Nov 2026. Twin and real Guardian; no Brain involved. |
+| T6 | `stand-in` | Partial | run-42-008 | `logs/T6-1.jsonl` | Run on 3 Nov 2026. The script's checks passed (sensor isolated, containment logged), but there are no Brain events, so the Brain invalidation required by the pass rule is not shown. |
+| T7 | `stand-in` | PASS | run-42-009 | `logs/T7-1.jsonl` | Run on 3 Nov 2026. One effect, duplicate answered with the saved result. |
+| T8 | `real` | PASS | run-42-005 | `logs/T8-1.jsonl` | Run on 8 Nov 2026. Twin and real Guardian; no Brain involved. |
