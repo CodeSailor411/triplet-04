@@ -14,6 +14,8 @@ Each run has one execution label:
 
 A result may be marked `PASS (real)` only if logs from every required real layer use the same `run_id`. The logs must show the listed events. Never record a real pass from stand-in evidence.
 
+If a run passes its script checks but a required layer has no events in the log, mark it `Partial` and say which layer is missing.
+
 ## Scenario index
 
 | Test ID | Name | Layers involved | Trigger | Expected result | How to verify |
@@ -25,7 +27,7 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | T5 | Approval-token replay | Twin, Guardian | Submit an authorized request, then replay the same approval token | First request commits once; replay is rejected | First commit, replay rejection, token ID and run ID in Twin and Guardian evidence |
 | T6 | Stuck sensor containment | Twin, Guardian, Brain | Run the agreed stuck-sensor case | Guardian requests containment; Twin confirms it; Brain invalidates affected evidence | Containment request and effect, then Brain notification and invalidation, under one run ID |
 | T7 | Duplicate command | Twin, Guardian, Brain | Send the same action request twice with the same idempotency key | One physical effect; duplicate returns the saved result | Both requests, one Twin effect, replayed response, idempotency key and run ID |
-| T8 | Forged approval token | Twin, Guardian | Submit an action request with a token the Guardian never issued | Twin rejects the request and no action commits | Twin rejection, zero Twin action events, and no matching Guardian token ID under one run ID |
+| T8 | Tampered approval token | Twin, Guardian | Submit one valid control request, then a second request whose token signature was changed after the Guardian issued it | Control request commits once; tampered request is rejected with `TOKEN_INVALID` and has no effect | One Twin commit (the control), one `TOKEN_INVALID` rejection, and two Guardian-issued token IDs, under one run ID |
 
 ## Scenario specifications
 
@@ -39,7 +41,7 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | Trigger | Start the calm-city feed or scenario script. |
 | Expected Twin result | Streams readings and records no action. |
 | Expected Brain result | Records no active incident and no action intent. |
-| Pass rule | No Brain action intent and no Twin action occur for the shared `run_id`. |
+| Pass rule | No Brain action intent and no Twin action occur for the shared `run_id`. The Brain log must be present for the same `run_id`. |
 | Evidence | Input/configuration, Twin log, Brain log, `run_id`. |
 
 ### T2 - Approved traffic congestion
@@ -92,7 +94,7 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | Layers involved | Twin, Guardian |
 | Description | The same already-consumed approval token is submitted a second time. |
 | Trigger | Submit one valid authorized action, then resubmit it with the same token. |
-| Expected Twin result | Commits the first request once and rejects the replay. |
+| Expected Twin result | Commits the first request once and rejects the replay with `TOKEN_REUSED`. |
 | Expected Guardian result | The original authorization remains traceable by token ID only. |
 | Expected Brain result | Not involved in this scenario. |
 | Pass rule | Exactly one commit occurs and the replay is rejected. |
@@ -126,19 +128,19 @@ A result may be marked `PASS (real)` only if logs from every required real layer
 | Pass rule | One effect is recorded and the duplicate receives the original response without a second action. |
 | Evidence | Both requests, shared idempotency key, original and replayed response, Twin effect count, `run_id`. |
 
-### T8 - Forged approval token
+### T8 - Tampered approval token
 
 | Field | Definition |
 | --- | --- |
 | ID | `T8` |
 | Layers involved | Twin, Guardian |
-| Description | A request carries an approval token that the Guardian did not issue. |
-| Trigger | Submit an action request with a forged token. |
-| Expected Twin result | Rejects the request and performs no action. |
-| Expected Guardian result | Has no record of issuing the presented token. |
+| Description | A request carries an approval token that was really issued by the Guardian, but whose signature was changed afterwards. The Twin must notice that the signature no longer matches. A valid control request first proves the Twin accepts good tokens, so the rejection cannot be blamed on a broken setup. |
+| Trigger | Step 1: submit one valid control request with a token the Guardian issued. Step 2: get a second token from the Guardian, change its signature, and submit a second request with it. |
+| Expected Twin result | Commits the control request once. Rejects the tampered request with `TOKEN_INVALID` and performs no action for it. |
+| Expected Guardian result | Has a record of issuing both tokens (one for the control request, one that was later tampered with). The Twin saw a signature that the Guardian did not produce. |
 | Expected Brain result | Not involved in this scenario. |
-| Pass rule | The Twin rejects the forged token and records zero commits for the shared `run_id`. |
-| Evidence | Forged request, Twin rejection, Twin action count, Guardian record, `run_id`. |
+| Pass rule | The run has exactly one commit, the valid control request. The tampered request is rejected with `TOKEN_INVALID` and has zero effects: no second commit, no state change, and its token is not spent. |
+| Evidence | Control request and commit, tampered request and `TOKEN_INVALID` rejection, Twin commit count (one), both Guardian token IDs, `run_id`. |
 
 ## Execution record
 
@@ -146,12 +148,12 @@ Fill this table only after a run. Link or name the saved layer logs and preserve
 
 | Test ID | Execution label | Result | Shared run ID | Evidence location | Notes |
 | --- | --- | --- | --- | --- | --- |
-| T1 | `real` | PASS | run-42-002 | `logs/T1-1.jsonl` | Run on 3 Nov 2026. Calm run: the log holds only the run start and end. |
+| T1 | `real` | Partial | run-42-002 | `logs/T1-1.jsonl` | Run on 3 Nov 2026. Twin-only baseline: the log holds two Twin scenario rows (run start and end) and no Brain rows. T1 requires a Brain record for the same run, so the Brain half of the pass rule is not shown. Becomes a full pass when a run with Brain events for the same `run_id` is saved. |
 | T2 | `stand-in` | PASS | run-42-004 | `logs/T2-1.jsonl` | Run on 3 Nov 2026. Stand-in Brain and stand-in Guardian. |
 | T3 | `stand-in` | PASS | run-42-005 | `logs/T3-1.jsonl` | Run on 3 Nov 2026. Stand-in Guardian set to refuse. |
 | T4 | `stand-in` | PASS | run-42-006 | `logs/T4-1.jsonl` | Run on 3 Nov 2026. Stand-in Guardian set to stay silent, so it wrote no events; the stand-in Brain logged the failure. |
 | T5 | `stand-in` | PASS | run-42-007 | `logs/T5-1.jsonl` | Run on 3 Nov 2026. Stand-in Guardian; no Brain events. |
-| T5 | `real` | PASS | run-42-003 | `logs/T5-2.jsonl` | Run on 8 Nov 2026. Twin and real Guardian; no Brain involved. |
+| T5 | `real` | PASS | run-42-003 | `logs/T5-2.jsonl` | Run on 8 Nov 2026. Twin and real Guardian; no Brain involved. One commit, then a `TOKEN_REUSED` rejection for the same token ID. |
 | T6 | `stand-in` | Partial | run-42-008 | `logs/T6-1.jsonl` | Run on 3 Nov 2026. The script's checks passed (sensor isolated, containment logged), but there are no Brain events, so the Brain invalidation required by the pass rule is not shown. |
 | T7 | `stand-in` | PASS | run-42-009 | `logs/T7-1.jsonl` | Run on 3 Nov 2026. One effect, duplicate answered with the saved result. |
-| T8 | `real` | PASS | run-42-005 | `logs/T8-1.jsonl` | Run on 8 Nov 2026. Twin and real Guardian; no Brain involved. |
+| T8 | `real` | PASS | run-42-005 | `logs/T8-1.jsonl` | Run on 8 Nov 2026. Twin and real Guardian; no Brain involved. One valid control commit, then a `TOKEN_INVALID` rejection for the tampered signature, with no effect from the tampered request. |

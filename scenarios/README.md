@@ -29,6 +29,8 @@ python scenarios/T2_real_jam.py
 
 `--help` on any script shows its options. The Twin's address comes from `--url`, then `TWIN_URL`, then `twin/config/twin.yaml`; the keys from the environment or `twin/.env`. Nothing is hard-coded.
 
+These commands are the stand-in way to run the scenarios. For the live run with all three real layers (T2 and T3), use the Compose launcher from the root README: `python brain/scripts/compose_stack.py t2` and `t3`.
+
 ## The eight scenarios
 
 | ID | Script | Layers | What it shows | Real layers possible? |
@@ -40,20 +42,26 @@ python scenarios/T2_real_jam.py
 | T5 | `T5_token_replay.py` | Guardian, Twin | One token used twice: second use is `TOKEN_REUSED` | yes, real Guardian, no Brain (see below) |
 | T6 | `T6_stuck_sensor_isolated.py` | Twin, Guardian | A frozen sensor is isolated and cut off the feed | yes |
 | T7 | `T7_repeated_command_once.py` | Brain, Twin | The same command sent twice runs once | no |
-| T8 | `T8_forged_token.py` | Guardian, Twin | A forged token is refused by the Twin and nothing is committed | yes, real Guardian |
+| T8 | `T8_tampered_token.py` | Guardian, Twin | One valid control request commits once. A second request, whose token had its signature changed after the Guardian issued it, is refused with `TOKEN_INVALID` and has no effect | yes, real Guardian, no Brain (see below) |
 
 ## Stand-ins or real layers
 
 * **Default (`--layers standin`):** our stand-ins from `twin/mocks/` play the Brain and the Guardian. The script starts them itself. Every stand-in event carries `stand_in: true`. The Brain to Guardian network call is **not** tested this way, because the stand-in Guardian lives inside the stand-in Brain.
 * **`--layers real` (T1, T2, T3, T6):** the partners' real Brain and Guardian must already be running and watching this Twin. The script only pulls the trigger on the Twin, waits (`--wait`), and reads the logs. It finds their part files in `brain/run-logs/` and `guardian/run-logs/` (the agreed place), or you pass them with `--parts FILE ...`. A part file only merges if its `run_id` equals the Twin's current one, so the real layers must follow the new run id after the reset. If a real layer writes no events, the matching check fails on purpose: it means R3 would show a hole.
 * T4 and T7 are stand-ins only: they test the Twin's own rules (timeout handling around a silent partner, idempotency) and need a partner we control.
-* T5 and T8 talk to the real Guardian through `_real_guardian.py` (a helper, not a scenario). The Guardian must already be running and watching this Twin. The helper reads the Guardian's bearer key (`GUARDIAN_BRAIN_MCP_BEARER_KEY`) from the environment or the `.env` in the repo root and never writes it to a log. No Brain takes part, so the index label for both reads `brain: no events`.
-* **What has run against a real layer:** T5 and T8 against the real Guardian on 8 Nov 2026 (`logs/T5-2.jsonl`, `logs/T8-1.jsonl`). No scenario has a recorded run with the real Brain and the real Guardian together.
+* T5 and T8 talk to the real Guardian through `_real_guardian.py` (a helper, not a scenario). The Guardian must already be running and watching this Twin. The helper reads the Guardian's bearer key (`GUARDIAN_BRAIN_MCP_BEARER_KEY`) from the environment or the `.env` in the repo root and never writes it to a log. No Brain takes part, so the index label for both reads `brain: no events`. Both cover the Twin and the Guardian only.
+
+### What has run against real layers
+
+* **Twin, Guardian and Brain together:** T2 ran on Windows with the Compose launcher. The verified T2 report on `main` (run `run-42-004`) joins the real Twin, Guardian and CIVIS records, including the committed action.
+* **T3 live refusal:** the evidence is in PR #43, which is not merged yet. Treat it as pending until it is.
+* **Twin and Guardian only (no Brain):** T5 and T8 against the real Guardian on 8 Nov 2026 (`logs/T5-2.jsonl`, `logs/T8-1.jsonl`). T5 shows one commit and a `TOKEN_REUSED` rejection for the same token ID. T8 shows one valid control commit and a `TOKEN_INVALID` rejection for the tampered signature.
+* **Not complete:** full joint acceptance across all three real layers for every scenario.
 
 Every row in `logs/INDEX.md` says, per layer, `stand-in`, `real`, `mixed` or `no events`. The label is read from the events themselves, so it cannot be wrong by a forgotten flag.
 
 ## Things to know
 
 * The Twin also writes its own merged copy `logs/run-42-NNN.jsonl` whenever a run ends (reset, stop, shutdown). Those are the same events, without a scenario name. The dashboard ignores duplicates. Commit only the `T*-*.jsonl` files and `INDEX.md`.
-* T1 is a calm run, so its log is short (the run start and end). That is the point: nothing happened. T1 ends by resetting the run, because a calm Twin writes no log file until a run ends.
+* T1 is a calm run, so its log is short (the run start and end). That is the point: nothing happened. T1 ends by resetting the run, because a calm Twin writes no log file until a run ends. A T1 log with Twin rows and no Brain rows only supports a Twin-only baseline, so the Test Book marks it Partial.
 * A failed run is saved too (labelled `FAIL` in the index), so a failure leaves evidence.
