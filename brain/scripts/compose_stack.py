@@ -86,12 +86,19 @@ if __name__ == "__main__":
                      and health["feed"]["state"] == "connected" and health["feed"]["evaluated"] > 0
                      and not health["event_log"]["error"] else 2)
 """
-T2_CONTROL = """
+TRAFFIC_SCENARIOS = {
+    "t2": {"name": "real_jam", "params": {"node_id": "SH-05", "hold_ticks": 180}},
+    "t3": {"name": "fake_reading", "params": {
+        "device_id": "SH-05.congestion_index", "value": 95.0, "duration_ticks": 30,
+    }},
+}
+TRAFFIC_SCENARIO_CONTROL = """
 import asyncio, json, sys
 from mock_common import MockError, TwinClient, key_for
 
-async def control_t2():
-    resetting = sys.argv[1] == "reset"
+async def control_scenario():
+    scenario_id = sys.argv[1]
+    resetting = scenario_id == "reset"
     if not resetting:
         run_id, scored_tick = sys.argv[2], int(sys.argv[3])
         async with TwinClient("http://127.0.0.1:8000", key_for("city_brain")) as twin:
@@ -99,7 +106,7 @@ async def control_t2():
         if clock["run_id"] != run_id:
             raise MockError(f"Twin changed runs while waiting for Guardian in {run_id}")
         if not 0 <= clock["tick"] - scored_tick <= 5:
-            raise MockError(f"Guardian is behind Twin in {run_id}. Run check before retrying T2.")
+            raise MockError(f"Guardian is behind Twin in {run_id}. Run check before retrying {scenario_id.upper()}.")
     async with TwinClient("http://127.0.0.1:8000", key_for("scenario")) as twin:
         if resetting:
             reset = await twin.call("run_scenario", {"name": "reset"})
@@ -107,20 +114,17 @@ async def control_t2():
                 raise MockError("Twin did not confirm the run reset")
             print(json.dumps(reset), flush=True)
             return
-        jam = await twin.call("run_scenario", {
-            "name": "real_jam",
-            "params": {"node_id": "SH-05", "hold_ticks": 180},
-        })
-        if jam.get("status") != "started" or jam.get("run_id") != run_id:
-            raise MockError(f"Twin did not confirm a jam in {run_id}")
-        print(json.dumps(jam), flush=True)
+        result = await twin.call("run_scenario", json.loads(sys.argv[4]))
+        if result.get("status") != "started" or result.get("run_id") != run_id:
+            raise MockError(f"Twin did not confirm {scenario_id.upper()} in {run_id}")
+        print(json.dumps(result), flush=True)
 
 try:
-    asyncio.run(control_t2())
+    asyncio.run(control_scenario())
 except MockError as error:
     raise SystemExit(str(error)) from None
 """
-T2_WAIT_FOR_GUARDIAN = """
+WAIT_FOR_GUARDIAN = """
 import json, os, sys, time
 from pathlib import Path
 
@@ -153,23 +157,25 @@ while time.monotonic() < deadline:
     except FileNotFoundError:
         pass
     time.sleep(0.25)
-raise SystemExit(f"Guardian did not score a new SH-05 reading in {run_id} within 30 seconds. Jam was not started.")
+raise SystemExit(f"Guardian did not score a new SH-05 reading in {run_id} within 30 seconds. Scenario was not started.")
 """
 
 
-def start_t2(prefix, stage):
+def start_traffic_scenario(prefix, stage, scenario_id):
     control = prefix + ["exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
-                        "twin", "python", "-c", T2_CONTROL]
+                        "twin", "python", "-c", TRAFFIC_SCENARIO_CONTROL]
     reset = subprocess.run(control + ["reset"], cwd=stage, check=True, stdout=subprocess.PIPE, text=True)
     run_id = json.loads(reset.stdout)["run_id"]
     if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", run_id):
         raise ValueError("Twin returned an invalid run ID")
-    print(f"Twin reset to {run_id}. Reconnecting Guardian's feed before starting the jam.", file=sys.stderr)
+    print(f"Twin reset to {run_id}. Reconnecting Guardian's feed before starting {scenario_id.upper()}.",
+          file=sys.stderr)
     subprocess.run(prefix + ["restart", "--no-deps", "guardian-feed"], cwd=stage,
                    stdout=subprocess.DEVNULL, check=True)
-    scored = subprocess.run(prefix + ["exec", "-T", "guardian", "python", "-c", T2_WAIT_FOR_GUARDIAN, run_id],
+    scored = subprocess.run(prefix + ["exec", "-T", "guardian", "python", "-c", WAIT_FOR_GUARDIAN, run_id],
                             cwd=stage, check=True, stdout=subprocess.PIPE, text=True)
-    subprocess.run(control + ["jam", run_id, str(int(scored.stdout))], cwd=stage, check=True)
+    subprocess.run(control + [scenario_id, run_id, str(int(scored.stdout)),
+                              json.dumps(TRAFFIC_SCENARIOS[scenario_id])], cwd=stage, check=True)
 
 
 def git(*args, **kwargs):
@@ -294,8 +300,8 @@ def print_timeline_progress(stage, clock):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("init", "up", "check", "t2", "ps", "logs", "down", "config"),
-                        help="t2 resets the simulation and starts a sustained SH-05 traffic jam")
+    parser.add_argument("command", choices=("init", "up", "check", *TRAFFIC_SCENARIOS, "ps", "logs", "down", "config"),
+                        help="t2 starts a real SH-05 jam and t3 injects a false congestion reading")
     args = parser.parse_args()
     env_file = BRAIN / ".env.compose"
     if args.command == "init":
@@ -312,8 +318,8 @@ def main():
         os.environ["TRIPLET_GUARDIAN_AUDIT_VOLUME"] = f"{project}-guardian-audit-{stage.name}"
         prefix = ["docker", "compose", "--project-name", project, "--env-file", str(env_file),
                   "-f", "docker-compose.yml", "-f", "brain/compose.override.yml"]
-        if args.command == "t2":
-            start_t2(prefix, stage)
+        if args.command in TRAFFIC_SCENARIOS:
+            start_traffic_scenario(prefix, stage, args.command)
             return
         command = {
             "up": ["up", "--build", "-d", "--wait"],
