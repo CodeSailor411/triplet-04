@@ -6,6 +6,7 @@ import runpy
 import ssl
 import subprocess
 import sys
+import time
 import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
@@ -58,7 +59,8 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
     assert '"guardian_scored": 14, "guardian_lag_ticks": 2' in output
 
 
-def test_t2_uses_twin_container_dependencies(tmp_path, monkeypatch):
+@pytest.mark.parametrize("guardian_ready", [True, False])
+def test_t2_reconnects_and_waits_for_guardian_after_reset(tmp_path, monkeypatch, guardian_ready):
     launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
     main = launcher["main"]
     monkeypatch.setitem(main.__globals__, "BRAIN", tmp_path)
@@ -66,15 +68,60 @@ def test_t2_uses_twin_container_dependencies(tmp_path, monkeypatch):
     (tmp_path / ".env.compose").touch()
     monkeypatch.setattr(sys, "argv", ["compose_stack.py", "t2"])
     commands = []
-    monkeypatch.setattr(subprocess, "run", lambda command, **_: commands.append(command))
+    run_id = "run-42-003"
 
-    main()
+    def run(command, **_):
+        commands.append(command)
+        if command[-1] == "reset":
+            return subprocess.CompletedProcess(command, 0, stdout=json.dumps({"run_id": run_id}))
+        if command[-1] == run_id:
+            if not guardian_ready:
+                raise subprocess.CalledProcessError(1, command)
+            return subprocess.CompletedProcess(command, 0, stdout="4\n")
+        return subprocess.CompletedProcess(command, 0)
 
-    assert len(commands) == 1
-    assert commands[0][-8:] == [
+    monkeypatch.setattr(subprocess, "run", run)
+    if guardian_ready:
+        main()
+    else:
+        with pytest.raises(SystemExit) as exit_info:
+            main()
+        assert exit_info.value.code == 1
+
+    control = [
         "exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
-        "twin", "python", "-c", launcher["T2_TRIGGER"],
+        "twin", "python", "-c", launcher["T2_CONTROL"],
     ]
+    assert commands[0][-9:] == control + ["reset"]
+    assert commands[1][-3:] == ["restart", "--no-deps", "guardian-feed"]
+    assert commands[2][-7:] == ["exec", "-T", "guardian", "python", "-c",
+                               launcher["T2_WAIT_FOR_GUARDIAN"], run_id]
+    if guardian_ready:
+        assert commands[3][-11:] == control + ["jam", run_id, "4"]
+    else:
+        assert len(commands) == 3
+
+
+def test_t2_wait_requires_new_sh05_score_for_reset_run(tmp_path, monkeypatch, capsys):
+    launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
+    run_id = "run-42-003"
+    audit = tmp_path / f"{run_id}.guardian.jsonl"
+    score = {"run_id": run_id, "tick": 1, "event_type": "reading_evaluated",
+             "data": {"sensor_id": "SH-05.congestion_index"}, "trust_score": 1.0}
+    audit.write_text(json.dumps(score) + "\n", encoding="utf-8")
+    monkeypatch.setenv("GUARDIAN_AUDIT_DIR", str(tmp_path))
+    monkeypatch.setattr(sys, "argv", ["-c", run_id])
+    queued = iter([{**score, "tick": 2, "run_id": "run-42-002"}, {**score, "tick": 3}])
+
+    def append_next(_):
+        with audit.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(next(queued)) + "\n")
+
+    monkeypatch.setattr(time, "sleep", append_next)
+    with pytest.raises(SystemExit) as exit_info:
+        exec(launcher["T2_WAIT_FOR_GUARDIAN"], {})
+    assert exit_info.value.code == 0
+    assert capsys.readouterr().out.strip() == "3"
 
 
 async def test_check_distinguishes_pending_live_reading_from_audited_score(monkeypatch):

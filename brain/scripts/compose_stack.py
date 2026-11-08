@@ -8,6 +8,7 @@ import re
 import secrets
 import ssl
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
@@ -85,28 +86,90 @@ if __name__ == "__main__":
                      and health["feed"]["state"] == "connected" and health["feed"]["evaluated"] > 0
                      and not health["event_log"]["error"] else 2)
 """
-T2_TRIGGER = """
-import asyncio, json
+T2_CONTROL = """
+import asyncio, json, sys
 from mock_common import MockError, TwinClient, key_for
 
-async def start_t2():
+async def control_t2():
+    resetting = sys.argv[1] == "reset"
+    if not resetting:
+        run_id, scored_tick = sys.argv[2], int(sys.argv[3])
+        async with TwinClient("http://127.0.0.1:8000", key_for("city_brain")) as twin:
+            clock = await twin.call("get_clock")
+        if clock["run_id"] != run_id:
+            raise MockError(f"Twin changed runs while waiting for Guardian in {run_id}")
+        if not 0 <= clock["tick"] - scored_tick <= 5:
+            raise MockError(f"Guardian is behind Twin in {run_id}. Run check before retrying T2.")
     async with TwinClient("http://127.0.0.1:8000", key_for("scenario")) as twin:
-        reset = await twin.call("run_scenario", {"name": "reset"})
-        if reset.get("status") != "reset" or not reset.get("run_id"):
-            raise MockError("Twin did not confirm the run reset")
+        if resetting:
+            reset = await twin.call("run_scenario", {"name": "reset"})
+            if reset.get("status") != "reset" or not reset.get("run_id"):
+                raise MockError("Twin did not confirm the run reset")
+            print(json.dumps(reset), flush=True)
+            return
         jam = await twin.call("run_scenario", {
             "name": "real_jam",
             "params": {"node_id": "SH-05", "hold_ticks": 180},
         })
-        if jam.get("status") != "started" or jam.get("run_id") != reset["run_id"]:
-            raise MockError(f"Twin did not confirm a jam in {reset['run_id']}")
+        if jam.get("status") != "started" or jam.get("run_id") != run_id:
+            raise MockError(f"Twin did not confirm a jam in {run_id}")
         print(json.dumps(jam), flush=True)
 
 try:
-    asyncio.run(start_t2())
+    asyncio.run(control_t2())
 except MockError as error:
     raise SystemExit(str(error)) from None
 """
+T2_WAIT_FOR_GUARDIAN = """
+import json, os, sys, time
+from pathlib import Path
+
+run_id = sys.argv[1]
+audit = Path(os.environ.get("GUARDIAN_AUDIT_DIR", "run-logs")) / f"{run_id}.guardian.jsonl"
+try:
+    offset = audit.stat().st_size
+except FileNotFoundError:
+    offset = 0
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    try:
+        with audit.open("rb") as stream:
+            stream.seek(offset)
+            while line := stream.readline():
+                if not line.endswith(b"\\n"):
+                    break
+                offset = stream.tell()
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    continue
+                if (isinstance(row, dict) and row.get("run_id") == run_id
+                        and row.get("event_type") == "reading_evaluated"
+                        and row.get("data", {}).get("sensor_id") == "SH-05.congestion_index"
+                        and type(row.get("tick")) is int and type(row.get("trust_score")) in (int, float)
+                        and 0 <= row["trust_score"] <= 1):
+                    print(row["tick"])
+                    raise SystemExit(0)
+    except FileNotFoundError:
+        pass
+    time.sleep(0.25)
+raise SystemExit(f"Guardian did not score a new SH-05 reading in {run_id} within 30 seconds. Jam was not started.")
+"""
+
+
+def start_t2(prefix, stage):
+    control = prefix + ["exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
+                        "twin", "python", "-c", T2_CONTROL]
+    reset = subprocess.run(control + ["reset"], cwd=stage, check=True, stdout=subprocess.PIPE, text=True)
+    run_id = json.loads(reset.stdout)["run_id"]
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", run_id):
+        raise ValueError("Twin returned an invalid run ID")
+    print(f"Twin reset to {run_id}. Reconnecting Guardian's feed before starting the jam.", file=sys.stderr)
+    subprocess.run(prefix + ["restart", "--no-deps", "guardian-feed"], cwd=stage,
+                   stdout=subprocess.DEVNULL, check=True)
+    scored = subprocess.run(prefix + ["exec", "-T", "guardian", "python", "-c", T2_WAIT_FOR_GUARDIAN, run_id],
+                            cwd=stage, check=True, stdout=subprocess.PIPE, text=True)
+    subprocess.run(control + ["jam", run_id, str(int(scored.stdout))], cwd=stage, check=True)
 
 
 def git(*args, **kwargs):
@@ -247,11 +310,12 @@ def main():
         project = "triplet04-" + hashlib.sha256(os.fsencode(ROOT)).hexdigest()[:8]
         prefix = ["docker", "compose", "--project-name", project, "--env-file", str(env_file),
                   "-f", "docker-compose.yml", "-f", "brain/compose.override.yml"]
+        if args.command == "t2":
+            start_t2(prefix, stage)
+            return
         command = {
             "up": ["up", "--build", "-d", "--wait"],
             "check": ["exec", "-T", "brain", "python", "-c", CHECK],
-            "t2": ["exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
-                   "twin", "python", "-c", T2_TRIGGER],
             "ps": ["ps"],
             "logs": ["logs", "--tail", "60"],
             "down": ["down"],
