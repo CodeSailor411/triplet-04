@@ -24,11 +24,34 @@ KEYS = (
     "BRAIN_TWIN_CALLER_KEY", "BRAIN_GUARDIAN_CALLER_KEY", "BRAIN_SCENARIO_KEY",
 )
 CHECK = """
-import asyncio, json, ssl, urllib.request
+import asyncio, json, ssl, sys, urllib.request
 from civis_brain.errors import BrainError
 from civis_brain.integration.mcp_peer import MCPPeer
 from civis_brain.preflight import check
 from civis_brain.settings import load_settings
+
+async def probe_verdict(guardian, sample, attempts):
+    reading_id = sample["reading_id"]
+    result = {**sample, "status": "unavailable"}
+    for attempt in range(attempts):
+        try:
+            reply = await guardian.call_tool("get_trust_verdict", {"reading_id": reading_id})
+            verdict = reply.get("result", reply)
+            if isinstance(verdict, dict):
+                score = verdict.get("trust_score")
+                if verdict.get("caused_by") == reading_id and type(score) in (int, float) and 0 <= score <= 1:
+                    return {**sample, "status": "scored", "trust_score": score}
+                if verdict.get("status") == "pending" and verdict.get("reading_id") == reading_id:
+                    result["error_code"] = "GUARDIAN_VERDICT_NOT_READY"
+                else:
+                    result["error_code"] = "VERDICT_REPLY_MISMATCH"
+            else:
+                result["error_code"] = "VERDICT_REPLY_MISMATCH"
+        except BrainError as error:
+            result["error_code"] = error.code
+        if attempt + 1 < attempts:
+            await asyncio.sleep(0.5)
+    return result
 
 async def connection_checks():
     settings = load_settings()
@@ -41,27 +64,26 @@ async def connection_checks():
     batch = await twin.call_tool("get_readings", {"domain": "traffic", "sensor": "congestion_index"})
     if not batch["readings"]:
         return result
-    reading_id = batch["readings"][0]["reading_id"]
-    for _ in range(6):
-        try:
-            reply = await guardian.call_tool("get_trust_verdict", {"reading_id": reading_id})
-            verdict = reply.get("result", reply)
-            if verdict.get("caused_by") == reading_id and type(verdict.get("trust_score")) in (int, float):
-                result["guardian_scored_live_reading"] = True
-                break
-        except BrainError:
-            pass
-        await asyncio.sleep(0.5)
+    sample = {"run_id": batch["run_id"], "tick": batch["tick"],
+              "reading_id": batch["readings"][0]["reading_id"]}
+    live = await probe_verdict(guardian, sample, 6)
+    result["guardian_live_lookup"] = live
+    result["guardian_scored_live_reading"] = live["status"] == "scored"
+    audited = json.loads(sys.argv[1])
+    if (not result["guardian_scored_live_reading"] and audited
+            and audited["run_id"] == sample["run_id"] and audited["tick"] <= sample["tick"]):
+        result["guardian_audited_lookup"] = await probe_verdict(guardian, audited, 1)
     return result
 
-context = ssl.create_default_context(cafile="/run/civis-ca/brain.crt")
-with urllib.request.urlopen("https://127.0.0.1:8001/health", context=context, timeout=3) as response:
-    health = json.load(response)
-result = asyncio.run(connection_checks())
-print(json.dumps({"feed": health["feed"], "event_log": health["event_log"], **result}, indent=2))
-raise SystemExit(0 if result["ready"] and result["guardian_scored_live_reading"]
-                 and health["feed"]["state"] == "connected" and health["feed"]["evaluated"] > 0
-                 and not health["event_log"]["error"] else 2)
+if __name__ == "__main__":
+    context = ssl.create_default_context(cafile="/run/civis-ca/brain.crt")
+    with urllib.request.urlopen("https://127.0.0.1:8001/health", context=context, timeout=3) as response:
+        health = json.load(response)
+    result = asyncio.run(connection_checks())
+    print(json.dumps({"feed": health["feed"], "event_log": health["event_log"], **result}, indent=2))
+    raise SystemExit(0 if result["ready"] and result["guardian_scored_live_reading"]
+                     and health["feed"]["state"] == "connected" and health["feed"]["evaluated"] > 0
+                     and not health["event_log"]["error"] else 2)
 """
 T2_TRIGGER = """
 import asyncio, json
@@ -155,7 +177,7 @@ def check_published_ports(prefix, stage):
     return twin_clock, failed
 
 
-def latest_event_tick(path, kind, score_field=None):
+def recent_events(path):
     """Read recent complete rows only, so checks stay quick on long runs."""
     try:
         with path.open("rb") as stream:
@@ -165,21 +187,22 @@ def latest_event_tick(path, kind, score_field=None):
                 stream.readline()
             lines = stream.read().split(b"\n")[:-1]
     except FileNotFoundError:
-        return None
+        return
     except OSError as error:
         print(f"Could not read {path}: {error.strerror}", flush=True)
-        return None
+        return
     for line in reversed(lines):
         try:
             row = json.loads(line)
-            if row.get("event_type") != kind or type(row.get("tick")) is not int:
-                continue
-            if score_field and type(row.get(score_field)) not in (int, float):
-                continue
-            return row["tick"]
-        except (AttributeError, ValueError):
+        except ValueError:
             continue
-    return None
+        if isinstance(row, dict) and type(row.get("tick")) is int:
+            yield row
+
+
+def latest_event_tick(path, kind):
+    return next((row["tick"] for row in recent_events(path)
+                 if row.get("event_type") == kind), None)
 
 
 def print_timeline_progress(stage, clock):
@@ -188,13 +211,22 @@ def print_timeline_progress(stage, clock):
         return
     parts = stage / "brain" / "run-logs"
     native = stage / "guardian" / "run-logs" / f"{run_id}.guardian.jsonl"
+    scored = [row for row in recent_events(native)
+              if row.get("run_id") == run_id and row.get("event_type") == "reading_evaluated"
+              and type(row.get("trust_score")) in (int, float)]
+    scored_tick = scored[0]["tick"] if scored else None
+    twin_tick = clock.get("tick")
     print("Timeline ticks (latest written per file): " + json.dumps({
         "run_id": run_id,
-        "twin_clock": clock.get("tick"),
+        "twin_clock": twin_tick,
         "twin_feed_on_dashboard": latest_event_tick(parts / f"{run_id}.twin.jsonl", "reading"),
-        "guardian_scored": latest_event_tick(native, "reading_evaluated", "trust_score"),
+        "guardian_scored": scored_tick,
+        "guardian_lag_ticks": twin_tick - scored_tick if type(twin_tick) is int and scored else None,
         "guardian_on_dashboard": latest_event_tick(parts / f"{run_id}.guardian.jsonl", "verdict"),
     }), flush=True)
+    return next(({key: row[key] for key in ("run_id", "tick", "reading_id")} for row in scored
+                 if isinstance(row.get("reading_id"), str)
+                 and row["reading_id"].endswith(".congestion_index")), None)
 
 
 def main():
@@ -228,7 +260,8 @@ def main():
         port_failure = False
         if args.command == "check":
             clock, port_failure = check_published_ports(prefix, stage)
-            print_timeline_progress(stage, clock)
+            sample = print_timeline_progress(stage, clock)
+            command.append(json.dumps(sample))
         subprocess.run(prefix + command, cwd=stage, check=True)
         if port_failure:
             raise SystemExit(2)

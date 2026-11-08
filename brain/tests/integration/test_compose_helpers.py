@@ -8,6 +8,7 @@ import subprocess
 import sys
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,6 +25,11 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
     monkeypatch.setitem(main.__globals__, "BRAIN", tmp_path)
     monkeypatch.setitem(main.__globals__, "prepare_stack", lambda: tmp_path)
     (tmp_path / ".env.compose").touch()
+    sample = {"run_id": "run-42-002", "tick": 14, "reading_id": "rd0000014-SH-05.congestion_index"}
+    audit = tmp_path / "guardian" / "run-logs" / "run-42-002.guardian.jsonl"
+    audit.parent.mkdir(parents=True)
+    audit.write_text(json.dumps({**sample, "event_type": "reading_evaluated", "trust_score": 1.0}) + "\n",
+                     encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["compose_stack.py", "check"])
     monkeypatch.setattr(ssl, "create_default_context", lambda **_: None)
     commands = []
@@ -44,10 +50,12 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
     with pytest.raises(SystemExit) as exit_info:
         main()
     assert exit_info.value.code == 2
-    assert commands[-1][-5:-1] == ["-T", "brain", "python", "-c"]
+    assert commands[-1][-6:-2] == ["-T", "brain", "python", "-c"]
+    assert json.loads(commands[-1][-1]) == sample
     output = capsys.readouterr().out
     assert "Trinity dashboard http://127.0.0.1:8080/ -> timed out" in output
     assert '"run_id": "run-42-002", "twin_clock": 16' in output
+    assert '"guardian_scored": 14, "guardian_lag_ticks": 2' in output
 
 
 def test_t2_uses_twin_container_dependencies(tmp_path, monkeypatch):
@@ -67,6 +75,44 @@ def test_t2_uses_twin_container_dependencies(tmp_path, monkeypatch):
         "exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
         "twin", "python", "-c", launcher["T2_TRIGGER"],
     ]
+
+
+async def test_check_distinguishes_pending_live_reading_from_audited_score(monkeypatch):
+    launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
+    namespace = {"__name__": "test_compose_check"}
+    exec(launcher["CHECK"], namespace)
+    run_id = "run-42-002"
+    live_id = "rd0000016-SH-05.congestion_index"
+    audited = {"run_id": run_id, "tick": 14, "reading_id": "rd0000014-SH-05.congestion_index"}
+    monkeypatch.setattr(sys, "argv", ["-c", json.dumps(audited)])
+
+    async def check(_):
+        return {"ready": True}
+
+    async def skip_sleep(_):
+        pass
+
+    class Peer:
+        def __init__(self, *_):
+            pass
+
+        async def call_tool(self, name, args):
+            if name == "get_readings":
+                return {"run_id": run_id, "tick": 16, "readings": [{"reading_id": live_id}]}
+            reading_id = args["reading_id"]
+            if reading_id == live_id:
+                return {"result": {"status": "pending", "reading_id": reading_id}}
+            assert reading_id == audited["reading_id"]
+            return {"result": {"trust_score": 1.0, "caused_by": reading_id}}
+
+    namespace.update(check=check, MCPPeer=Peer, asyncio=SimpleNamespace(sleep=skip_sleep),
+                     load_settings=lambda: SimpleNamespace(
+                         twin_mcp_url="", twin_brain_key="", guardian_mcp_url="", guardian_brain_key="",
+                         peer_timeout_seconds=3))
+    result = await namespace["connection_checks"]()
+    assert not result["guardian_scored_live_reading"]
+    assert result["guardian_live_lookup"]["error_code"] == "GUARDIAN_VERDICT_NOT_READY"
+    assert result["guardian_audited_lookup"] == {**audited, "status": "scored", "trust_score": 1.0}
 
 
 def test_compose_tls_identity_is_trusted_and_reused(tmp_path):

@@ -46,3 +46,5 @@ Run `python brain/scripts/compose_stack.py t2` to reset Twin and start a fresh S
 The Reading lane includes one summary per Twin SSE batch observed by Brain, with its original reading IDs. Trinity's native part adds individual incident and fault readings. Guardian verdicts use the tick they scored and carry separate simulation and wall timestamps. CIVIS keeps its routine S03 unconfirmed-power notices in the raw audit log so they do not fill the Decision lane. Twin's native log supplies the Action lane.
 
 If the last 60 ticks have no verdicts, run `check` again while the gap is visible. Compare `twin_clock`, `guardian_scored` and `guardian_on_dashboard` in the timeline summary. A gap at `guardian_scored` points to Guardian ingestion or scoring. A gap between the two Guardian ticks points to the dashboard projection.
+
+`guardian_live_lookup` reports the exact reading ID requested by the health probe. If that lookup fails, `check` also tries a recent congestion reading already scored in Guardian's audit log for the same run. A successful audited lookup confirms Guardian's MCP retrieval path. Readiness for fresh evidence still requires the live lookup to pass.
