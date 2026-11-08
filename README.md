@@ -12,13 +12,13 @@ A smart city runs on sensors. A traffic camera says the road is jammed, so a sig
 
 If a sensor is broken, or someone is faking it, the most dangerous thing a city can do is act on it. So we split the job into three programs, written by three teams, that can only work together through a clear interface.
 
-The rule that holds the whole thing together is simple: **nothing in the city moves without a signed permission.** The permission is only handed out after the readings were checked, and the program that moves things checks the permission again on its own. Two programs have to agree before an action happens, and neither of them is the one that decided to act.
+The rule that holds the whole thing together is simple: **nothing in the city moves without a permission from the Guardian, which the Twin checks on its own.** The permission is only handed out after the readings were checked. In signed mode the Twin verifies the Guardian's Ed25519 signature on it. The Twin's stand-alone default has that check switched off and accepts an unsigned test token, so it can run without the Guardian. Two programs have to agree before an action happens, and neither of them is the one that decided to act.
 
 ## Meet the three
 
 | Layer | Team | What it does | Folder |
 |---|---|---|---|
-| **Twin** | Trinity | The simulated city: 38 nodes with sensors and actuators in five domains (Traffic, Water, Power, Air Quality, Emergency). It makes up the readings, can start a real incident or make a sensor lie, and checks a signed permission before it changes anything. | [`twin/`](twin/) |
+| **Twin** | Trinity | The simulated city: 38 nodes with sensors and actuators in five domains (Traffic, Water, Power, Air Quality, Emergency). It makes up the readings, can start a real incident or make a sensor lie, and checks a permission token before it changes anything (in signed mode, it verifies the Guardian's signature). | [`twin/`](twin/) |
 | **City Brain** | CIVIS | The decision layer between the other two. It reads the Twin's evidence, finds and validates incidents, asks the Guardian for a trust verdict and for approval of the exact action, then asks the Twin to carry it out. It never signs tokens and never performs containment. | [`brain/`](brain/) |
 | **Guardian** | 9antra | Trust, authorization and containment. It scores the readings with deterministic rules, checks what an action is and how risky it is, and signs a one-use token (`g1`, Ed25519) when it approves. | [`guardian/`](guardian/) |
 
@@ -55,7 +55,7 @@ Some words used on this page, in plain terms:
 
 - **MCP** (Model Context Protocol, version 2026-07-28 for all three layers): a standard way for a program to publish a list of "tools" that other programs can list and call. It is the form every call between our layers takes.
 - **Live feed (SSE)**: Server-Sent Events. The Twin keeps one HTTP connection open and pushes a batch of readings down it every tick. One-off questions ("what are the nodes?", "do this action") are normal MCP calls instead.
-- **Key**: every call carries a secret, one per layer, in the header `Authorization: Bearer <key>`. This is how the Twin knows who is asking. The keys live in `.env` files and never in the repo.
+- **Key**: every call carries a secret, one per layer, in the header `Authorization: Bearer <key>`. This is how the Twin knows who is asking. The keys live in the root `.env` file and never in the repo.
 - **Tick**: one step of the simulated clock. By default 1 tick is 1 simulated second, running at real speed.
 
 Messages follow one rule: be strict in what we send, forgiving in what we receive. A layer ignores fields it does not know, and rejects a message with a missing or wrong required field with a clear error message.
@@ -167,20 +167,24 @@ You need Docker with Compose. From a fresh clone:
 ```
 git clone https://github.com/CodeSailor411/triplet-04.git
 cd triplet-04
-cp twin/.env.example twin/.env
-docker compose up
+cp .env.example .env
+docker compose up --build
 ```
 
-The `.env` file holds the three keys. The example file has fake keys that are only fine for running on your own machine.
+The `.env` file in the repo root holds the keys for all three layers. The example file has fake keys that are only fine for running on your own machine. You need Docker Compose v2.24 or newer. Put a real Gemini API key in `.env` (`GEMINI_API_KEY`) before you ask the Brain to plan anything, because the default is a placeholder.
+
+The stack starts the Twin in signed mode. On the first start a small helper service creates the Guardian's key pair, so the Twin can verify the Guardian's signatures without any setup from you.
 
 When it is up:
 
 - The Twin answers at <http://127.0.0.1:8000/health>. You should get a small JSON answer saying it is ok.
+- The Brain's tools are at <http://127.0.0.1:8001/mcp>.
+- The Guardian is at <http://127.0.0.1:5000>.
 - The dashboard (city map and timeline) is at <http://127.0.0.1:8080>.
 
-Stop it with `Ctrl+C`, then `docker compose down`.
+A further service, `guardian-feed`, forwards the Twin's live feed to the Guardian. It has no port of its own.
 
-The Brain and the Guardian are not in the compose file yet. They start from their own folders, with the steps in [`brain/README.md`](brain/README.md) and [`guardian/README.md`](guardian/README.md). To run the Twin alone without Docker, see [`twin/README.md`](twin/README.md).
+Stop it with `Ctrl+C`, then `docker compose down`. To run one layer alone without Docker, see [`twin/README.md`](twin/README.md), [`brain/README.md`](brain/README.md) and [`guardian/README.md`](guardian/README.md).
 
 No internet is needed for the Twin or its dashboard. The dashboard ships its own font files and makes no outside requests.
 
@@ -247,7 +251,7 @@ We would rather you hear it from us.
 **Numbers**
 
 - **Twin:** 544 tests pass and 18 are skipped (they need a PostgreSQL or Redis server). The seven scenario scripts run.
-- **Guardian:** 69 tests pass and 2 are skipped in its own local run. The skipped ones need a live Twin.
+- **Guardian:** 81 tests pass and 2 are skipped in its own local run. The skipped ones need a live Twin.
 - **Brain:** see [`brain/README.md`](brain/README.md) for its status.
 - **Together:** on 29 Oct we ran a connectivity check with the partners' packages and no changes to their code: 28 checks passed, 0 failed, 1 skipped. It covered the live feed, the tools, the city graph, the Brain's start-up checks, and a real Guardian token that the Twin accepted, then refused on reuse and refused with a different key. It did not show the Brain acting through the Guardian on the Twin. Joint acceptance is not complete, and each layer's README lists its own gaps.
 
@@ -262,7 +266,7 @@ We would rather you hear it from us.
 - A command sent to a quarantined node is refused and written to the side lane. It is not queued for later.
 - Distances in the city graph are straight lines, not along roads or pipes.
 - The two-step confirm (the Twin answers "pending" and a second call commits) is not built. Telecom and Waste domains were cut by agreement.
-- One `docker compose up` starts the Twin and its dashboard, not the whole city.
+- One `docker compose up` starts all three layers and the dashboard, but no run with all three real layers has completed a scenario yet. Starting the stack does not prove the layers work together.
 
 ## Extras beyond the challenge
 
@@ -301,7 +305,7 @@ triplet-04/
 ├── README.md          you are here
 ├── INTEGRATION.md     how the three layers connect
 ├── TESTBOOK.md        the scenarios and their expected results
-├── docker-compose.yml starts the Twin and its dashboard
+├── docker-compose.yml starts the three layers and the dashboard
 ├── twin/              Trinity: the simulated city
 ├── brain/             CIVIS: the decision layer
 ├── guardian/          9antra: trust and authorization
@@ -337,5 +341,5 @@ Every layer folder has the same shape: `README.md` (how to run it alone), `INTER
 - **SSE**: Server-Sent Events, a one-way stream from server to client over HTTP.
 - **Stand-in (mock)**: a small fake version of another layer, so a layer can run alone.
 - **Tick**: one step of the simulated clock.
-- **Token**: a signed, one-use permission for exactly one action.
+- **Token**: a one-use permission for exactly one action. In signed mode it carries the Guardian's signature.
 - **Twin**: a software copy of a real system, here a simulated city.
