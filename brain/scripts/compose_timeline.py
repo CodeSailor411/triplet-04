@@ -62,8 +62,12 @@ class Timeline:
                       "decision": row["decision"], "reason": row.get("reason"),
                       "token_id": data.get("token_id"), "idempotency_key": data.get("idempotency_key"),
                       "tick_basis": "evidence"}
-        timestamp = datetime.fromtimestamp(row["timestamp"], timezone.utc).isoformat()
-        return {"tick": tick, "layer": "guardian", "event_type": "verdict", "wall": timestamp,
+        wall = row.get("wall") or row.get("timestamp")
+        if type(wall) in (int, float):
+            wall = datetime.fromtimestamp(wall, timezone.utc).isoformat()
+        timestamp = wall if isinstance(wall, str) else ""
+        return {"tick": tick, "layer": "guardian", "event_type": "verdict",
+                "wall": timestamp, "timestamp": timestamp,
                 "caused_by": [reading_id], "data": fields}
 
     def poll(self, source, adapt):
@@ -99,8 +103,9 @@ class Timeline:
                     except (KeyError, TypeError, ValueError):
                         continue
             self.seen[target] = existing
-        event_id = "civis-" + hashlib.sha256(line).hexdigest()[:32]
-        if event_id not in self.seen[target]:
+        digest = hashlib.sha256(line).hexdigest()[:32]
+        event_id = f"{event['layer']}-{digest}"
+        if self.seen[target].isdisjoint((event_id, f"civis-{digest}")):
             with target.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({**event, "event_id": event_id, "run_id": run_id},
                                         allow_nan=False) + "\n")

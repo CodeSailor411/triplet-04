@@ -5,6 +5,12 @@ import runpy
 import ssl
 from pathlib import Path
 
+import pytest
+from fastapi.testclient import TestClient
+
+from civis_brain.app import create_app
+from civis_brain.settings import Settings
+
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
 
 
@@ -38,7 +44,29 @@ def test_compose_tls_identity_is_trusted_and_reused(tmp_path):
     assert client_done and server_done
 
 
-def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_path):
+def test_brain_mcp_accepts_configured_compose_host_and_rejects_unknown_hosts():
+    settings = Settings(_env_file=None, brain_mcp_allowed_hosts=["brain:8001"])
+    initialize = {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                   "clientInfo": {"name": "compose-check", "version": "1"}},
+    }
+    headers = {"Accept": "application/json, text/event-stream"}
+    with TestClient(create_app(settings), base_url="https://brain:8001") as client:
+        assert client.post("/mcp", json=initialize, headers=headers).status_code == 200
+        assert client.post("/mcp", json=initialize, headers={
+            **headers, "Host": "unknown:8001",
+        }).status_code == 421
+        assert client.post("/mcp", json=initialize, headers={
+            **headers, "Origin": "https://unknown",
+        }).status_code == 403
+
+
+@pytest.mark.parametrize("clock", [
+    {"timestamp": 1794018962.0},
+    {"timestamp": "2026-11-07T04:00:00Z", "wall": "2026-11-07T04:00:00Z"},
+])
+def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_path, clock):
     helpers = runpy.run_path(str(SCRIPTS / "compose_timeline.py"))
     run_id = "run-42-001"
     reading_id = "rd0000012-SH-05.congestion_index"
@@ -46,7 +74,7 @@ def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_pa
     decision = {"run_id": run_id, "tick": 13, "event": "decision_made", "layer": "city_brain",
                 "ts": "2026-10-05T08:00:13.000Z", "refs": {"reading_ids": [reading_id]},
                 "data": {"status": "committed", "action": "set_signal_plan", "token": "excluded"}}
-    verdict = {"run_id": run_id, "timestamp": 1794018962.0, "event_type": "reading_evaluated",
+    verdict = {"run_id": run_id, **clock, "event_type": "reading_evaluated",
                "trust_score": 1.0, "reading_id": reading_id, "verdict": "trusted",
                "data": {"sequence_number": 12, "sensor_id": "SH-05.congestion_index"}}
     authorization = {**verdict, "event_type": "action_decision", "decision": "approved",
@@ -69,6 +97,9 @@ def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_pa
     assert len(rows) == 2 and all(row["tick"] == 12 for row in rows)
     assert rows[1]["data"]["token_id"] == "opaque-id"
     assert rows[0]["caused_by"] == [reading_id]
+    assert rows[0]["event_id"].startswith("guardian-")
+    assert "T" in rows[0]["timestamp"]
     projected = json.loads((tmp_path / f"{run_id}.brain.jsonl").read_text())
     assert projected["event_type"] == "decision" and projected["data"]["status"] == "committed"
+    assert projected["event_id"].startswith("brain-")
     assert "excluded" not in json.dumps(projected)

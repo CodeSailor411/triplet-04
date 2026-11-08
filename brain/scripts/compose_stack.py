@@ -4,15 +4,18 @@ import argparse
 import hashlib
 import os
 import secrets
+import ssl
 import subprocess
 import tarfile
 import tempfile
+import urllib.request
 from pathlib import Path
+from urllib.error import URLError
 
 ROOT = Path(__file__).resolve().parents[2]
 BRAIN = ROOT / "brain"
-# PR #35 includes current Guardian main and the current real-jam Twin runtime.
-COMPOSE_BASE = "e00e6c3a45e665aa48c9523f11119abf7f127a02"
+# PR #35 includes the Twin and Guardian MCP hostname allowlists and current Guardian logs.
+COMPOSE_BASE = "a374e9d5fce2d63739ee1b00a361b744f011262a"
 KEYS = (
     "TWIN_KEY_CITY_BRAIN", "TWIN_KEY_GUARDIAN", "TWIN_KEY_SCENARIO",
     "GUARDIAN_API_BEARER_KEY", "GUARDIAN_BRAIN_MCP_BEARER_KEY",
@@ -88,7 +91,7 @@ def prepare_stack():
     try:
         git("cat-file", "-e", f"{COMPOSE_BASE}^{{commit}}", capture_output=True)
     except subprocess.CalledProcessError:
-        git("fetch", "origin", "twin-docker-compose")
+        git("fetch", "--no-tags", "origin", COMPOSE_BASE)
     parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=parent) as temporary:
         temporary = Path(temporary)
@@ -100,6 +103,30 @@ def prepare_stack():
             raise ValueError("Check out a CIVIS commit that includes Compose support")
         snapshot.rename(stage)
     return stage
+
+
+def check_published_ports(prefix, stage):
+    public_cert = subprocess.run(
+        prefix + ["exec", "-T", "brain", "cat", "/run/civis-ca/brain.crt"],
+        cwd=stage, capture_output=True, text=True, check=True,
+    ).stdout
+    trust = ssl.create_default_context(cadata=public_cert)
+    endpoints = {
+        "Trinity Twin": "http://127.0.0.1:8000/health",
+        "9antra Guardian": "http://127.0.0.1:5000/health",
+        "CIVIS Brain": "https://127.0.0.1:8001/health",
+        "Trinity dashboard": "http://127.0.0.1:8080/",
+    }
+    failed = False
+    for name, url in endpoints.items():
+        try:
+            with urllib.request.urlopen(url, context=trust, timeout=5) as response:
+                print(f"{name} {url} -> HTTP {response.status}", flush=True)
+        except (URLError, TimeoutError) as error:
+            print(f"{name} {url} -> {error}", flush=True)
+            failed = True
+    if failed:
+        raise SystemExit(2)
 
 
 def main():
@@ -116,7 +143,7 @@ def main():
         parser.error("Run init, then set GEMINI_API_KEY in brain/.env.compose")
     try:
         stage = prepare_stack()
-        project = "triplet04-civis-" + hashlib.sha256(os.fsencode(ROOT)).hexdigest()[:8]
+        project = "triplet04-" + hashlib.sha256(os.fsencode(ROOT)).hexdigest()[:8]
         prefix = ["docker", "compose", "--project-name", project, "--env-file", str(env_file),
                   "-f", "docker-compose.yml", "-f", "brain/compose.override.yml"]
         command = {
@@ -127,6 +154,8 @@ def main():
             "down": ["down"],
             "config": ["config", "--quiet"],
         }[args.command]
+        if args.command == "check":
+            check_published_ports(prefix, stage)
         subprocess.run(prefix + command, cwd=stage, check=True)
         if args.command == "up":
             print("Dashboard: http://127.0.0.1:8080")

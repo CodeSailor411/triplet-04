@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     brain_host: str = "127.0.0.1"
     brain_port: int = 8001
+    brain_mcp_allowed_hosts: list[str] = Field(default_factory=list)
     brain_twin_caller_key: str = "dev-twin-to-brain"
     brain_guardian_caller_key: str = "dev-guardian-to-brain"
     brain_scenario_key: str = "dev-scenario-to-brain"

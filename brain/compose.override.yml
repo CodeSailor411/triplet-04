@@ -7,6 +7,7 @@ x-brain-build: &brain-build
 services:
   brain-tls:
     build: *brain-build
+    image: triplet04/civis-tls:local
     command: ["python", "scripts/compose_tls.py"]
     volumes:
       - civis-tls-private:/run/civis-tls
@@ -15,6 +16,7 @@ services:
 
   brain:
     build: *brain-build
+    image: triplet04/civis:local
     command:
       - uvicorn
       - civis_brain.app:create_app
@@ -28,6 +30,7 @@ services:
       - --ssl-keyfile
       - /run/civis-tls/brain.key
     environment:
+      BRAIN_MCP_ALLOWED_HOSTS: '["brain:8001"]'
       PEER_MODE: live
       LLM_MODE: gemini
       TWIN_MCP_URL: http://twin:8000/mcp
@@ -58,7 +61,9 @@ services:
       test: ["CMD", "python", "-c", "import ssl, urllib.request; urllib.request.urlopen('https://127.0.0.1:8001/health', context=ssl.create_default_context(cafile='/run/civis-ca/brain.crt'), timeout=3)"]
 
   guardian:
+    image: triplet04/9antra:local
     environment:
+      GUARDIAN_MCP_ALLOWED_HOSTS: guardian:5000
       DEMO_MODE: "false"
       BRAIN_MCP_URL: https://brain:8001/mcp
       BRAIN_TIMEOUT_SECONDS: "3"
@@ -72,19 +77,48 @@ services:
         condition: service_completed_successfully
 
   guardian-feed:
+    image: triplet04/9antra-feed:local
     environment:
       BRAIN_MCP_URL: https://brain:8001/mcp
 
+  guardian-keygen:
+    image: triplet04/9antra-keygen:local
+
   twin:
+    image: triplet04/trinity:local
+    environment:
+      TWIN_MCP_ALLOWED_HOSTS: twin:8000
     ports: !override
       - "127.0.0.1:8000:8000"
 
   dashboard:
+    image: triplet04/trinity-dashboard:local
+    command:
+      - python
+      - -m
+      - twin.dashboard
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --feed-url
+      - http://twin:8000
+      - --sources
+      - run-logs
+      - ../logs
+      - ../brain/run-logs
     ports: !override
       - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=4).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
-  civis-timeline:
+  triplet-timeline:
     build: *brain-build
+    image: triplet04/timeline:local
     command: ["python", "scripts/compose_timeline.py"]
     volumes:
       - ./brain/logs:/app/brain/logs:ro

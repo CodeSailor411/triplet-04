@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 
 from civis_brain import __version__
 from civis_brain.contracts import Capabilities, ContainmentNotice, DecisionBatch, ReadingsBatch
@@ -193,7 +194,15 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
                         code=result.get("code"))
         return result
 
-    mcp_app = mcp.streamable_http_app()
+    transport_security = None
+    if settings.brain_mcp_allowed_hosts:
+        local_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+        transport_security = TransportSecuritySettings(
+            allowed_hosts=[*local_hosts, *settings.brain_mcp_allowed_hosts],
+            allowed_origins=[f"{scheme}://{host}"
+                             for scheme in ("http", "https") for host in local_hosts],
+        )
+    mcp_app = mcp.streamable_http_app(transport_security=transport_security)
     feed = None
     if settings.twin_feed_enabled:
         if settings.peer_mode != "live":
