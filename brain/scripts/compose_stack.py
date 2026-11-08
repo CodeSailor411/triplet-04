@@ -63,6 +63,28 @@ raise SystemExit(0 if result["ready"] and result["guardian_scored_live_reading"]
                  and health["feed"]["state"] == "connected" and health["feed"]["evaluated"] > 0
                  and not health["event_log"]["error"] else 2)
 """
+T2_TRIGGER = """
+import asyncio, json
+from mock_common import MockError, TwinClient, key_for
+
+async def start_t2():
+    async with TwinClient("http://127.0.0.1:8000", key_for("scenario")) as twin:
+        reset = await twin.call("run_scenario", {"name": "reset"})
+        if reset.get("status") != "reset" or not reset.get("run_id"):
+            raise MockError("Twin did not confirm the run reset")
+        jam = await twin.call("run_scenario", {
+            "name": "real_jam",
+            "params": {"node_id": "SH-05", "hold_ticks": 180},
+        })
+        if jam.get("status") != "started" or jam.get("run_id") != reset["run_id"]:
+            raise MockError(f"Twin did not confirm a jam in {reset['run_id']}")
+        print(json.dumps(jam), flush=True)
+
+try:
+    asyncio.run(start_t2())
+except MockError as error:
+    raise SystemExit(str(error)) from None
+"""
 
 
 def git(*args, **kwargs):
@@ -177,7 +199,8 @@ def print_timeline_progress(stage, clock):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("init", "up", "check", "ps", "logs", "down", "config"))
+    parser.add_argument("command", choices=("init", "up", "check", "t2", "ps", "logs", "down", "config"),
+                        help="t2 resets the simulation and starts a sustained SH-05 traffic jam")
     args = parser.parse_args()
     env_file = BRAIN / ".env.compose"
     if args.command == "init":
@@ -195,6 +218,8 @@ def main():
         command = {
             "up": ["up", "--build", "-d", "--wait"],
             "check": ["exec", "-T", "brain", "python", "-c", CHECK],
+            "t2": ["exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
+                   "twin", "python", "-c", T2_TRIGGER],
             "ps": ["ps"],
             "logs": ["logs", "--tail", "60"],
             "down": ["down"],

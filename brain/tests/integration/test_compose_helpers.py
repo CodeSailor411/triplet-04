@@ -50,6 +50,25 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
     assert '"run_id": "run-42-002", "twin_clock": 16' in output
 
 
+def test_t2_uses_twin_container_dependencies(tmp_path, monkeypatch):
+    launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
+    main = launcher["main"]
+    monkeypatch.setitem(main.__globals__, "BRAIN", tmp_path)
+    monkeypatch.setitem(main.__globals__, "prepare_stack", lambda: tmp_path)
+    (tmp_path / ".env.compose").touch()
+    monkeypatch.setattr(sys, "argv", ["compose_stack.py", "t2"])
+    commands = []
+    monkeypatch.setattr(subprocess, "run", lambda command, **_: commands.append(command))
+
+    main()
+
+    assert len(commands) == 1
+    assert commands[0][-8:] == [
+        "exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
+        "twin", "python", "-c", launcher["T2_TRIGGER"],
+    ]
+
+
 def test_compose_tls_identity_is_trusted_and_reused(tmp_path):
     ensure_tls = runpy.run_path(str(SCRIPTS / "compose_tls.py"))["ensure_tls"]
     key, cert = tmp_path / "private" / "brain.key", tmp_path / "public" / "brain.crt"
