@@ -1,8 +1,12 @@
 """Checks for actual Compose certificate trust and timeline input boundaries."""
 
+import io
 import json
 import runpy
 import ssl
+import subprocess
+import sys
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -12,6 +16,38 @@ from civis_brain.app import create_app
 from civis_brain.settings import Settings
 
 SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+
+
+def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, capsys):
+    launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
+    main = launcher["main"]
+    monkeypatch.setitem(main.__globals__, "BRAIN", tmp_path)
+    monkeypatch.setitem(main.__globals__, "prepare_stack", lambda: tmp_path)
+    (tmp_path / ".env.compose").touch()
+    monkeypatch.setattr(sys, "argv", ["compose_stack.py", "check"])
+    monkeypatch.setattr(ssl, "create_default_context", lambda **_: None)
+    commands = []
+
+    def run(command, **_):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="test certificate")
+
+    def urlopen(url, **_):
+        if url.endswith(":8080/"):
+            raise TimeoutError("timed out")
+        response = io.StringIO('{"run_id": "run-42-002", "tick": 16}')
+        response.status = 200
+        return response
+
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    with pytest.raises(SystemExit) as exit_info:
+        main()
+    assert exit_info.value.code == 2
+    assert commands[-1][-5:-1] == ["-T", "brain", "python", "-c"]
+    output = capsys.readouterr().out
+    assert "Trinity dashboard http://127.0.0.1:8080/ -> timed out" in output
+    assert '"run_id": "run-42-002", "twin_clock": 16' in output
 
 
 def test_compose_tls_identity_is_trusted_and_reused(tmp_path):

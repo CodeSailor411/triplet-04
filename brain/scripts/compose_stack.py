@@ -130,9 +130,7 @@ def check_published_ports(prefix, stage):
         except (URLError, TimeoutError) as error:
             print(f"{name} {url} -> {error}", flush=True)
             failed = True
-    if failed:
-        raise SystemExit(2)
-    return twin_clock
+    return twin_clock, failed
 
 
 def latest_event_tick(path, kind, score_field=None):
@@ -202,10 +200,13 @@ def main():
             "down": ["down"],
             "config": ["config", "--quiet"],
         }[args.command]
+        port_failure = False
         if args.command == "check":
-            clock = check_published_ports(prefix, stage)
+            clock, port_failure = check_published_ports(prefix, stage)
             print_timeline_progress(stage, clock)
         subprocess.run(prefix + command, cwd=stage, check=True)
+        if port_failure:
+            raise SystemExit(2)
         if args.command == "up":
             print("Dashboard: http://127.0.0.1:8080")
             print(f"Run logs and scenario scripts: {stage}")
