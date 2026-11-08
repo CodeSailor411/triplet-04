@@ -12,6 +12,8 @@
 | 22 | Twin recorded `committed` at **18:32:19.267 UTC** and CIVIS received the matching outcome. The final Brain record `dec-8ff85ae0265c3cf6f0e279dd` has sequence 65 and carries the evidence-context tick 18. | `twin-000213`, Brain seq 62, 64–65 |
 | 200 | CIVIS cleared the incident after usable readings showed it had ended. | Brain seq 424 |
 
+The Windows Compose launcher used live Gemini (`LLM_MODE=gemini`). The Brain journal labels the provider `configured` and records a successful planning response at sequence 33. The [10-event extract](../../../../logs/T2-2.jsonl) stamps the committed Brain event at the tick-22 outcome and retains tick 18 as its evidence context.
+
 The commit arrived **15.037 s** after Twin logged the scenario trigger, **4.367 s** after the second supporting reading, and **0.626 s** after Guardian logged its approval. Guardian's approval, CIVIS's validated authorization, and Twin's commit share the same authorization and idempotency identifiers. The excerpts redact these identifiers and retain the event IDs and Brain sequence numbers.
 
 The capture contains one Guardian approval and one Twin action. CIVIS recorded a further detection for the same incident at tick 22. Guardian recorded one startup tick gap from 4 to 6, before the jam began. Each recorded S01 peer response in the capture succeeded.
