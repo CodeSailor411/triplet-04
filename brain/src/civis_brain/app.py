@@ -207,7 +207,12 @@ def create_app(settings: Settings | None = None, runtime: BrainRuntime | None = 
     if settings.twin_feed_enabled:
         if settings.peer_mode != "live":
             raise ValueError("Twin SSE requires live peer mode")
-        feed = TwinFeed(runtime, settings.twin_events_url, settings.twin_brain_key)
+        persistence = (policy.get("persistence_ticks") for sid, policy in runtime.policies.items()
+                       if sid in runtime.enabled)
+        catch_up_ticks = max((ticks for ticks in persistence if type(ticks) is int and 1 <= ticks <= 100),
+                             default=2)
+        feed = TwinFeed(runtime, settings.twin_events_url, settings.twin_brain_key,
+                        catch_up_ticks=max(2, catch_up_ticks))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

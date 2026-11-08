@@ -116,26 +116,36 @@ async def test_feed_changes_invalidate_queued_plan(event, tmp_path):
     assert not twin.effects
 
 
-async def test_feed_receives_during_slow_evaluation_and_bounds_queue():
+@pytest.mark.parametrize(
+    "queue_size,catch_up_ticks,expected_offsets,overflow",
+    [(2, 2, [0, 3, 4], True), (64, 2, [0, 3, 4], False), (64, 3, [0, 2, 3, 4], False)],
+)
+async def test_feed_receives_during_slow_evaluation_and_bounds_queue(
+    queue_size, catch_up_ticks, expected_offsets, overflow,
+):
     entered, resume = asyncio.Event(), asyncio.Event()
 
     class SlowRuntime:
         def __init__(self):
             self.seen = []
             self.gaps = []
+            self.evaluated = []
 
         def observe_feed(self, batch=None, **kwargs):
             self.seen.append(batch.tick if batch else None)
             self.gaps.append(kwargs.get("discontinuity", False))
 
         async def evaluate_tick(self, batch):
+            self.evaluated.append(batch.tick)
             entered.set()
             await resume.wait()
             return type("Result", (), {"decisions": []})()
 
     runtime = SlowRuntime()
-    feed = TwinFeed(runtime, "http://unused", "test-only", queue_size=2)
+    feed = TwinFeed(runtime, "http://unused", "test-only",
+                    queue_size=queue_size, catch_up_ticks=catch_up_ticks)
     raw = case_for("emergency")["batches"][0]
+    first_tick = raw["tick"]
     feed.accept("readings", raw)
     task = asyncio.create_task(feed.consume())
     try:
@@ -143,11 +153,15 @@ async def test_feed_receives_during_slow_evaluation_and_bounds_queue():
         for _ in range(4):
             raw = advance(raw)
             feed.accept("readings", raw)
-        assert len(runtime.seen) == 5 and feed.queue.qsize() <= 2
-        assert feed.status["dropped"] == 2 and any(runtime.gaps)
+        assert len(runtime.seen) == 5 and feed.queue.qsize() <= queue_size
+        assert any(runtime.gaps) is overflow
         resume.set()
         await asyncio.wait_for(feed.queue.join(), 1)
-        assert feed.status["evaluated"] == 3
+        assert runtime.evaluated == [first_tick + offset for offset in expected_offsets]
+        assert feed.status["dropped"] == 5 - len(expected_offsets)
+        assert feed.status["evaluated"] == len(expected_offsets)
+        assert feed.status["evaluated_tick"] == raw["tick"]
+        assert feed.status["evaluated_run_id"] == raw["run_id"]
     finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):

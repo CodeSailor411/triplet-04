@@ -11,9 +11,12 @@ from civis_brain.contracts import ReadingsBatch
 
 
 class TwinFeed:
-    def __init__(self, runtime, url, key, *, queue_size=64):
+    def __init__(self, runtime, url, key, *, queue_size=64, catch_up_ticks=2):
+        if type(catch_up_ticks) is not int or catch_up_ticks < 1:
+            raise ValueError("Feed catch-up window must be a positive tick count")
         self.runtime, self.url, self.key = runtime, url, key
         self.queue = asyncio.Queue(maxsize=queue_size)
+        self.catch_up_ticks = catch_up_ticks
         self.tasks = []
         self.closing = False
         self.last = None
@@ -112,9 +115,17 @@ class TwinFeed:
     async def consume(self):
         while not self.closing:
             batch = await self.queue.get()
+            # After a slow evaluation, resume with the newest consecutive window.
+            # The runtime resets evidence streaks when evaluated ticks jump.
+            while self.queue.qsize() >= self.catch_up_ticks:
+                self.queue.task_done()
+                self.status["dropped"] += 1
+                batch = self.queue.get_nowait()
             try:
                 result = await self.runtime.evaluate_tick(batch)
                 self.status["evaluated"] += 1
+                self.status["evaluated_tick"] = batch.tick
+                self.status["evaluated_run_id"] = batch.run_id
                 self.status["last_decisions"] = [
                     {"status": row.status, "code": row.peer_code} for row in result.decisions
                 ]
