@@ -1,0 +1,82 @@
+{
+  "date": "2026-11-07",
+  "brain_base": "30bd1e696457d2e1085ce75d8dab2b27df9dca13",
+  "twin": "768b24fc2dc45ad0bdd3762f827594ab823138b2",
+  "guardian_source_main": "45e0ccbc83c7344d1673dc50461036d379a88bcf",
+  "planner": "recorded; not live Gemini",
+  "guardian_feed": "actual Guardian SSE bridge; no manual ingestion",
+  "optional_rf_advisory": "unavailable: binary not present in temporary snapshot; no scoring override",
+  "node_domains": [
+    "traffic",
+    "air_quality"
+  ],
+  "action_caps": {
+    "traffic": 3,
+    "water": 2,
+    "power": 2,
+    "emergency": 2,
+    "air_quality": null
+  },
+  "real_jam_commits": [
+    {
+      "status": "committed",
+      "run_id": "run-42-001",
+      "tick": 13,
+      "time": "2026-10-05T08:00:13.000Z",
+      "action": "set_signal_plan",
+      "targets": [
+        "SH-05"
+      ],
+      "params": {
+        "plan": "normal"
+      },
+      "action_id": "ac-00001",
+      "token_id": "361235fd-0619-49b0-832d-0ca9aa4c1755",
+      "code": null,
+      "message": null,
+      "details": null,
+      "replayed": false
+    }
+  ],
+  "guardian_callback": {
+    "status": "notified",
+    "result": "{\n  \"accepted\": true,\n  \"invalidated\": 12,\n  \"committed_effects_unchanged\": true\n}"
+  },
+  "callback_events": [
+    {
+      "event": "containment_notice",
+      "event_id": "e722cd5200daa3673e76d579cef73726b19e1731be78cdf16b7ff2dd725a7847",
+      "run_id": "run-42-001",
+      "state": "quarantined",
+      "device_ids": [
+        "SH-05.congestion_index"
+      ],
+      "reading_ids": [],
+      "invalidated_reading_ids": [
+        "rd0000001-SH-05.congestion_index",
+        "rd0000002-SH-05.congestion_index",
+        "rd0000003-SH-05.congestion_index",
+        "rd0000004-SH-05.congestion_index",
+        "rd0000005-SH-05.congestion_index",
+        "rd0000006-SH-05.congestion_index",
+        "rd0000007-SH-05.congestion_index",
+        "rd0000008-SH-05.congestion_index",
+        "rd0000009-SH-05.congestion_index",
+        "rd0000010-SH-05.congestion_index",
+        "rd0000011-SH-05.congestion_index",
+        "rd0000012-SH-05.congestion_index"
+      ],
+      "invalidated_count": 12,
+      "blocked_device_count": 1
+    }
+  ],
+  "brain_blocked_device": true,
+  "unit_suite": {
+    "passed": 574,
+    "skipped": 0
+  },
+  "current_actual_service_gate": {
+    "passed": 14,
+    "skipped": 0
+  }
+}

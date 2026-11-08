@@ -17,6 +17,7 @@ Open <http://127.0.0.1:5000>. Demo mode is for local use and bypasses authentica
 
 ## Guardian integration behavior
 
+- Guardian's append-only `run-logs/<run_id>.guardian.jsonl` part file uses the shared event envelope (`run_id`, `event_id`, `timestamp`, `tick`, `wall`, `layer=guardian`, `event_type`, `caused_by`, and `data`). Secret fields are redacted, and files are made readable to the shared merger/dashboard (`0644`).
 - Bearer-authenticated Twin SSE readings normalize into Guardian schemas; duplicate deliveries are ignored, conflicting content under the same reading ID is rejected, and skipped tick gaps are logged. Twin readings do not carry a signature field in `twin-mock-3`.
 - `units_free` is scored deterministically by channel. Ambulance availability is represented as `channel=ambulance`, `unit=units`, and the Twin device/node IDs are retained. The supplied RF model has no `units_free` training feature, so its advisory is unavailable for this sensor.
 - Guardian runs the bundled checks, reputation logic, deterministic trust scorer, and optional RF advisory. The supplied RF artifact and feature preprocessing remain unchanged; RF has zero numeric trust weight.

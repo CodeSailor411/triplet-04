@@ -1,0 +1,102 @@
+# Use after the root docker-compose.yml from the reviewed PR #35.
+# Compose resolves paths below from that root file, not from brain/.
+x-brain-build: &brain-build
+  context: ./brain
+  dockerfile: Dockerfile
+
+services:
+  brain-tls:
+    build: *brain-build
+    command: ["python", "scripts/compose_tls.py"]
+    volumes:
+      - civis-tls-private:/run/civis-tls
+      - civis-tls-public:/run/civis-ca
+    restart: "no"
+
+  brain:
+    build: *brain-build
+    command:
+      - uvicorn
+      - civis_brain.app:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+      - --ssl-certfile
+      - /run/civis-ca/brain.crt
+      - --ssl-keyfile
+      - /run/civis-tls/brain.key
+    environment:
+      PEER_MODE: live
+      LLM_MODE: gemini
+      TWIN_MCP_URL: http://twin:8000/mcp
+      TWIN_EVENTS_URL: http://twin:8000/events
+      TWIN_FEED_ENABLED: "true"
+      TWIN_BRAIN_KEY: ${TWIN_KEY_CITY_BRAIN:?Set the Twin city brain key}
+      GUARDIAN_MCP_URL: http://guardian:5000/mcp
+      GUARDIAN_BRAIN_KEY: ${GUARDIAN_BRAIN_MCP_BEARER_KEY:?Set the Guardian MCP key}
+      GUARDIAN_TRANSPORT: mcp_v3
+      BRAIN_TWIN_CALLER_KEY: ${BRAIN_TWIN_CALLER_KEY:?Set the Brain Twin caller key}
+      BRAIN_GUARDIAN_CALLER_KEY: ${BRAIN_GUARDIAN_CALLER_KEY:?Set the Brain Guardian caller key}
+      BRAIN_SCENARIO_KEY: ${BRAIN_SCENARIO_KEY:?Set the Brain scenario caller key}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in brain/.env.compose}
+      BRAIN_DEBUG_ENABLED: "false"
+      MOCK_INTEGRATION_PROFILE: "true"
+      MAX_EVIDENCE_AGE_SECONDS: "60"
+      AI_MAX_CALLS_PER_RUN: "20"
+    ports: !override
+      - "127.0.0.1:8001:8001"
+    volumes: !override
+      - ./brain/logs:/app/brain/logs
+      - civis-tls-private:/run/civis-tls:ro
+      - civis-tls-public:/run/civis-ca:ro
+    depends_on:
+      brain-tls:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import ssl, urllib.request; urllib.request.urlopen('https://127.0.0.1:8001/health', context=ssl.create_default_context(cafile='/run/civis-ca/brain.crt'), timeout=3)"]
+
+  guardian:
+    environment:
+      DEMO_MODE: "false"
+      BRAIN_MCP_URL: https://brain:8001/mcp
+      BRAIN_TIMEOUT_SECONDS: "3"
+      SSL_CERT_FILE: /run/civis-ca/brain.crt
+    ports: !override
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - civis-tls-public:/run/civis-ca:ro
+    depends_on:
+      brain-tls:
+        condition: service_completed_successfully
+
+  guardian-feed:
+    environment:
+      BRAIN_MCP_URL: https://brain:8001/mcp
+
+  twin:
+    ports: !override
+      - "127.0.0.1:8000:8000"
+
+  dashboard:
+    ports: !override
+      - "127.0.0.1:8080:8080"
+
+  civis-timeline:
+    build: *brain-build
+    command: ["python", "scripts/compose_timeline.py"]
+    volumes:
+      - ./brain/logs:/app/brain/logs:ro
+      - ./guardian/run-logs:/app/guardian/run-logs:ro
+      - ./brain/run-logs:/app/brain/run-logs
+    depends_on:
+      brain:
+        condition: service_healthy
+      guardian:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  civis-tls-private:
+  civis-tls-public:

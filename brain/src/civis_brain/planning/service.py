@@ -154,7 +154,10 @@ def check_caps(proposal: ActionProposal, nodes: list[Node], caps: dict) -> None:
             counts[domain] = counts.get(domain, 0) + 1
     for domain, requested in counts.items():
         if domain not in caps:
-            raise BrainError("CAP_UNAVAILABLE", "A touched domain has no discovered action cap")
+            raise BrainError(
+                "CAP_UNAVAILABLE", "A touched domain has no discovered action cap",
+                {"domain": domain, "targets": proposal.targets},
+            )
         limit = caps[domain]
         if limit is not None and (
             isinstance(limit, bool) or not isinstance(limit, int) or limit < 0

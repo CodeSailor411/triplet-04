@@ -56,6 +56,19 @@ def test_unknown_branch_is_rejected():
     assert module.validate("unassigned", "codex/civis-elyes", [], policy)
 
 
+@pytest.mark.parametrize("branch,paths", [
+    ("docs/meriem-brain-docs", ["brain/README.md", "brain/INTERFACE.md"]),
+    ("codex/civis-maram-docs", ["docs/CIVIS_FAILURE_TABLE_DRAFT.md",
+                               "docs/CIVIS_INTEGRATION_INPUT.md"]),
+])
+def test_documentation_branches_have_exact_scope(branch, paths):
+    assert not module.validate(branch, "codex/civis-elyes", paths, policy)
+    for forbidden in ["brain/src/civis_brain/contracts.py", ".github/CODEOWNERS",
+                      "guardian/INTERFACE.md", "twin/INTERFACE.md", "brain/README.md.backup"]:
+        assert module.validate(branch, "codex/civis-elyes", [forbidden], policy)
+    assert module.validate(branch, "main", paths, policy)
+
+
 def test_leader_release_can_include_all_scenario_files():
     paths = ["brain/src/civis_brain/scenarios/water/service.py", ".github/workflows/civis-mock.yml"]
     assert not module.validate("codex/civis-elyes", "brain", paths, policy)

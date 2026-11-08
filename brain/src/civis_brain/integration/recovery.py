@@ -7,7 +7,7 @@ from civis_brain.errors import BrainError
 from civis_brain.inputs.service import normalize_batch
 
 
-async def recover(runtime, batch, ids, nodes):
+async def recover(runtime, batch, ids, nodes, *, scenario_id=None):
     """Three steps within 10 real seconds, including the final Guardian call."""
     original = [runtime.ledger[source] for source in ids]
     original_channels = {(r.sensor, r.channel, r.unit) for r in original}
@@ -30,7 +30,8 @@ async def recover(runtime, batch, ids, nodes):
             raise BrainError("FEED_DISCONNECTED", "Evidence recovery lost the Twin feed")
         if runtime.feed_connected is True and runtime.latest_feed is not None:
             return validate(runtime.latest_feed)
-        return validate(await runtime._call(runtime.twin, "get_readings", {}))
+            return validate(await runtime._call(runtime.twin, "get_readings", {},
+                                                scenario_id=scenario_id))
 
     try:
         async with asyncio.timeout(10):
@@ -69,7 +70,8 @@ async def recover(runtime, batch, ids, nodes):
             response = await runtime._call(runtime.guardian,
                 runtime.features.get("guardian_score_tool"),
                 {"run_id": batch.run_id, "tick": snapshot.tick,
-                 "readings": [r.model_dump() for r in readings.values()]})
+                 "readings": [r.model_dump() for r in readings.values()]},
+                scenario_id=scenario_id)
             runtime.journal.append({"event": "recovery_fresh_verdict", "run_id": batch.run_id,
                                     "tick": snapshot.tick, "source_reading_ids": list(readings)})
             return response, set(readings)

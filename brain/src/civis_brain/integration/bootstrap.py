@@ -49,7 +49,8 @@ def configured_runtime(settings):
         "mock_integration_profile": settings.mock_integration_profile,
         "evidence_recovery_enabled": settings.peer_mode == "live",
         "one_response_per_episode": settings.peer_mode == "live",
-        "run_log_dir": str(root / "run-logs"),
+        # Always-on, Brain-owned JSONL stream in the shared event format.
+        "run_log_dir": str(root / "logs"),
     }
     if settings.peer_mode == "fixture":
         case_path = root / settings.brain_fixture_case

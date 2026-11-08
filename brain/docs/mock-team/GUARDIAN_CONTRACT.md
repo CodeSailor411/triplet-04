@@ -1,5 +1,7 @@
 # Brain and Guardian integration contract
 
+Current verification, 7 November 2026: [shared-domain correction and actual Guardian callback proof](JOINT_FIX_2026-11-07.md). Use Guardian's `main` subtree at `45e0ccb` for the current S02/S05/containment contract; the older `guardian_final_version` snapshot below is historical. Containment MCP uses `BRAIN_MCP_URL` / `BRAIN_GUARDIAN_CALLER_KEY`, with a 3-second configured timeout. Do not configure the optional HTTP verdict webhook key without its separate URL; it is not required by Brain.
+
 28 October 2026. CIVIS adopts the existing Guardian v3 names and the verdict union now published in `guardian_final_version/guardian/INTERFACE.md`. Select `GUARDIAN_TRANSPORT=mcp_v3`. The pending/union compatibility update follows the immutable `brain-mock-3` checkpoint; it does not certify joint acceptance. Older checkpoints remain reproducible in Git history.
 
 ## Existing MCP tools and mappings
