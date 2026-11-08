@@ -26,6 +26,7 @@ if str(GUARDIAN_ROOT) not in sys.path:
     sys.path.insert(0, str(GUARDIAN_ROOT))
 
 from app import METADATA, describe_capabilities, load_model, predict_reading, server as mcp_server
+from mcp_hosts import transport_security as mcp_transport_security  # noqa: E402
 from integration_service import service
 from mocks.simulation import SENSORS, run_scenario, scenario_catalog
 from action_policy import ActionPolicy, ActionPolicyError
@@ -217,6 +218,7 @@ mcp_app = mcp_server.streamable_http_app(
     json_response=True,
     stateless_http=True,
     host="127.0.0.1",
+    transport_security=mcp_transport_security(),
 )
 
 
@@ -498,7 +500,8 @@ def ingest_twin_event(request: TwinEventRequest, authorization: str | None = Hea
                     _audit_log.record(run_id=run_id, event_type="duplicate_delivery",
                         reading_id=payload["reading_id"], trust_score=None, verdict=None, action=None,
                         decision="ignored", reason=None, caused_by=payload["reading_id"],
-                        data={"idempotency_key": payload["reading_id"]})
+                        data={"idempotency_key": payload["reading_id"]},
+                        tick=int(payload["sequence_number"]), timestamp=item.get("timestamp"))
                     continue
                 raise ValueError("replay_attack_reading_id_content_mismatch")
             last_tick = _last_tick_by_run.get(run_id)
@@ -521,7 +524,8 @@ def ingest_twin_event(request: TwinEventRequest, authorization: str | None = Hea
                     _audit_log.record(run_id=run_id, event_type="tick_gap",
                         reading_id=payload["reading_id"], trust_score=None, verdict=None,
                         action=None, decision="observed", reason="ticks_skipped",
-                        caused_by=payload["reading_id"], data={"previous_tick": last_tick, "tick": tick})
+                        caused_by=payload["reading_id"], data={"previous_tick": last_tick, "tick": tick},
+                        tick=tick, timestamp=item.get("timestamp"))
                 _last_tick_by_run[run_id] = max(last_tick if last_tick is not None else tick, tick)
                 _latest_twin_sim_time = max(_latest_twin_sim_time or payload["timestamp"], payload["timestamp"])
             verdict = evaluation.get("guardian") or {}
@@ -530,7 +534,8 @@ def ingest_twin_event(request: TwinEventRequest, authorization: str | None = Hea
                 verdict=verdict.get("verdict"), action=None,
                 decision="denied" if evaluation.get("action_blocked") else "evaluated",
                 reason=evaluation.get("rejection_reason"), caused_by=payload["reading_id"],
-                data={"sensor_id": payload["sensor_id"], "sequence_number": payload["sequence_number"]})
+                data={"sensor_id": payload["sensor_id"], "sequence_number": payload["sequence_number"]},
+                tick=int(payload["sequence_number"]), timestamp=item.get("timestamp"))
             results.append({"reading_id": payload["reading_id"], "evaluation": evaluation})
         except (ValueError, TypeError, KeyError) as exc:
             skipped.append({"reading_id": item.get("reading_id") if isinstance(item, dict) else None,
@@ -1186,7 +1191,8 @@ def _apply_twin_containment(tool: str, *, device_ids: list[str], reading_ids: li
         decision="applied", reason=None if notification["status"] == "notified" else "brain_notification_failed",
         caused_by=(caused_by or (reading_ids or [None]))[0],
         data={"device_ids": affected_devices, "reading_ids": list(reading_ids or []),
-              "brain_notification": notification["status"]})
+              "brain_notification": notification["status"]},
+        tick=twin_result.get("tick"), timestamp=twin_result.get("time") or twin_result.get("timestamp"))
     return {"status": "applied", "tool": tool, "twin": twin_result,
             "brain_notification": notification}
 
