@@ -1,0 +1,16 @@
+.env
+.env.*
+.git
+.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+tests
+run-logs
+src/web/src
+src/web/tests
+src/web/node_modules
+src/web/.vite
+*.log

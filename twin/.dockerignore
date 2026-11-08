@@ -1,0 +1,16 @@
+.env
+.env.*
+.git
+.venv
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+tests
+experiments
+docs
+interop
+civis.code-workspace
+run-logs
+*.log

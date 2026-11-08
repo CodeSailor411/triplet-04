@@ -15,6 +15,7 @@ from . import __version__
 from .auth import LAYERS, KeyRing, token_from_headers
 from .generator import fingerprint, generate
 from .feed import MAX_BACKLOG, feed_events  # noqa: F401  (MAX_BACKLOG stays importable from here)
+from .mcp_hosts import transport_security as mcp_transport_security
 from .mcp_server import build_mcp
 from .actions import ActionBook
 from .containment import ContainmentBook
@@ -71,7 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     mcp = build_mcp(topology, keyring, sim, book, containment, scenarios, layout)
     if cfg.tokens.mode == "unsigned":
         log.warning("TOKENS ARE UNSIGNED (tokens.mode: unsigned). Fine for mocks and the hand-over, not for v1.0.")
-    mcp_app = mcp.streamable_http_app()                # the MCP endpoint lives at /mcp inside this app
+    mcp_app = mcp.streamable_http_app(transport_security=mcp_transport_security())   # the MCP endpoint lives at /mcp inside this app
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):

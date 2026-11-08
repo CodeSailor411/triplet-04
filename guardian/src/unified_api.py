@@ -26,6 +26,7 @@ if str(GUARDIAN_ROOT) not in sys.path:
     sys.path.insert(0, str(GUARDIAN_ROOT))
 
 from app import METADATA, describe_capabilities, load_model, predict_reading, server as mcp_server
+from mcp_hosts import transport_security as mcp_transport_security  # noqa: E402
 from integration_service import service
 from mocks.simulation import SENSORS, run_scenario, scenario_catalog
 from action_policy import ActionPolicy, ActionPolicyError
@@ -217,6 +218,7 @@ mcp_app = mcp_server.streamable_http_app(
     json_response=True,
     stateless_http=True,
     host="127.0.0.1",
+    transport_security=mcp_transport_security(),
 )
 
 
