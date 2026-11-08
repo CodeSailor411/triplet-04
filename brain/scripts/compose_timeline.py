@@ -5,6 +5,7 @@ import json
 import re
 import time
 from collections import OrderedDict
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -100,7 +101,8 @@ class Timeline:
                 "caused_by": [reading_id], "data": fields}
 
     def poll(self, source, adapt):
-        with source.open("rb") as stream:
+        with source.open("rb") as stream, ExitStack() as writers:
+            outputs = {}
             stat = source.stat()
             inode, offset = self.offsets.get(source, (None, 0))
             if inode != stat.st_ino or stat.st_size < offset:
@@ -115,13 +117,13 @@ class Timeline:
                     if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,100}", run_id):
                         event = adapt(row)
                         if event is not None and type(event["tick"]) is int:
-                            self.emit(run_id, line, event)
+                            self.emit(run_id, line, event, outputs, writers)
                 except (AttributeError, KeyError, ValueError, TypeError, OverflowError):
                     # Incomplete lines wait for the next poll; malformed complete rows are skipped.
                     pass
                 self.offsets[source] = (stat.st_ino, stream.tell())
 
-    def emit(self, run_id, line, event):
+    def emit(self, run_id, line, event, outputs, writers):
         target = self.output / f"{run_id}.{event['layer']}.jsonl"
         if target not in self.seen:
             existing = set()
@@ -136,9 +138,10 @@ class Timeline:
         prefix = "twin-feed" if event["layer"] == "twin" else event["layer"]
         event_id = f"{prefix}-{digest}"
         if self.seen[target].isdisjoint((event_id, f"civis-{digest}")):
-            with target.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps({**event, "event_id": event_id, "run_id": run_id},
-                                        allow_nan=False) + "\n")
+            encoded = json.dumps({**event, "event_id": event_id, "run_id": run_id}, allow_nan=False)
+            if target not in outputs:
+                outputs[target] = writers.enter_context(target.open("a", encoding="utf-8"))
+            outputs[target].write(encoded + "\n")
             self.seen[target].add(event_id)
 
 
