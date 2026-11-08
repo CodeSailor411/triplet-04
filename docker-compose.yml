@@ -30,6 +30,7 @@ services:
       TWIN_TOKEN_MODE: signed
       TWIN_GUARDIAN_PUBLIC_KEY: /run/guardian-public/guardian-public.pem
       TWIN_SEED: ${TWIN_SEED:-42}
+      TWIN_MCP_ALLOWED_HOSTS: "twin:*"
     ports:
       - "8000:8000"
     volumes:
@@ -62,6 +63,7 @@ services:
       GUARDIAN_TOKEN_PRIVATE_KEY: /run/guardian-private/guardian-private.pem
       GUARDIAN_TOKEN_PUBLIC_KEY: /run/guardian-public/guardian-public.pem
       GUARDIAN_AUDIT_DIR: /app/guardian/run-logs
+      GUARDIAN_MCP_ALLOWED_HOSTS: "guardian:*"
     ports:
       - "5000:5000"
     volumes:

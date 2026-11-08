@@ -4,7 +4,7 @@ FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PYTHONPATH=/app/brain/src
+    PYTHONPATH=/app/brain/src:/app/brain/mocks
 
 WORKDIR /app/brain
 
