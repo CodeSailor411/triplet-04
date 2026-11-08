@@ -64,7 +64,7 @@ def test_brain_mcp_accepts_configured_compose_host_and_rejects_unknown_hosts():
 
 @pytest.mark.parametrize("clock", [
     {"timestamp": 1794018962.0},
-    {"timestamp": "2026-11-07T04:00:00Z", "wall": "2026-11-07T04:00:00Z"},
+    {"timestamp": "2026-10-05T08:00:12Z", "wall": "2026-11-07T04:00:00Z"},
 ])
 def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_path, clock):
     helpers = runpy.run_path(str(SCRIPTS / "compose_timeline.py"))
@@ -98,8 +98,38 @@ def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_pa
     assert rows[1]["data"]["token_id"] == "opaque-id"
     assert rows[0]["caused_by"] == [reading_id]
     assert rows[0]["event_id"].startswith("guardian-")
-    assert "T" in rows[0]["timestamp"]
+    assert "T" in rows[0]["wall"]
+    if "wall" in clock:
+        assert rows[0]["timestamp"] == clock["timestamp"]
+        assert rows[0]["wall"] == clock["wall"]
     projected = json.loads((tmp_path / f"{run_id}.brain.jsonl").read_text())
     assert projected["event_type"] == "decision" and projected["data"]["status"] == "committed"
     assert projected["event_id"].startswith("brain-")
     assert "excluded" not in json.dumps(projected)
+
+
+def test_timeline_shows_twin_feed_receipts_and_keeps_real_brain_blocks(tmp_path):
+    helpers = runpy.run_path(str(SCRIPTS / "compose_timeline.py"))
+    run_id = "run-42-001"
+    reading_ids = ["rd0000217-SH-05.congestion_index", "rd0000217-POW-01.load_kw"]
+    shared = {"run_id": run_id, "tick": 217, "layer": "city_brain",
+              "ts": "2026-10-05T08:03:37Z", "refs": {"reading_ids": reading_ids}}
+    batch = {**shared, "event": "readings_batch_received", "data": {"count": 2}}
+    warning = {**shared, "event": "decision_made", "scenario": "S03",
+               "data": {"status": "alert", "peer_code": "EVIDENCE_WARNING",
+                        "reason": "POWER_EVIDENCE_UNCONFIRMED: no agreed fault threshold"}}
+    block = {**shared, "event": "decision_made", "scenario": "S01",
+             "data": {"status": "blocked", "peer_code": "TRUST_BELOW_THRESHOLD"}}
+    source = tmp_path / "brain-input"
+    raw = "".join(json.dumps(row) + "\n" for row in (batch, warning, block))
+    source.write_text(raw, encoding="utf-8")
+    for _ in range(2):
+        helpers["Timeline"](tmp_path).poll(source, helpers["brain_event"])
+    reading = json.loads((tmp_path / f"{run_id}.twin.jsonl").read_text())
+    assert reading["tick"] == 217 and reading["layer"] == "twin" and reading["event_type"] == "reading"
+    assert reading["event_id"].startswith("twin-feed-")
+    assert reading["data"]["reading_ids"] == reading_ids and reading["data"]["value"] == 2
+    decision = json.loads((tmp_path / f"{run_id}.brain.jsonl").read_text())
+    assert decision["data"]["incident"] == "S01 blocked (TRUST_BELOW_THRESHOLD)"
+    assert decision["caused_by"] == reading_ids
+    assert source.read_text() == raw

@@ -2,7 +2,9 @@
 
 import argparse
 import hashlib
+import json
 import os
+import re
 import secrets
 import ssl
 import subprocess
@@ -118,15 +120,61 @@ def check_published_ports(prefix, stage):
         "Trinity dashboard": "http://127.0.0.1:8080/",
     }
     failed = False
+    twin_clock = {}
     for name, url in endpoints.items():
         try:
             with urllib.request.urlopen(url, context=trust, timeout=5) as response:
                 print(f"{name} {url} -> HTTP {response.status}", flush=True)
+                if name == "Trinity Twin":
+                    twin_clock = json.load(response)
         except (URLError, TimeoutError) as error:
             print(f"{name} {url} -> {error}", flush=True)
             failed = True
     if failed:
         raise SystemExit(2)
+    return twin_clock
+
+
+def latest_event_tick(path, kind, score_field=None):
+    """Read recent complete rows only, so checks stay quick on long runs."""
+    try:
+        with path.open("rb") as stream:
+            start = max(0, stream.seek(0, os.SEEK_END) - 262144)
+            stream.seek(start)
+            if start:
+                stream.readline()
+            lines = stream.read().split(b"\n")[:-1]
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        print(f"Could not read {path}: {error.strerror}", flush=True)
+        return None
+    for line in reversed(lines):
+        try:
+            row = json.loads(line)
+            if row.get("event_type") != kind or type(row.get("tick")) is not int:
+                continue
+            if score_field and type(row.get(score_field)) not in (int, float):
+                continue
+            return row["tick"]
+        except (AttributeError, ValueError):
+            continue
+    return None
+
+
+def print_timeline_progress(stage, clock):
+    run_id = clock.get("run_id")
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", run_id):
+        return
+    parts = stage / "brain" / "run-logs"
+    native = stage / "guardian" / "run-logs" / f"{run_id}.guardian.jsonl"
+    print("Timeline ticks (latest written per file): " + json.dumps({
+        "run_id": run_id,
+        "twin_clock": clock.get("tick"),
+        "twin_feed_on_dashboard": latest_event_tick(parts / f"{run_id}.twin.jsonl", "reading"),
+        "guardian_scored": latest_event_tick(native, "reading_evaluated", "trust_score"),
+        "guardian_on_dashboard": latest_event_tick(parts / f"{run_id}.guardian.jsonl", "verdict"),
+    }), flush=True)
 
 
 def main():
@@ -155,7 +203,8 @@ def main():
             "config": ["config", "--quiet"],
         }[args.command]
         if args.command == "check":
-            check_published_ports(prefix, stage)
+            clock = check_published_ports(prefix, stage)
+            print_timeline_progress(stage, clock)
         subprocess.run(prefix + command, cwd=stage, check=True)
         if args.command == "up":
             print("Dashboard: http://127.0.0.1:8080")
