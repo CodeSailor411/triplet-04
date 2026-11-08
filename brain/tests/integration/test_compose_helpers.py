@@ -60,13 +60,19 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
 
 
 @pytest.mark.parametrize("guardian_ready", [True, False])
-def test_t2_reconnects_and_waits_for_guardian_after_reset(tmp_path, monkeypatch, guardian_ready):
+@pytest.mark.parametrize(("scenario_id", "payload"), [
+    ("t2", {"name": "real_jam", "params": {"node_id": "SH-05", "hold_ticks": 180}}),
+    ("t3", {"name": "fake_reading", "params": {
+        "device_id": "SH-05.congestion_index", "value": 95.0, "duration_ticks": 30,
+    }}),
+])
+def test_traffic_scenario_waits_for_guardian_after_reset(tmp_path, monkeypatch, guardian_ready, scenario_id, payload):
     launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
     main = launcher["main"]
     monkeypatch.setitem(main.__globals__, "BRAIN", tmp_path)
     monkeypatch.setitem(main.__globals__, "prepare_stack", lambda: tmp_path)
     (tmp_path / ".env.compose").touch()
-    monkeypatch.setattr(sys, "argv", ["compose_stack.py", "t2"])
+    monkeypatch.setattr(sys, "argv", ["compose_stack.py", scenario_id])
     commands = []
     run_id = "run-42-003"
 
@@ -90,19 +96,20 @@ def test_t2_reconnects_and_waits_for_guardian_after_reset(tmp_path, monkeypatch,
 
     control = [
         "exec", "-T", "-e", "PYTHONPATH=/app/twin/src:/app/twin/mocks",
-        "twin", "python", "-c", launcher["T2_CONTROL"],
+        "twin", "python", "-c", launcher["TRAFFIC_SCENARIO_CONTROL"],
     ]
     assert commands[0][-9:] == control + ["reset"]
     assert commands[1][-3:] == ["restart", "--no-deps", "guardian-feed"]
     assert commands[2][-7:] == ["exec", "-T", "guardian", "python", "-c",
-                               launcher["T2_WAIT_FOR_GUARDIAN"], run_id]
+                               launcher["WAIT_FOR_GUARDIAN"], run_id]
     if guardian_ready:
-        assert commands[3][-11:] == control + ["jam", run_id, "4"]
+        assert commands[3][-12:-1] == control + [scenario_id, run_id, "4"]
+        assert json.loads(commands[3][-1]) == payload
     else:
         assert len(commands) == 3
 
 
-def test_t2_wait_requires_new_sh05_score_for_reset_run(tmp_path, monkeypatch, capsys):
+def test_scenario_wait_requires_new_sh05_score_for_reset_run(tmp_path, monkeypatch, capsys):
     launcher = runpy.run_path(str(SCRIPTS / "compose_stack.py"))
     run_id = "run-42-003"
     audit = tmp_path / f"{run_id}.guardian.jsonl"
@@ -119,7 +126,7 @@ def test_t2_wait_requires_new_sh05_score_for_reset_run(tmp_path, monkeypatch, ca
 
     monkeypatch.setattr(time, "sleep", append_next)
     with pytest.raises(SystemExit) as exit_info:
-        exec(launcher["T2_WAIT_FOR_GUARDIAN"], {})
+        exec(launcher["WAIT_FOR_GUARDIAN"], {})
     assert exit_info.value.code == 0
     assert capsys.readouterr().out.strip() == "3"
 
