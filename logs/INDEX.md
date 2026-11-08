@@ -12,3 +12,5 @@ The label says whether each layer's events come from a stand-in or from the real
 | T5-1.jsonl | T5 Token replay | 2026-11-03 19:45 | run-42-007 | brain: no events, guardian: stand-in | PASS |
 | T6-1.jsonl | T6 Stuck sensor isolated | 2026-11-03 19:45 | run-42-008 | brain: no events, guardian: stand-in | PASS |
 | T7-1.jsonl | T7 Repeated command runs once | 2026-11-03 19:45 | run-42-009 | brain: stand-in, guardian: stand-in | PASS |
+| T5-2.jsonl | T5 Token replay | 2026-11-08 15:55 | run-42-003 | brain: no events, guardian: real | PASS |
+| T8-1.jsonl | T8 Forged token | 2026-11-08 16:01 | run-42-005 | brain: no events, guardian: real | PASS |
