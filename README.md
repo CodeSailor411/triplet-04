@@ -250,7 +250,7 @@ We would rather you hear it from us.
 
 **Numbers**
 
-- **Twin:** 544 tests pass and 18 are skipped (they need a PostgreSQL or Redis server). The seven scenario scripts run.
+- **Twin:** 550 tests pass and 18 are skipped (they need a PostgreSQL or Redis server). The seven scenario scripts run.
 - **Guardian:** 81 tests pass and 2 are skipped in its own local run. The skipped ones need a live Twin.
 - **Brain:** see [`brain/README.md`](brain/README.md) for its status.
 - **Together:** on 29 Oct we ran a connectivity check with the partners' packages and no changes to their code: 28 checks passed, 0 failed, 1 skipped. It covered the live feed, the tools, the city graph, the Brain's start-up checks, and a real Guardian token that the Twin accepted, then refused on reuse and refused with a different key. It did not show the Brain acting through the Guardian on the Twin. Joint acceptance is not complete, and each layer's README lists its own gaps.
