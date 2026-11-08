@@ -40,7 +40,7 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
         return subprocess.CompletedProcess(command, 0, stdout="test certificate")
 
     def urlopen(url, **_):
-        if url.endswith(":8080/"):
+        if url.endswith(":8080/health"):
             raise TimeoutError("timed out")
         response = io.StringIO('{"run_id": "run-42-002", "tick": 16}')
         response.status = 200
@@ -54,7 +54,7 @@ def test_dashboard_timeout_still_runs_backend_checks(tmp_path, monkeypatch, caps
     assert commands[-1][-6:-2] == ["-T", "brain", "python", "-c"]
     assert json.loads(commands[-1][-1]) == sample
     output = capsys.readouterr().out
-    assert "Trinity dashboard http://127.0.0.1:8080/ -> timed out" in output
+    assert "Trinity dashboard http://127.0.0.1:8080/health -> timed out" in output
     assert '"run_id": "run-42-002", "twin_clock": 16' in output
     assert '"guardian_scored": 14, "guardian_lag_ticks": 2' in output
 

@@ -95,8 +95,7 @@ services:
     image: triplet04/trinity-dashboard:local
     command:
       - python
-      - -m
-      - twin.dashboard
+      - /app/brain/compose_dashboard.py
       - --host
       - 0.0.0.0
       - --port
@@ -109,8 +108,10 @@ services:
       - ../brain/run-logs
     ports: !override
       - "127.0.0.1:8080:8080"
+    volumes:
+      - ./brain/scripts/compose_dashboard.py:/app/brain/compose_dashboard.py:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=4).close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).close()"]
       interval: 10s
       timeout: 5s
       retries: 6

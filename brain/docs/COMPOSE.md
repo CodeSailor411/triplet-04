@@ -18,7 +18,7 @@ python brain/scripts/compose_stack.py up
 python brain/scripts/compose_stack.py check
 ```
 
-Open [the live dashboard](http://127.0.0.1:8080). The check probes the three published health endpoints and the dashboard from your machine, then confirms Brain can talk to Twin and Guardian, Brain is evaluating the live feed, and Guardian scored a Twin reading. It does not call Gemini or exercise actuators.
+Open [the live dashboard](http://127.0.0.1:8080). The check probes the published health endpoints from your machine, then confirms Brain can talk to Twin and Guardian, Brain is evaluating the live feed, and Guardian scored a Twin reading. The dashboard's lightweight `/health` probe checks HTTP responsiveness. Open the dashboard itself to check page rendering. The integration check does not call Gemini or exercise actuators.
 
 | Service | Where it runs |
 | --- | --- |
@@ -39,7 +39,7 @@ The override follows the PR's Python 3.12 and pinned dependency setup and builds
 
 ## Verification
 
-`up` waits for the dashboard to serve HTTP as well as for the layers to report healthy. `check` verifies the published ports and live integration. To check a scenario commit, exercise that scenario with your own Gemini key and inspect the recorded Brain decision, Guardian authorization, and Twin outcome for the same action.
+`up` waits for the dashboard's health route as well as for the layers to report healthy. `check` verifies the published ports and live integration. To check a scenario commit, exercise that scenario with your own Gemini key and inspect the recorded Brain decision, Guardian authorization, and Twin outcome for the same action.
 
 Run `python brain/scripts/compose_stack.py t2` to reset Twin and start a fresh SH-05 jam with a 180-tick hold. The launcher reconnects the Guardian feed reader after reset and waits up to 30 seconds for a new SH-05 score in the reset run. It schedules the jam when that score is within five ticks of the Twin clock. The launcher uses the scenario client and credentials inside the running Twin container. Use the returned `run_id` to follow the trial in the dashboard or the mounted logs. `status: started` confirms the trigger. An action commit is recorded separately in `twin/run-logs/<run_id>.twin.jsonl`.
 

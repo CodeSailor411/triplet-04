@@ -224,7 +224,7 @@ def check_published_ports(prefix, stage):
         "Trinity Twin": "http://127.0.0.1:8000/health",
         "9antra Guardian": "http://127.0.0.1:5000/health",
         "CIVIS Brain": "https://127.0.0.1:8001/health",
-        "Trinity dashboard": "http://127.0.0.1:8080/",
+        "Trinity dashboard": "http://127.0.0.1:8080/health",
     }
     failed = False
     twin_clock = {}
