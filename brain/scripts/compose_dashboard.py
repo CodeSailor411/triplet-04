@@ -7,8 +7,8 @@ if TYPE_CHECKING:
 
 
 def split_sessions(events: list["Event"]) -> list[list["Event"]]:
-    """Use Trinity's session rules while indexing the minimum tick of each session."""
-    from twin.dashboard.events import TICK_BACK, _is_start, sort_key, wall_time
+    """Split on Twin start markers, since partner events can arrive many ticks late."""
+    from twin.dashboard.events import _is_start, sort_key, wall_time
 
     walled, loose = [], []
     for event in events:
@@ -21,16 +21,14 @@ def split_sessions(events: list["Event"]) -> list[list["Event"]]:
     walled.sort(key=lambda item: item[0])
 
     sessions: list[list["Event"]] = [[]]
-    has_work, newest = False, 0
+    has_work = False
     for _, event in walled:
-        starts = _is_start(event)
-        tick = event["tick"]
-        if sessions[-1] and ((starts and has_work) or tick < newest - TICK_BACK):
+        starts = event["layer"] == "twin" and _is_start(event)
+        if starts and has_work:
             sessions.append([])
-            has_work, newest = False, 0
+            has_work = False
         sessions[-1].append(event)
         has_work = has_work or not starts
-        newest = max(newest, tick)
 
     minimums = [min((event["tick"] for event in session), default=float("inf")) for session in sessions]
     for event in loose:
