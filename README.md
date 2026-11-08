@@ -162,7 +162,11 @@ Only the Guardian can call these tools (the Twin refuses anyone else):
 
 ## Start it
 
-You need Docker with Compose. From a fresh clone:
+There are two ways to start the layers. Use the first one for everything, and the second one only for the live runs of T2 and T3.
+
+### Main way: root Docker Compose (all three layers and the dashboard)
+
+You need Docker with Compose v2.24 or newer. From a fresh clone:
 
 ```
 git clone https://github.com/CodeSailor411/triplet-04.git
@@ -171,9 +175,9 @@ cp .env.example .env
 docker compose up --build
 ```
 
-The `.env` file in the repo root holds the keys for all three layers. The example file has fake keys that are only fine for running on your own machine. You need Docker Compose v2.24 or newer. Put a real Gemini API key in `.env` (`GEMINI_API_KEY`) before you ask the Brain to plan anything, because the default is a placeholder.
+The `.env` file in the repo root holds the keys for all three layers. The example file has fake keys that are only fine for running on your own machine. Put a real Gemini API key in `.env` (`GEMINI_API_KEY`) before you ask the Brain to plan anything, because the default is a placeholder.
 
-The stack starts the Twin in signed mode. On the first start a small helper service creates the Guardian's key pair, so the Twin can verify the Guardian's signatures without any setup from you.
+The stack starts the Twin in signed mode. On the first start a small helper service creates the Guardian's key pair, so the Twin can verify the Guardian's signatures without any setup from you. A further service, `guardian-feed`, forwards the Twin's live feed to the Guardian. It has no port of its own.
 
 When it is up:
 
@@ -182,21 +186,55 @@ When it is up:
 - The Guardian is at <http://127.0.0.1:5000>.
 - The dashboard (city map and timeline) is at <http://127.0.0.1:8080>.
 
-A further service, `guardian-feed`, forwards the Twin's live feed to the Guardian. It has no port of its own.
+Stop it with `Ctrl+C`, then `docker compose down`.
 
-Stop it with `Ctrl+C`, then `docker compose down`. To run one layer alone without Docker, see [`twin/README.md`](twin/README.md), [`brain/README.md`](brain/README.md) and [`guardian/README.md`](guardian/README.md).
+Starting the stack only proves that the layers start. It does not prove that they work together. For that, run a scenario (see [Run a scenario](#run-a-scenario)).
 
-No internet is needed for the Twin or its dashboard. The dashboard ships its own font files and makes no outside requests.
+### Live scenarios T2 and T3: the Compose launcher
+
+For the live runs of T2 and T3 with the real Twin, Guardian and Brain, we use a launcher script from the Brain's folder. It starts the same layers, but it adds an override file on top of the Compose file. The override sets up the HTTPS callback and the volume (a shared folder) where the Guardian saves its audit records. The live evidence we have comes from this launcher, tested on **Windows**. We have not checked it on Linux or macOS.
+
+You need Docker with Compose, Python 3.12 and a Gemini API key (the Brain uses it to plan, so this path needs internet).
+
+```
+python brain/scripts/compose_stack.py init
+```
+
+`init` sets up the launcher's files. Open `brain/.env.compose` and put your Gemini key in it. Never commit this file. Then:
+
+```
+python brain/scripts/compose_stack.py up
+python brain/scripts/compose_stack.py check
+python brain/scripts/compose_stack.py t2
+python brain/scripts/compose_stack.py t3
+python brain/scripts/compose_stack.py down
+```
+
+`up` starts the stack and `check` tests that the layers are reachable. `t2` and `t3` run those two scenarios against the real layers. The launcher has no command for the other scenarios. `down` stops everything. Always go through the launcher for these runs, and do not call `docker compose` yourself in the same session.
+
+Run only one of the two ways at a time. Both start the same layers, so their ports can clash. Stop one (`docker compose down`, or the launcher's `down`) before you start the other.
+
+The launcher's addresses, options and full steps are in [`brain/docs/COMPOSE.md`](brain/docs/COMPOSE.md).
+
+### Both ways
+
+To run one layer alone without Docker, see [`twin/README.md`](twin/README.md), [`brain/README.md`](brain/README.md) and [`guardian/README.md`](guardian/README.md).
+
+No internet is needed for the Twin or its dashboard. The dashboard ships its own font files and makes no outside requests. Only the Brain's Gemini calls need internet.
 
 ## Run a scenario
 
-With the Twin running, from the repo root:
+There are two kinds of run, and the Test Book says which one each result came from.
+
+### Stand-in runs (scripts in `scenarios/`)
+
+With the Twin running (for example after the root `docker compose up`), from the repo root:
 
 ```
 python scenarios/T2_real_jam.py
 ```
 
-The scripts use Python 3.12 with the Twin's packages installed (`twin/requirements.txt`).
+By default our scripted stand-ins play the Brain and the Guardian. It is the quick way to test the Twin on its own. It is not a live run. The scripts use Python 3.12 with the Twin's packages installed (`twin/requirements.txt`).
 
 Each script follows the same four steps: reset the run, pull one trigger, save the merged log as `logs/<ID>-<n>.jsonl` (for example `logs/T3-1.jsonl`, and the next run `T3-2`), check the expected result and print PASS or FAIL. The script never starts the Twin. If it cannot reach it, it says so and stops.
 
@@ -209,10 +247,22 @@ Each script follows the same four steps: reset the run, pull one trigger, save t
 | T5 | `T5_token_replay.py` | Token reuse | The second use is refused |
 | T6 | `T6_stuck_sensor_isolated.py` | Stuck sensor | The sensor is isolated |
 | T7 | `T7_repeated_command_once.py` | Repeated command | Sent twice, runs once |
+| T8 | `T8_tampered_token.py` | Tampered token | One valid control request commits; the same kind of request with a changed signature is refused with `TOKEN_INVALID` |
 
 Exit codes: `0` passed, `1` the check failed, `2` the setup is wrong (for example the Twin is not running).
 
-**Stand-ins or real layers.** By default our scripted stand-ins play the Brain and the Guardian. `--layers real` uses the real layers for T1, T2, T3 and T6 (the real Brain and Guardian must already be running). T4, T5 and T7 only run with stand-ins. [`logs/INDEX.md`](logs/INDEX.md) says, for every saved log, which layers were stand-ins, which were real, and which were mixed.
+**Stand-ins or real layers.** `--layers real` uses the real layers for T1, T2, T3 and T6 (the real Brain and Guardian must already be running). T4 and T7 only run with stand-ins. T5 and T8 talk to the real Guardian (no Brain involved). [`logs/INDEX.md`](logs/INDEX.md) says, for every saved log, which layers were stand-ins, which were real, and which were mixed. More details are in [`scenarios/README.md`](scenarios/README.md).
+
+### Live runs (T2 and T3 through the launcher)
+
+With the launcher's stack up (see [Start it](#start-it)):
+
+```
+python brain/scripts/compose_stack.py t2
+python brain/scripts/compose_stack.py t3
+```
+
+These talk to the real Twin, Guardian and Brain. Our recorded evidence for them is listed under [What works today](#what-works-today-and-what-doesnt-yet).
 
 The full test book is [`TESTBOOK.md`](TESTBOOK.md).
 
@@ -250,14 +300,33 @@ We would rather you hear it from us.
 
 **Numbers**
 
-- **Twin:** 550 tests pass and 18 are skipped (they need a PostgreSQL or Redis server). The seven scenario scripts run.
+- **Twin:** 550 tests pass and 18 are skipped (they need a PostgreSQL or Redis server). The scenario scripts run.
 - **Guardian:** 81 tests pass and 2 are skipped in its own local run. The skipped ones need a live Twin.
 - **Brain:** see [`brain/README.md`](brain/README.md) for its status.
-- **Together:** on 29 Oct we ran a connectivity check with the partners' packages and no changes to their code: 28 checks passed, 0 failed, 1 skipped. It covered the live feed, the tools, the city graph, the Brain's start-up checks, and a real Guardian token that the Twin accepted, then refused on reuse and refused with a different key. It did not show the Brain acting through the Guardian on the Twin. Joint acceptance is not complete, and each layer's README lists its own gaps.
+- **Together, connectivity check:** on 29 Oct we ran a check with the partners' packages and no changes to their code: 28 checks passed, 0 failed, 1 skipped. It covered the live feed, the tools, the city graph, the Brain's start-up checks, and a real Guardian token that the Twin accepted, then refused on reuse and refused with a different key.
+
+**Verified live runs (Windows, Compose launcher, real Twin, Guardian and Brain)**
+
+- **T2, run `run-42-004`:** the Guardian authorized the action, the Brain (CIVIS) sent it, and the Twin committed it once, at tick 22.
+- **T3, run `run-42-003`:** the first injected (fake) reading was denied, the Brain blocked the action, and the Twin did zero actions. The saved evidence for this run is in PR #43.
+
+**Partial or expected, with no full trace yet**
+
+- **T1:** the saved calm-day log holds Twin events only and no Brain events, so it supports a Twin-only baseline. The Test Book marks it Partial.
+- **T3 human escalation:** we expect the Brain to hand the case to a person, but we have no saved trace of that step.
+
+**Twin and Guardian only (no Brain)**
+
+- **T5 and T8:** run against the real Guardian on 8 Nov 2026. T5 shows one commit and a `TOKEN_REUSED` rejection. T8 shows one valid control commit and a `TOKEN_INVALID` rejection for the tampered signature.
+
+**Not complete**
+
+- Full joint acceptance across all three real layers is not complete. Each layer's README lists its own gaps.
 
 **Known limits**
 
-- Every log saved in `logs/` so far comes from stand-ins for at least one layer. The stand-in Guardian runs inside the stand-in Brain, so the network call from the Brain to the Guardian is not tested by them. Only a run with the real layers shows that call.
+- Most logs saved in `logs/` come from stand-ins for at least one layer. The stand-in Guardian runs inside the stand-in Brain, so the network call from the Brain to the Guardian is not tested by those runs. Only a run with the real layers (the T2 and T3 runs above) shows that call. [`logs/INDEX.md`](logs/INDEX.md) says which logs are which.
+- The root `docker compose up` starts all three layers and the dashboard, but starting the stack does not prove they work together. Our verified live evidence comes from the launcher path.
 - A committed action is stored by the Twin but the city does not react to it. After a `set_signal_plan` the jam keeps following its own script. We built the real jam only as the thing to detect, not as something an action can fix.
 - The only real incident is the traffic jam. There is no flood or power surge scenario.
 - A restart of the Twin keeps the same run id and forgets used tokens, so an old unexpired token could work again. A `reset` from the scenario tool starts a clean run. With the optional Redis storage on, used tokens survive a restart.
@@ -266,7 +335,6 @@ We would rather you hear it from us.
 - A command sent to a quarantined node is refused and written to the side lane. It is not queued for later.
 - Distances in the city graph are straight lines, not along roads or pipes.
 - The two-step confirm (the Twin answers "pending" and a second call commits) is not built. Telecom and Waste domains were cut by agreement.
-- One `docker compose up` starts all three layers and the dashboard, but no run with all three real layers has completed a scenario yet. Starting the stack does not prove the layers work together.
 
 ## Extras beyond the challenge
 
@@ -305,11 +373,11 @@ triplet-04/
 ├── README.md          you are here
 ├── INTEGRATION.md     how the three layers connect
 ├── TESTBOOK.md        the scenarios and their expected results
-├── docker-compose.yml starts the three layers and the dashboard
+├── docker-compose.yml starts the three layers and the dashboard (main way)
 ├── twin/              Trinity: the simulated city
-├── brain/             CIVIS: the decision layer
+├── brain/             CIVIS: the decision layer (also holds the Compose launcher for live T2 and T3 runs)
 ├── guardian/          9antra: trust and authorization
-├── scenarios/         one trigger script per scenario (T1 to T7)
+├── scenarios/         one trigger script per scenario (T1 to T8)
 ├── logs/              one log file per scenario run, plus INDEX.md
 ├── docs/              report, pitch deck and diagrams
 ├── mockups/testing/   extra folder, not part of the challenge layout
@@ -325,7 +393,7 @@ Every layer folder has the same shape: `README.md` (how to run it alone), `INTER
 - Branch names use dashes, never slashes (`twin-sensor-model`, not `twin/sensor-model`).
 - Commit messages start with the team (`twin: add sensor model`).
 - Never run `git add .` from the root. Add your own folder (`git add twin/`).
-- Secrets never go in the repo. Public keys may. Example configs hold fake development keys only.
+- Secrets never go in the repo. Public keys may. Example configs hold fake development keys only. `.env` and `brain/.env.compose` hold real keys on your machine, so both must stay git-ignored.
 
 ## Glossary
 
@@ -333,6 +401,7 @@ Every layer folder has the same shape: `README.md` (how to run it alone), `INTER
 - **Blast radius / cap**: the most nodes one request may touch.
 - **CODEOWNERS**: a GitHub file that says who must approve changes to which folder.
 - **Containment**: cutting a suspicious sensor off, without waiting for a person.
+- **Docker Compose**: a tool that starts several programs (containers) together from one config file.
 - **Ed25519**: a signature scheme. One side signs with a private key, the other side checks with the public key.
 - **Idempotency key**: a label on a command so a repeated command runs only once.
 - **JSON Lines**: a text file with one JSON object per line.
@@ -343,3 +412,4 @@ Every layer folder has the same shape: `README.md` (how to run it alone), `INTER
 - **Tick**: one step of the simulated clock.
 - **Token**: a one-use permission for exactly one action. In signed mode it carries the Guardian's signature.
 - **Twin**: a software copy of a real system, here a simulated city.
+- **Volume**: a folder shared between a container and your machine, so files survive a restart.
