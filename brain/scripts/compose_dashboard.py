@@ -21,13 +21,14 @@ def split_sessions(events: list["Event"]) -> list[list["Event"]]:
     walled.sort(key=lambda item: item[0])
 
     sessions: list[list["Event"]] = [[]]
-    has_work = False
+    has_start = has_work = False
     for _, event in walled:
         starts = event["layer"] == "twin" and _is_start(event)
-        if starts and has_work:
+        if starts and has_start and has_work:
             sessions.append([])
             has_work = False
         sessions[-1].append(event)
+        has_start = has_start or starts
         has_work = has_work or not starts
 
     minimums = [min((event["tick"] for event in session), default=float("inf")) for session in sessions]

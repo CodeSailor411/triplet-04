@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import re
 import time
 from collections import OrderedDict
@@ -145,15 +146,33 @@ class Timeline:
             self.seen[target].add(event_id)
 
 
+def export_guardian_audit(source, target):
+    """Copy the next block of the append-only audit, resuming after restarts."""
+    offset = target.stat().st_size if target.exists() else 0
+    with source.open("rb") as stream:
+        stream.seek(offset)
+        chunk = stream.read(1024 * 1024)
+    complete = chunk.rfind(b"\n") + 1
+    if complete:
+        with target.open("ab") as stream:
+            stream.write(chunk[:complete])
+
+
 def main():
     output = Path("run-logs")
     output.mkdir(parents=True, exist_ok=True)
     timeline = Timeline(output)
+    export_dir = os.environ.get("GUARDIAN_AUDIT_EXPORT_DIR")
+    export_dir = Path(export_dir) if export_dir else None
+    if export_dir is not None:
+        export_dir.mkdir(parents=True, exist_ok=True)
     while True:
         for source in sorted(Path("logs").glob("*.city_brain.jsonl")):
             timeline.poll(source, brain_event)
         for source in sorted(Path("../guardian/run-logs").glob("*.guardian.jsonl")):
             timeline.poll(source, timeline.guardian_event)
+            if export_dir is not None:
+                export_guardian_audit(source, export_dir / source.name)
         time.sleep(1)
 
 

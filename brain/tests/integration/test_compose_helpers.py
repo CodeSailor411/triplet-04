@@ -256,6 +256,20 @@ def test_timeline_links_observed_events_and_does_not_duplicate_on_restart(tmp_pa
     assert "excluded" not in json.dumps(projected)
 
 
+def test_guardian_audit_export_resumes_at_complete_rows(tmp_path):
+    export = runpy.run_path(str(SCRIPTS / "compose_timeline.py"))["export_guardian_audit"]
+    source = tmp_path / "source.jsonl"
+    target = tmp_path / "export.jsonl"
+    source.write_bytes(b'{"tick":1}\n{"tick":')
+    export(source, target)
+    export(source, target)
+    assert target.read_bytes() == b'{"tick":1}\n'
+    with source.open("ab") as stream:
+        stream.write(b'2}\n')
+    export(source, target)
+    assert target.read_bytes() == source.read_bytes()
+
+
 def test_timeline_shows_twin_feed_receipts_and_keeps_real_brain_blocks(tmp_path):
     helpers = runpy.run_path(str(SCRIPTS / "compose_timeline.py"))
     run_id = "run-42-001"

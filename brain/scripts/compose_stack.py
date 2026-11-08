@@ -308,6 +308,8 @@ def main():
     try:
         stage = prepare_stack()
         project = "triplet04-" + hashlib.sha256(os.fsencode(ROOT)).hexdigest()[:8]
+        # Twin run IDs can repeat in a fresh checkout snapshot.
+        os.environ["TRIPLET_GUARDIAN_AUDIT_VOLUME"] = f"{project}-guardian-audit-{stage.name}"
         prefix = ["docker", "compose", "--project-name", project, "--env-file", str(env_file),
                   "-f", "docker-compose.yml", "-f", "brain/compose.override.yml"]
         if args.command == "t2":

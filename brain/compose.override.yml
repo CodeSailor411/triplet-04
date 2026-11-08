@@ -71,6 +71,7 @@ services:
     ports: !override
       - "127.0.0.1:5000:5000"
     volumes:
+      - guardian-audit:/app/guardian/run-logs
       - civis-tls-public:/run/civis-ca:ro
     depends_on:
       brain-tls:
@@ -121,9 +122,12 @@ services:
     build: *brain-build
     image: triplet04/timeline:local
     command: ["python", "scripts/compose_timeline.py"]
+    environment:
+      GUARDIAN_AUDIT_EXPORT_DIR: /app/guardian/audit-export
     volumes:
       - ./brain/logs:/app/brain/logs:ro
-      - ./guardian/run-logs:/app/guardian/run-logs:ro
+      - guardian-audit:/app/guardian/run-logs:ro
+      - ./guardian/run-logs:/app/guardian/audit-export
       - ./brain/run-logs:/app/brain/run-logs
     depends_on:
       brain:
@@ -133,5 +137,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  guardian-audit:
+    name: ${TRIPLET_GUARDIAN_AUDIT_VOLUME:?Use the CIVIS Compose launcher}
   civis-tls-private:
   civis-tls-public:

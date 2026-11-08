@@ -35,6 +35,8 @@ The launcher combines the **committed** `brain/` directory at your current Git H
 
 Use the launcher commands above to apply `brain/compose.override.yml`. The PR's root Compose file points Guardian to an HTTP Brain URL. Guardian requires HTTPS for authenticated containment notices over the Docker network.
 
+Guardian writes its native audit to a Docker-managed volume scoped to the Compose snapshot. The timeline service copies complete audit rows to `guardian/run-logs/` in the snapshot in batches, so Guardian can score without waiting for per-reading writes to the Windows bind mount. The exported audit can trail Guardian's active log by a polling interval.
+
 The override follows the PR's Python 3.12 and pinned dependency setup and builds Brain from its own folder. It enables the live MCP/SSE connections and Gemini, disables the fixture browser routes, and keeps Guardian's signed approval and Twin's verification. Guardian calls Brain on the private Compose network with HTTPS and trusts only the mounted public Brain certificate for that callback. It never receives Brain's TLS private key. The Phase 1 standalone mocks remain available outside this stack.
 
 ## Verification
